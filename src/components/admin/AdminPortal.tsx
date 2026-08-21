@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { SecurityPanel } from "@/components/admin/SecurityPanel";
+import { ToastProvider } from "@/components/admin/Toast";
 import type { InventoryResponse, SessionSummary } from "@/components/admin/types";
 import { VehicleEditor } from "@/components/admin/VehicleEditor";
 import { AdminApiError, adminFetch, clearClientSecurityState } from "@/lib/client/admin-api";
@@ -36,7 +37,15 @@ const statusNames: Record<VehicleStatus, string> = {
   archived: "Archived",
 };
 
-export function AdminPortal({
+export function AdminPortal(props: AdminPortalProps) {
+  return (
+    <ToastProvider>
+      <AdminPortalWorkspace {...props} />
+    </ToastProvider>
+  );
+}
+
+function AdminPortalWorkspace({
   encryptedDraftsEnabled,
   maximumImageBytes,
   maximumImageDimension,

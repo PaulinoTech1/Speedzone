@@ -5,6 +5,7 @@ import Image from "next/image";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 
 import { DraftVaultPanel } from "@/components/admin/DraftVaultPanel";
+import { useToast, type ToastTone } from "@/components/admin/Toast";
 import {
   blankVehicleForm,
   formToVehicleInput,
@@ -20,9 +21,27 @@ import {
   type VehicleRecord,
   type VehicleStatus,
 } from "@/lib/domain/vehicle";
-import { adminFetch, getCsrfToken } from "@/lib/client/admin-api";
+import { AdminApiError, adminFetch, getCsrfToken } from "@/lib/client/admin-api";
 import { deleteEncryptedDraft, isDraftVaultUnlocked } from "@/lib/client/draft-vault";
 import { processVehiclePhoto } from "@/lib/client/image-processing";
+
+/**
+ * Classifies a caught action error for toast display. A 401 always means an
+ * expired or revoked session (the passkey-verified cookie, not a password),
+ * so it is reported as an authorization failure rather than a generic one.
+ */
+function describeActionError(error: unknown, fallback: string): { tone: ToastTone; message: string } {
+  if (error instanceof AdminApiError) {
+    if (error.status === 401) {
+      return { tone: "error", message: "Your session expired. Sign in again to continue." };
+    }
+    return { tone: "error", message: error.message || fallback };
+  }
+  if (error instanceof TypeError) {
+    return { tone: "error", message: "Network error. Check your connection and try again." };
+  }
+  return { tone: "error", message: error instanceof Error ? error.message : fallback };
+}
 
 type VehicleEditorProps = {
   vehicle: VehicleRecord | null;
@@ -163,6 +182,7 @@ export function VehicleEditor({
   const [uploadAlt, setUploadAlt] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [status, setStatus] = useState("");
+  const notify = useToast();
 
   const recordKey = record?.id ?? "new-vehicle";
   const startingStatus = record?.status ?? "draft";
@@ -234,12 +254,16 @@ export function VehicleEditor({
 
   async function saveVehicle(nextStatus?: VehicleStatus) {
     const candidate = nextStatus ? { ...form, status: nextStatus } : form;
+    const wasNew = !record;
     setBusy(true);
     setStatus("");
     try {
       await persistCandidate(candidate, record, `${statusLabel[candidate.status]} vehicle saved.`);
+      notify("success", wasNew ? "Vehicle created." : `${statusLabel[candidate.status]} vehicle saved.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "The vehicle could not be saved.");
+      const described = describeActionError(error, "The vehicle could not be saved.");
+      setStatus(described.message);
+      notify(described.tone, described.message);
     } finally {
       setBusy(false);
     }
@@ -319,9 +343,13 @@ export function VehicleEditor({
         workingForm = vehicleToForm(savedRecord);
       }
       setUploadProgress(100);
-      setStatus(`${selected.length} photograph${selected.length === 1 ? "" : "s"} processed, uploaded, and attached.`);
+      const summary = `${selected.length} photograph${selected.length === 1 ? "" : "s"} processed, uploaded, and attached.`;
+      setStatus(summary);
+      notify("success", summary);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Photograph upload failed.");
+      const described = describeActionError(error, "Photograph upload failed.");
+      setStatus(described.message);
+      notify(described.tone, described.message);
     } finally {
       setUploading(false);
       setUploadProgress(0);

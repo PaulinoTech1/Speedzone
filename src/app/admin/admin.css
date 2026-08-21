@@ -272,6 +272,76 @@ body:has(.admin-root) {
   font-size: 0.76rem;
 }
 
+.admin-toast-stack {
+  position: fixed;
+  z-index: 60;
+  top: max(1rem, env(safe-area-inset-top));
+  right: 1rem;
+  left: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.admin-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  max-width: 24rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  box-shadow: 0 0.5rem 1.5rem rgba(9, 10, 13, 0.14);
+  pointer-events: auto;
+}
+
+.admin-toast span {
+  flex: 1;
+}
+
+.admin-toast button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.admin-toast-success {
+  color: #0b4d24;
+  background: #ecfbf1;
+  border-color: #a9dcbb;
+}
+
+.admin-toast-error {
+  color: #7f0011;
+  background: #fff1f3;
+  border-color: #e6b7be;
+}
+
+.admin-toast-info {
+  color: #16416e;
+  background: #edf6ff;
+  border-color: #bad7f2;
+}
+
+@media (max-width: 640px) {
+  .admin-toast-stack {
+    align-items: stretch;
+  }
+
+  .admin-toast {
+    max-width: none;
+  }
+}
+
 /* Sign in */
 .admin-auth-shell {
   min-height: 100svh;
