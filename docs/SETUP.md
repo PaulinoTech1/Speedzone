@@ -28,8 +28,8 @@ INVENTORY_GLOBAL_CONFIG
 AUTH_GLOBAL_CONFIG
 INVENTORY_GLOBAL_CONFIG_ID
 AUTH_GLOBAL_CONFIG_ID
-VERCEL_TEAM_ID
-VERCEL_API_TOKEN
+GLOBAL_CONFIG_TEAM_ID
+GLOBAL_CONFIG_API_TOKEN
 ```
 
 The runtime token is broader than a store-only credential. Use the narrowest available team/account scope and rotate it. Global Config is non-transactional, so inventory concurrency and uniqueness remain best effort. Authentication does not rely on those semantics.

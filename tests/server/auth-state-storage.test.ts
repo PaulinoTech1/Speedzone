@@ -143,7 +143,7 @@ beforeEach(() => {
   vi.stubEnv("BLOB_PRIVATE_READ_WRITE_TOKEN", "private-token");
   vi.stubEnv("AUTH_GLOBAL_CONFIG", "https://global-config.example/read-token");
   vi.stubEnv("AUTH_GLOBAL_CONFIG_ID", "config-id");
-  vi.stubEnv("VERCEL_API_TOKEN", "api-token");
+  vi.stubEnv("GLOBAL_CONFIG_API_TOKEN", "api-token");
   vi.stubGlobal(
     "fetch",
     vi.fn<typeof fetch>(async (_input, init) => {

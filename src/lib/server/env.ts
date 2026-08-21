@@ -227,8 +227,8 @@ export function globalConfigSettings(kind: GlobalConfigKind) {
   return {
     connectionString: optional(`${prefix}_GLOBAL_CONFIG`),
     configId: optional(`${prefix}_GLOBAL_CONFIG_ID`),
-    teamId: optional("VERCEL_TEAM_ID"),
-    apiToken: optional("VERCEL_API_TOKEN"),
+    teamId: optional("GLOBAL_CONFIG_TEAM_ID"),
+    apiToken: optional("GLOBAL_CONFIG_API_TOKEN"),
   };
 }
 
