@@ -1,0 +1,16 @@
+.vercel/
+node_modules/
+.next/
+*.tsbuildinfo
+.data/
+coverage/
+playwright-report/
+test-results/
+playwright/.auth/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+npm-debug.log*
+debug.log

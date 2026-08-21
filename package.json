@@ -1,0 +1,49 @@
+{
+  "name": "speedzone-motorsports",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Mobile-first SpeedZone Motorsports website and secure inventory administration portal.",
+  "scripts": {
+    "dev": "next dev --hostname localhost --port 4173",
+    "dev:e2e": "node scripts/e2e-server.mjs",
+    "build": "next build",
+    "start": "next start --hostname localhost --port 4173",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:production-security": "node scripts/production-security-smoke.mjs",
+    "provision-admin": "node scripts/provision-admin.mjs",
+    "hash:admin-password": "node scripts/hash-admin-password.mjs",
+    "benchmark:argon2": "node scripts/benchmark-argon2.mjs",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "13.3.0",
+    "@simplewebauthn/server": "13.3.2",
+    "@vercel/blob": "2.8.0",
+    "@vercel/global-config": "1.5.1",
+    "argon2": "0.45.1",
+    "hash-wasm": "4.12.0",
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "0.0.1",
+    "sharp": "0.35.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
