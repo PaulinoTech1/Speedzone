@@ -139,4 +139,22 @@ Local timing is not a Vercel Function benchmark. Temporarily enable `ENABLE_ARGO
 
 Follow [WAF.md](WAF.md). Start in Log mode, verify legitimate complete setup/login/recovery ceremonies, and then explicitly publish the rate-limit actions. Repository code does not configure or prove the production firewall.
 
+## 9. Test drive email notifications
+
+The public `/test-drive` page (`POST /api/test-drive`) emails a notification through [Resend](https://resend.com) whenever a visitor submits the questionnaire. It has no effect on authentication or inventory storage.
+
+1. Create a Resend account and verify a sending domain (a `From` address on an unverified domain will be rejected by Resend).
+2. Create an API key and set these Production variables:
+
+```text
+RESEND_API_KEY
+RESEND_FROM_EMAIL
+```
+
+`RESEND_FROM_EMAIL` must be an address on the verified domain, for example `SpeedZone Motorsports <test-drive@speedzonems.com>`. Until both variables are set, submissions fail closed with a 503 rather than silently dropping the request.
+
+3. Optionally set `TEST_DRIVE_NOTIFICATION_EMAIL` to override the default recipient (`smpaulino.business@gmail.com`).
+
+The route is public and unauthenticated by design; it is protected only by per-client rate limiting (5 requests/hour) and Zod input validation, not by CSRF or origin checks used elsewhere in this codebase for authenticated admin mutations.
+
 Official references: [Vercel environment variables](https://vercel.com/docs/environment-variables), [deployment environments](https://vercel.com/docs/deployments/environments), [Global Config SDK](https://vercel.com/docs/global-config/global-config-sdk), [Global Config REST writes](https://vercel.com/docs/global-config/vercel-api), and [Blob conditional writes](https://vercel.com/docs/vercel-blob#conditional-writes).

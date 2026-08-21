@@ -19,6 +19,7 @@ export type SecurityEventName =
   | "inventory.status"
   | "upload.authorized"
   | "upload.rejected"
+  | "test_drive.submitted"
   | "rate_limited";
 
 type SecurityEvent = {

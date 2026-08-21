@@ -133,7 +133,7 @@ export function routeError(error: unknown): NextResponse {
   }
   // Keep unexpected values out of logs: upstream errors can contain request or
   // provider details. Operators get the route/status from platform telemetry.
-  console.error("Administrative request failed");
+  console.error("Request failed");
   return noStoreJson(
     { ok: false, error: { code: "SERVER_ERROR", message: "The request could not be completed" } },
     { status: 500 },

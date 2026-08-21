@@ -8,6 +8,7 @@ export const ratePolicies = {
   recovery: { limit: 5, windowMs: 60 * 60_000 },
   inventory: { limit: 120, windowMs: 60_000 },
   benchmark: { limit: 1, windowMs: 60 * 60_000 },
+  testDrive: { limit: 5, windowMs: 60 * 60_000 },
 } as const;
 
 export type RatePolicyName = keyof typeof ratePolicies;

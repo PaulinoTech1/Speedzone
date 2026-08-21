@@ -232,6 +232,14 @@ export function globalConfigSettings(kind: GlobalConfigKind) {
   };
 }
 
+export function testDriveConfig() {
+  return {
+    resendApiKey: optional("RESEND_API_KEY"),
+    fromEmail: optional("RESEND_FROM_EMAIL"),
+    notifyEmail: optional("TEST_DRIVE_NOTIFICATION_EMAIL") ?? "smpaulino.business@gmail.com",
+  };
+}
+
 export function localStatePath(): string {
   return optional("LOCAL_STATE_PATH") ?? ".data/state.json";
 }

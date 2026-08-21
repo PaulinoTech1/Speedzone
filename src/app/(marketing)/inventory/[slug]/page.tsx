@@ -135,7 +135,8 @@ export default async function VehiclePage({ params }: PageProps) {
               ) : null}
               <div className="vehicle-contact-panel">
                 <p>Interested in this {vehicle.make}?</p>
-                <a className="button button-primary" href="tel:+15088269405">Call (508) 826-9405</a>
+                <a className="button button-primary" href="/test-drive">Schedule a test drive</a>
+                <a className="button button-ghost" href="tel:+15088269405">Call (508) 826-9405</a>
                 <a className="button button-ghost" href={`mailto:smpaulino.business@gmail.com?subject=${encodeURIComponent(name)}`}>Email about this car</a>
               </div>
             </article>

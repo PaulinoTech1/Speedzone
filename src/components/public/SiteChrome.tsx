@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-img-element */
 
 type SiteChromeProps = {
-  currentPage?: "home" | "road-trip" | "inventory";
+  currentPage?: "home" | "road-trip" | "inventory" | "test-drive";
 };
 
 const directionsUrl =
@@ -59,6 +59,12 @@ export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
             >
               Inventory
             </a>
+            <a
+              href="/test-drive"
+              aria-current={currentPage === "test-drive" ? "page" : undefined}
+            >
+              Test Drive
+            </a>
             <a href={`${prefix}#about`}>Our story</a>
             <a
               href="/road-trip"
@@ -113,6 +119,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
               <>
                 <a href="#inventory">Latest arrivals</a>
                 <a href="/inventory">Browse inventory</a>
+                <a href="/test-drive">Test Drive</a>
                 <a href="#about">Our story</a>
                 <a href="/road-trip">Road Trip</a>
                 <a href="#maintenance">Car care</a>
@@ -124,7 +131,10 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="/inventory" aria-current={currentPage === "inventory" ? "page" : undefined}>
                   Inventory
                 </a>
-                <a href="/road-trip" aria-current="page">
+                <a href="/test-drive" aria-current={currentPage === "test-drive" ? "page" : undefined}>
+                  Test Drive
+                </a>
+                <a href="/road-trip" aria-current={currentPage === "road-trip" ? "page" : undefined}>
                   Road Trip
                 </a>
                 <a href="/#maintenance">Car care</a>
