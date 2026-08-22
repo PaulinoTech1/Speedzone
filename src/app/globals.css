@@ -1971,17 +1971,17 @@ body:has(.error-page) {
   }
 }
 
-/* Test drive request */
-.test-drive-page {
+/* Lead forms (test drive, sell/trade-in) */
+.lead-page {
   background: var(--ink);
   min-height: 70svh;
 }
 
-.test-drive-hero {
+.lead-hero {
   padding: clamp(3rem, 9vw, 6rem) 0 clamp(2rem, 5vw, 3rem);
 }
 
-.test-drive-hero h1 {
+.lead-hero h1 {
   max-width: 16ch;
   margin: 0.6rem 0 0;
   font-size: clamp(2.65rem, 9vw, 4.5rem);
@@ -1990,29 +1990,29 @@ body:has(.error-page) {
   text-transform: uppercase;
 }
 
-.test-drive-hero h1 em {
+.lead-hero h1 em {
   color: var(--red-bright);
   font-style: normal;
 }
 
-.test-drive-lead {
+.lead-intro {
   max-width: 40rem;
   margin: 1.25rem 0 0;
   color: var(--muted);
   font-size: 1.05rem;
 }
 
-.test-drive-layout {
+.lead-layout {
   display: grid;
   gap: 2rem;
   padding-bottom: clamp(3rem, 9vw, 6rem);
 }
 
-.test-drive-form-wrap {
+.lead-form-wrap {
   position: relative;
 }
 
-.test-drive-form {
+.lead-form {
   display: grid;
   gap: 1.1rem;
   padding: clamp(1.5rem, 5vw, 2.25rem);
@@ -2021,7 +2021,12 @@ body:has(.error-page) {
   border-radius: var(--radius);
 }
 
-.test-drive-form-row {
+.lead-form-row {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.lead-form-row-thirds {
   display: grid;
   gap: 1.1rem;
 }
@@ -2077,7 +2082,7 @@ body:has(.error-page) {
   font-weight: 650;
 }
 
-.test-drive-honeypot {
+.lead-honeypot {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2086,17 +2091,17 @@ body:has(.error-page) {
   white-space: nowrap;
 }
 
-.test-drive-submit {
+.lead-submit {
   width: 100%;
   margin-top: 0.25rem;
 }
 
-.test-drive-submit:disabled {
+.lead-submit:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
 
-.test-drive-info {
+.lead-info {
   display: grid;
   align-content: start;
   gap: 1rem;
@@ -2106,14 +2111,14 @@ body:has(.error-page) {
   border-radius: var(--radius);
 }
 
-.test-drive-info h2 {
+.lead-info h2 {
   margin: 0;
   font-size: 1.2rem;
   letter-spacing: 0.01em;
   text-transform: uppercase;
 }
 
-.test-drive-info ul {
+.lead-info ul {
   display: grid;
   gap: 0.6rem;
   margin: 0;
@@ -2122,12 +2127,12 @@ body:has(.error-page) {
   list-style: none;
 }
 
-.test-drive-info li {
+.lead-info li {
   padding-left: 1rem;
   border-left: 0.16rem solid var(--red);
 }
 
-.test-drive-contact {
+.lead-contact {
   display: grid;
   gap: 0.65rem;
   margin-top: 0.5rem;
@@ -2135,9 +2140,50 @@ body:has(.error-page) {
   border-top: 1px solid var(--line);
 }
 
-.test-drive-contact p {
+.lead-contact p {
   margin: 0;
   font-weight: 750;
+}
+
+.vin-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.vin-row input {
+  flex: 1;
+  text-transform: uppercase;
+}
+
+.vin-decode-button {
+  flex: 0 0 auto;
+  min-height: 3rem;
+  padding: 0 1.1rem;
+  white-space: nowrap;
+}
+
+.vin-decode-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.vin-decoded-summary {
+  margin: 0;
+  padding: 0.65rem 0.85rem;
+  color: #c9e8d2;
+  background: rgb(60 190 110 / 10%);
+  border: 1px solid #2c6b47;
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.vin-decoded-summary strong {
+  color: var(--text);
+}
+
+.vin-decoded-warning {
+  margin-top: 0.4rem;
+  color: #e8c98a;
 }
 
 .form-toast {
@@ -2192,12 +2238,16 @@ body:has(.error-page) {
 }
 
 @media (min-width: 56rem) {
-  .test-drive-layout {
+  .lead-layout {
     grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 0.9fr);
     align-items: start;
   }
 
-  .test-drive-form-row {
+  .lead-form-row {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .lead-form-row-thirds {
+    grid-template-columns: repeat(3, 1fr);
   }
 }

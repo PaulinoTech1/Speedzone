@@ -33,6 +33,7 @@ export async function GET(): Promise<Response> {
     `- [Home](${origin}/): Overview of SpeedZone Motorsports, hours, location, and why customers choose us.`,
     `- [Inventory](${origin}/inventory): Currently available used vehicles.`,
     `- [Request a test drive](${origin}/test-drive): Book a test drive online.`,
+    `- [Sell or trade in your car](${origin}/sell-your-car): Get an offer, with VIN decoding to help identify your vehicle.`,
     `- [Road trip guide](${origin}/road-trip): Free and low-cost day trips from Worcester, Massachusetts.`,
     `- [Privacy](${origin}/privacy): Website privacy information.`,
     `- [Terms](${origin}/terms): Website terms of use.`,

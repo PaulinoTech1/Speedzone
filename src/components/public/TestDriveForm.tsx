@@ -121,8 +121,8 @@ export function TestDriveForm() {
   }
 
   return (
-    <div className="test-drive-form-wrap">
-      <form className="test-drive-form" noValidate onSubmit={handleSubmit}>
+    <div className="lead-form-wrap">
+      <form className="lead-form" noValidate onSubmit={handleSubmit}>
         <div className="field">
           <label htmlFor={`${formId}-fullName`}>
             Full name <b aria-hidden="true">*</b>
@@ -211,7 +211,7 @@ export function TestDriveForm() {
           ) : null}
         </div>
 
-        <div className="test-drive-form-row">
+        <div className="lead-form-row">
           <div className="field">
             <label htmlFor={`${formId}-date`}>
               Preferred date <b aria-hidden="true">*</b>
@@ -282,7 +282,7 @@ export function TestDriveForm() {
           ) : null}
         </div>
 
-        <div className="test-drive-honeypot" aria-hidden="true">
+        <div className="lead-honeypot" aria-hidden="true">
           <label htmlFor={`${formId}-website`}>Leave this field empty</label>
           <input
             id={`${formId}-website`}
@@ -295,7 +295,7 @@ export function TestDriveForm() {
           />
         </div>
 
-        <button className="button button-primary test-drive-submit" type="submit" disabled={submitting}>
+        <button className="button button-primary lead-submit" type="submit" disabled={submitting}>
           {submitting ? "Sending…" : "Request test drive"}
         </button>
       </form>

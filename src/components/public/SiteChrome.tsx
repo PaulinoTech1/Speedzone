@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-img-element */
 
 type SiteChromeProps = {
-  currentPage?: "home" | "road-trip" | "inventory" | "test-drive";
+  currentPage?: "home" | "road-trip" | "inventory" | "test-drive" | "sell-your-car";
 };
 
 const directionsUrl =
@@ -120,6 +120,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="#inventory">Latest arrivals</a>
                 <a href="/inventory">Browse inventory</a>
                 <a href="/test-drive">Test Drive</a>
+                <a href="/sell-your-car">Sell Your Car</a>
                 <a href="#about">Our story</a>
                 <a href="/road-trip">Road Trip</a>
                 <a href="#maintenance">Car care</a>
@@ -134,6 +135,9 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 </a>
                 <a href="/test-drive" aria-current={currentPage === "test-drive" ? "page" : undefined}>
                   Test Drive
+                </a>
+                <a href="/sell-your-car" aria-current={currentPage === "sell-your-car" ? "page" : undefined}>
+                  Sell Your Car
                 </a>
                 <a href="/road-trip" aria-current={currentPage === "road-trip" ? "page" : undefined}>
                   Road Trip

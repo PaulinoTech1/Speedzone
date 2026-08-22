@@ -30,23 +30,23 @@ export default function TestDrivePage() {
   return (
     <>
       <SiteHeader currentPage="test-drive" />
-      <main id="main" className="test-drive-page">
+      <main id="main" className="lead-page">
         <div className="shell">
-          <section className="test-drive-hero">
+          <section className="lead-hero">
             <p className="section-kicker">Schedule a visit</p>
             <h1>
               Request a <em>Test Drive</em>
             </h1>
-            <p className="test-drive-lead">
+            <p className="lead-intro">
               Tell us which car you&rsquo;d like to drive and when works best. Our team confirms
               every request by phone or email, usually within one business day.
             </p>
           </section>
 
-          <div className="test-drive-layout">
+          <div className="lead-layout">
             <TestDriveForm />
 
-            <aside className="test-drive-info" aria-labelledby="test-drive-info-heading">
+            <aside className="lead-info" aria-labelledby="test-drive-info-heading">
               <h2 id="test-drive-info-heading">What to expect</h2>
               <ul>
                 <li>Bring a valid driver&rsquo;s license for the test drive.</li>
@@ -54,7 +54,7 @@ export default function TestDrivePage() {
                 <li>We&rsquo;ll confirm your appointment before you arrive.</li>
                 <li>Not sure which car yet? Tell us what you&rsquo;re looking for.</li>
               </ul>
-              <div className="test-drive-contact">
+              <div className="lead-contact">
                 <p>Prefer to talk now?</p>
                 <a className="button button-ghost" href="tel:+15088269405">
                   Call (508) 826-9405

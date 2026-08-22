@@ -9,6 +9,8 @@ export const ratePolicies = {
   inventory: { limit: 120, windowMs: 60_000 },
   benchmark: { limit: 1, windowMs: 60 * 60_000 },
   testDrive: { limit: 5, windowMs: 60 * 60_000 },
+  tradeIn: { limit: 5, windowMs: 60 * 60_000 },
+  vinDecode: { limit: 20, windowMs: 10 * 60_000 },
 } as const;
 
 export type RatePolicyName = keyof typeof ratePolicies;

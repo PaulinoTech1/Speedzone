@@ -232,11 +232,13 @@ export function globalConfigSettings(kind: GlobalConfigKind) {
   };
 }
 
-export function testDriveConfig() {
+// Shared by every public lead form (test drive, sell/trade-in) that emails a
+// notification through Resend rather than writing to inventory storage.
+export function leadNotificationConfig() {
   return {
     resendApiKey: optional("RESEND_API_KEY"),
     fromEmail: optional("RESEND_FROM_EMAIL"),
-    notifyEmail: optional("TEST_DRIVE_NOTIFICATION_EMAIL") ?? "smpaulino.business@gmail.com",
+    notifyEmail: optional("LEAD_NOTIFICATION_EMAIL") ?? "smpaulino.business@gmail.com",
   };
 }
 

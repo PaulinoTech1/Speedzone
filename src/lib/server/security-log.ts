@@ -20,6 +20,7 @@ export type SecurityEventName =
   | "upload.authorized"
   | "upload.rejected"
   | "test_drive.submitted"
+  | "trade_in.submitted"
   | "rate_limited";
 
 type SecurityEvent = {

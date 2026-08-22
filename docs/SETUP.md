@@ -139,9 +139,9 @@ Local timing is not a Vercel Function benchmark. Temporarily enable `ENABLE_ARGO
 
 Follow [WAF.md](WAF.md). Start in Log mode, verify legitimate complete setup/login/recovery ceremonies, and then explicitly publish the rate-limit actions. Repository code does not configure or prove the production firewall.
 
-## 9. Test drive email notifications
+## 9. Lead form email notifications
 
-The public `/test-drive` page (`POST /api/test-drive`) emails a notification through [Resend](https://resend.com) whenever a visitor submits the questionnaire. It has no effect on authentication or inventory storage.
+Two public pages email a notification through [Resend](https://resend.com) whenever a visitor submits them: `/test-drive` (`POST /api/test-drive`) and `/sell-your-car` (`POST /api/trade-in`). Neither affects authentication or inventory storage.
 
 1. Create a Resend account and verify a sending domain (a `From` address on an unverified domain will be rejected by Resend).
 2. Create an API key and set these Production variables:
@@ -151,10 +151,14 @@ RESEND_API_KEY
 RESEND_FROM_EMAIL
 ```
 
-`RESEND_FROM_EMAIL` must be an address on the verified domain, for example `SpeedZone Motorsports <test-drive@speedzonems.com>`. Until both variables are set, submissions fail closed with a 503 rather than silently dropping the request.
+`RESEND_FROM_EMAIL` must be an address on the verified domain, for example `SpeedZone Motorsports <leads@speedzonems.com>`. Until both variables are set, submissions fail closed with a 503 rather than silently dropping the request.
 
-3. Optionally set `TEST_DRIVE_NOTIFICATION_EMAIL` to override the default recipient (`smpaulino.business@gmail.com`).
+3. Optionally set `LEAD_NOTIFICATION_EMAIL` to override the default recipient (`smpaulino.business@gmail.com`) for both forms.
 
-The route is public and unauthenticated by design; it is protected only by per-client rate limiting (5 requests/hour) and Zod input validation, not by CSRF or origin checks used elsewhere in this codebase for authenticated admin mutations.
+Both routes are public and unauthenticated by design; they are protected only by per-client rate limiting and Zod input validation, not by CSRF or origin checks used elsewhere in this codebase for authenticated admin mutations.
+
+## 10. VIN decoder
+
+The trade-in form's "Decode VIN" button calls `GET /api/vin-decode`, which the server proxies to the free, public [NHTSA vPIC API](https://vpic.nhtsa.dot.gov/api/) (no API key, no environment variable, no cost). The browser never calls NHTSA directly, so the site's Content-Security-Policy `connect-src` does not need to allow a third-party host. If NHTSA is unreachable or a VIN can't be decoded, the form degrades to manual entry rather than blocking submission.
 
 Official references: [Vercel environment variables](https://vercel.com/docs/environment-variables), [deployment environments](https://vercel.com/docs/deployments/environments), [Global Config SDK](https://vercel.com/docs/global-config/global-config-sdk), [Global Config REST writes](https://vercel.com/docs/global-config/vercel-api), and [Blob conditional writes](https://vercel.com/docs/vercel-blob#conditional-writes).
