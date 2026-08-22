@@ -109,6 +109,39 @@ const careTips = [
   },
 ] as const;
 
+// Shared with the FAQPage structured data in app/(marketing)/page.tsx so the
+// visible copy and the JSON-LD sent to search/AI crawlers can't drift apart.
+export const homeFaqItems = [
+  {
+    question: "What are SpeedZone Motorsports' hours?",
+    answer:
+      "We're open Monday through Friday, 10am to 4pm, and Saturday by appointment.",
+  },
+  {
+    question: "Where is SpeedZone Motorsports located?",
+    answer: "1094 Main St, Worcester, MA 01603.",
+  },
+  {
+    question: "How do I schedule a test drive?",
+    answer:
+      "Request one online, or call (508) 826-9405. Tell us which vehicle you'd like to drive and your preferred date and time, and we'll confirm before you arrive.",
+  },
+  {
+    question: "Are SpeedZone's vehicles inspected before sale?",
+    answer: "Yes. Every vehicle is reviewed before it reaches the lot.",
+  },
+  {
+    question: "Does SpeedZone use high-pressure sales tactics?",
+    answer:
+      "No. Take your time, ask questions, and find the fit that works for you.",
+  },
+  {
+    question: "How long has SpeedZone Motorsports been in business?",
+    answer:
+      "Since 2010. For more than 15 years, Worcester families have turned to SpeedZone for affordable vehicles and straightforward help.",
+  },
+] as const;
+
 export function HomePageContent() {
   return (
     <main id="main">
@@ -386,6 +419,38 @@ export function HomePageContent() {
             Have a general question? <a href="tel:+15088269405">Call us</a> or
             stop by the lot.
           </p>
+        </div>
+      </section>
+
+      <section className="section faq" id="faq" aria-labelledby="faq-title">
+        <div className="shell">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">Common questions</p>
+              <h2 id="faq-title">
+                Questions?
+                <br />
+                <span>We&rsquo;ve got answers.</span>
+              </h2>
+            </div>
+            <p>
+              Quick answers about hours, test drives, and how we do business.
+              Still not covered? <a href="tel:+15088269405">Call us</a>.
+            </p>
+          </div>
+
+          <div className="tips-grid">
+            {homeFaqItems.map((item, index) => (
+              <details className="tip" name="home-faq" key={item.question}>
+                <summary>
+                  <span>{String(index + 1).padStart(2, "0")}</span> {item.question}
+                </summary>
+                <div className="tip-body">
+                  <p>{item.answer}</p>
+                </div>
+              </details>
+            ))}
+          </div>
         </div>
       </section>
 

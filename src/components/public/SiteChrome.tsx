@@ -123,6 +123,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="#about">Our story</a>
                 <a href="/road-trip">Road Trip</a>
                 <a href="#maintenance">Car care</a>
+                <a href="#faq">FAQ</a>
                 <a href="#contact">Visit us</a>
               </>
             ) : (
@@ -138,6 +139,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                   Road Trip
                 </a>
                 <a href="/#maintenance">Car care</a>
+                <a href="/#faq">FAQ</a>
                 <a href="/#contact">Visit us</a>
               </>
             )}

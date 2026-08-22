@@ -16,12 +16,14 @@ export const metadata: Metadata = {
     title: "Road Trip | SpeedZone Motorsports",
     description:
       "Free and low-cost family day trips from Worcester to Central Massachusetts and the Boston area.",
+    images: [{ url: "/assets/speedzone-logo-v1.png", width: 192, height: 192, alt: "SpeedZone Motorsports" }],
   },
   twitter: {
     card: "summary",
     title: "Road Trip | SpeedZone Motorsports",
     description:
       "Free and low-cost family day trips from Worcester, Massachusetts.",
+    images: ["/assets/speedzone-logo-v1.png"],
   },
 };
 

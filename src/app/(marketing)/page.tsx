@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 
-import { HomePageContent } from "@/components/public/HomePageContent";
+import { HomePageContent, homeFaqItems } from "@/components/public/HomePageContent";
 import { SiteFooter, SiteHeader } from "@/components/public/SiteChrome";
 
 export const metadata: Metadata = {
@@ -20,12 +20,14 @@ export const metadata: Metadata = {
       "SpeedZone Motorsports | Affordable Used Cars in Worcester, MA",
     description:
       "Quality used cars, honest service, and straightforward pricing in Worcester, Massachusetts.",
+    images: [{ url: "/assets/speedzone-logo-v1.png", width: 192, height: 192, alt: "SpeedZone Motorsports" }],
   },
   twitter: {
     card: "summary",
     title: "SpeedZone Motorsports | Worcester, MA",
     description:
       "Affordable used cars and honest service in Worcester, Massachusetts.",
+    images: ["/assets/speedzone-logo-v1.png"],
   },
 };
 
@@ -59,6 +61,16 @@ const dealerStructuredData = {
   sameAs: ["https://www.instagram.com/speedzone_motorsports/"],
 };
 
+const faqStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: homeFaqItems.map((item) => ({
+    "@type": "Question",
+    name: item.question,
+    acceptedAnswer: { "@type": "Answer", text: item.answer },
+  })),
+};
+
 export default async function HomePage() {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
 
@@ -69,6 +81,13 @@ export default async function HomePage() {
         nonce={nonce}
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(dealerStructuredData),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        nonce={nonce}
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(faqStructuredData),
         }}
       />
       <SiteHeader />

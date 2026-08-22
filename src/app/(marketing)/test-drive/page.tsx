@@ -16,11 +16,13 @@ export const metadata: Metadata = {
     title: "Request a Test Drive | SpeedZone Motorsports",
     description:
       "Schedule a test drive at SpeedZone Motorsports in Worcester, MA.",
+    images: [{ url: "/assets/speedzone-logo-v1.png", width: 192, height: 192, alt: "SpeedZone Motorsports" }],
   },
   twitter: {
     card: "summary",
     title: "Request a Test Drive | SpeedZone Motorsports",
     description: "Schedule a test drive at SpeedZone Motorsports in Worcester, MA.",
+    images: ["/assets/speedzone-logo-v1.png"],
   },
 };
 

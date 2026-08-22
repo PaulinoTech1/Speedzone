@@ -15,6 +15,7 @@ export const metadata: Metadata = {
     url: "/inventory",
     title: "Used Vehicle Inventory | SpeedZone Motorsports",
     description: "See currently available vehicles at SpeedZone Motorsports in Worcester.",
+    images: [{ url: "/assets/speedzone-logo-v1.png", width: 192, height: 192, alt: "SpeedZone Motorsports" }],
   },
 };
 

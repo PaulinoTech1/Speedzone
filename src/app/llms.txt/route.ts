@@ -1,0 +1,61 @@
+import { cachedPublishedVehicles } from "@/lib/server/public-inventory";
+
+export const dynamic = "force-dynamic";
+
+const origin = "https://www.speedzonems.com";
+
+const usd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+const number = new Intl.NumberFormat("en-US");
+
+// Follows the llms.txt convention (https://llmstxt.org): a concise, link-only
+// Markdown index that AI assistants can fetch instead of crawling and
+// rendering the full site to answer questions about it.
+export async function GET(): Promise<Response> {
+  const vehicles = await cachedPublishedVehicles();
+
+  const lines = [
+    "# SpeedZone Motorsports",
+    "",
+    "> Independently owned used car dealership in Worcester, Massachusetts, selling affordable, quality-inspected vehicles since 2010. No-pressure sales.",
+    "",
+    "## Business information",
+    "",
+    "- Address: 1094 Main St, Worcester, MA 01603",
+    "- Phone: (508) 826-9405",
+    "- Email: smpaulino.business@gmail.com",
+    "- Hours: Monday-Friday 10am-4pm, Saturday by appointment",
+    "- Founded: 2010",
+    "",
+    "## Pages",
+    "",
+    `- [Home](${origin}/): Overview of SpeedZone Motorsports, hours, location, and why customers choose us.`,
+    `- [Inventory](${origin}/inventory): Currently available used vehicles.`,
+    `- [Request a test drive](${origin}/test-drive): Book a test drive online.`,
+    `- [Road trip guide](${origin}/road-trip): Free and low-cost day trips from Worcester, Massachusetts.`,
+    `- [Privacy](${origin}/privacy): Website privacy information.`,
+    `- [Terms](${origin}/terms): Website terms of use.`,
+  ];
+
+  if (vehicles.length > 0) {
+    lines.push("", "## Current inventory", "");
+    for (const vehicle of vehicles) {
+      const name = `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? ` ${vehicle.trim}` : ""}`;
+      lines.push(
+        `- [${name}](${origin}/inventory/${vehicle.slug}): ${usd.format(vehicle.price)}, ${number.format(vehicle.mileage)} miles, stock #${vehicle.stockNumber}.`,
+      );
+    }
+  }
+
+  lines.push("");
+
+  return new Response(lines.join("\n"), {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "public, max-age=0, s-maxage=3600",
+    },
+  });
+}

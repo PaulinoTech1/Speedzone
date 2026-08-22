@@ -17,6 +17,23 @@ export const metadata: Metadata = {
     apple: "/assets/speedzone-logo-v1.png",
   },
   manifest: "/manifest.webmanifest",
+  // Fallback social/AI-assistant link preview image for any page that doesn't
+  // set its own openGraph.images (e.g. vehicle pages use the vehicle photo).
+  openGraph: {
+    siteName: "SpeedZone Motorsports",
+    images: [
+      {
+        url: "/assets/speedzone-logo-v1.png",
+        width: 192,
+        height: 192,
+        alt: "SpeedZone Motorsports",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    images: ["/assets/speedzone-logo-v1.png"],
+  },
 };
 
 export const viewport: Viewport = {
