@@ -15,8 +15,6 @@ const number = new Intl.NumberFormat("en-US");
 // Markdown index that AI assistants can fetch instead of crawling and
 // rendering the full site to answer questions about it.
 export async function GET(): Promise<Response> {
-  const vehicles = await cachedPublishedVehicles();
-
   const lines = [
     "# SpeedZone Motorsports",
     "",
@@ -40,14 +38,22 @@ export async function GET(): Promise<Response> {
     `- [Terms](${origin}/terms): Website terms of use.`,
   ];
 
-  if (vehicles.length > 0) {
-    lines.push("", "## Current inventory", "");
-    for (const vehicle of vehicles) {
-      const name = `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? ` ${vehicle.trim}` : ""}`;
-      lines.push(
-        `- [${name}](${origin}/inventory/${vehicle.slug}): ${usd.format(vehicle.price)}, ${number.format(vehicle.mileage)} miles, stock #${vehicle.stockNumber}.`,
-      );
+  // A live-inventory fetch failure should never take down this file: an AI
+  // agent should still get the business info and page links even if the
+  // inventory store is unreachable.
+  try {
+    const vehicles = await cachedPublishedVehicles();
+    if (vehicles.length > 0) {
+      lines.push("", "## Current inventory", "");
+      for (const vehicle of vehicles) {
+        const name = `${vehicle.year} ${vehicle.make} ${vehicle.model}${vehicle.trim ? ` ${vehicle.trim}` : ""}`;
+        lines.push(
+          `- [${name}](${origin}/inventory/${vehicle.slug}): ${usd.format(vehicle.price)}, ${number.format(vehicle.mileage)} miles, stock #${vehicle.stockNumber}.`,
+        );
+      }
     }
+  } catch {
+    console.error("llms.txt: inventory lookup failed, serving static content only");
   }
 
   lines.push("");
