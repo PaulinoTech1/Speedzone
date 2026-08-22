@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { SiteFooter, SiteHeader } from "@/components/public/SiteChrome";
 import { VehicleCard } from "@/components/public/VehicleCard";
+import { formatBracket, priceBrackets } from "@/lib/domain/price-brackets";
 import { cachedPublishedVehicles } from "@/lib/server/public-inventory";
 
 export const metadata: Metadata = {
@@ -37,6 +39,14 @@ export default async function InventoryPage() {
         </section>
         <section className="section" aria-labelledby="inventory-results-title">
           <div className="shell">
+            <nav className="bracket-nav" aria-label="Browse by price">
+              {priceBrackets.map((value) => (
+                <Link key={value} href={`/cars-under/${value}`}>
+                  Under {formatBracket(value)}
+                </Link>
+              ))}
+            </nav>
+
             <div className="inventory-results-heading">
               <h2 id="inventory-results-title">
                 {vehicles.length} {vehicles.length === 1 ? "vehicle" : "vehicles"} available

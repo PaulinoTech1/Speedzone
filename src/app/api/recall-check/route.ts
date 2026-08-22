@@ -3,17 +3,14 @@ import { NextRequest } from "next/server";
 import { vinPattern } from "@/lib/domain/trade-in";
 import { noStoreJson, RequestValidationError } from "@/lib/server/request";
 import { enforceClientRateLimit, routeError } from "@/lib/server/route-utils";
-import { decodeVin } from "@/lib/server/vehicle-lookup";
+import { decodeVin, recallsForVehicle } from "@/lib/server/vehicle-lookup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// The browser never calls NHTSA directly: proxying server-side means the
-// site's Content-Security-Policy connect-src doesn't need a third-party host,
-// and lets us validate the VIN and normalize NHTSA's ~150-field response.
 export async function GET(request: NextRequest) {
   try {
-    enforceClientRateLimit(request, "vinDecode");
+    enforceClientRateLimit(request, "recallCheck");
 
     const rawVin = request.nextUrl.searchParams.get("vin")?.trim().toUpperCase() ?? "";
     if (!vinPattern.test(rawVin)) {
@@ -21,7 +18,27 @@ export async function GET(request: NextRequest) {
     }
 
     const { vehicle, warning } = await decodeVin(rawVin);
-    return noStoreJson({ ok: true, vehicle, warning });
+    if (!vehicle.year || !vehicle.make || !vehicle.model) {
+      throw new RequestValidationError(
+        "That VIN decoded, but not with enough detail to look up recalls.",
+        422,
+        "VIN_NOT_DECODED",
+      );
+    }
+
+    const campaigns = await recallsForVehicle(vehicle.year, vehicle.make, vehicle.model);
+
+    return noStoreJson({
+      ok: true,
+      vehicle: {
+        year: vehicle.year,
+        make: vehicle.make,
+        model: vehicle.model,
+        trim: vehicle.trim,
+      },
+      campaigns,
+      warning,
+    });
   } catch (error) {
     return routeError(error);
   }

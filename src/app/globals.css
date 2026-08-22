@@ -2186,6 +2186,255 @@ body:has(.error-page) {
   color: #e8c98a;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Price brackets */
+.bracket-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.bracket-nav a {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.6rem 0.9rem;
+  color: #d4d3d0;
+  background: var(--surface-2);
+  border: 1px solid #353535;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.bracket-nav a[aria-current="page"] {
+  color: white;
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.bracket-footnote {
+  margin-top: 2rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.bracket-footnote a {
+  color: var(--red-bright);
+}
+
+/* Ownership cost calculator */
+.cost-calculator {
+  display: grid;
+  gap: 1.1rem;
+  padding: clamp(1.5rem, 5vw, 2.25rem);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.cost-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cost-table th,
+.cost-table td {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.95rem;
+  text-align: left;
+}
+
+.cost-table td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.cost-table th {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.cost-row-subtotal th,
+.cost-row-subtotal td {
+  color: var(--text);
+  font-weight: 850;
+}
+
+.cost-row-total th,
+.cost-row-total td {
+  padding-top: 0.9rem;
+  border-bottom: 0;
+  color: var(--red-bright);
+  font-size: 1.2rem;
+  font-weight: 900;
+}
+
+.cost-note,
+.cost-sources {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.cost-sources {
+  margin-top: 2rem;
+}
+
+.cost-sources a,
+.cost-detail a {
+  color: var(--red-bright);
+}
+
+.cost-detail {
+  margin-top: 2.5rem;
+}
+
+.cost-detail h2 {
+  margin: 0 0 1.25rem;
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  text-transform: uppercase;
+}
+
+.cost-detail h3 {
+  margin: 1.75rem 0 0.4rem;
+  color: var(--red-bright);
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.cost-detail p {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--muted);
+}
+
+/* Recall check */
+.recall-tool {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.recall-tool .field small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.recall-results h2 {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.4rem, 5vw, 1.9rem);
+  text-transform: uppercase;
+}
+
+.recall-count,
+.recall-empty {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+}
+
+.recall-empty {
+  padding: 1rem 1.15rem;
+  color: #c9e8d2;
+  background: rgb(60 190 110 / 10%);
+  border: 1px solid #2c6b47;
+  border-radius: 0.55rem;
+}
+
+.recall-list {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recall-item {
+  padding: 1.15rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 0.2rem solid var(--red);
+  border-radius: 0.6rem;
+}
+
+.recall-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.recall-item h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.recall-flag {
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.recall-flag-urgent {
+  color: white;
+  background: var(--red);
+}
+
+.recall-meta {
+  margin: 0.35rem 0 0.75rem;
+  color: #8f8e8a;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.recall-item p {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.recall-item p:last-child {
+  margin-bottom: 0;
+}
+
+.recall-consequence strong,
+.recall-remedy strong {
+  color: var(--text);
+}
+
+.recall-disclaimer {
+  margin: 1.5rem 0 0;
+  padding: 1rem 1.15rem;
+  color: #d8d7d4;
+  background: rgb(255 255 255 / 3%);
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  font-size: 0.84rem;
+}
+
+.recall-disclaimer a {
+  color: var(--red-bright);
+}
+
 .form-toast {
   position: fixed;
   z-index: 60;

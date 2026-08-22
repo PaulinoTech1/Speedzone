@@ -1,7 +1,14 @@
 /* eslint-disable @next/next/no-html-link-for-pages, @next/next/no-img-element */
 
 type SiteChromeProps = {
-  currentPage?: "home" | "road-trip" | "inventory" | "test-drive" | "sell-your-car";
+  currentPage?:
+    | "home"
+    | "road-trip"
+    | "inventory"
+    | "test-drive"
+    | "sell-your-car"
+    | "buying-costs"
+    | "recall-check";
 };
 
 const directionsUrl =
@@ -65,6 +72,18 @@ export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
             >
               Test Drive
             </a>
+            <a
+              href="/buying-costs"
+              aria-current={currentPage === "buying-costs" ? "page" : undefined}
+            >
+              Costs
+            </a>
+            <a
+              href="/recall-check"
+              aria-current={currentPage === "recall-check" ? "page" : undefined}
+            >
+              Recall Check
+            </a>
             <a href={`${prefix}#about`}>Our story</a>
             <a
               href="/road-trip"
@@ -119,8 +138,11 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
               <>
                 <a href="#inventory">Latest arrivals</a>
                 <a href="/inventory">Browse inventory</a>
+                <a href="/cars-under/5000">Cars under $5,000</a>
                 <a href="/test-drive">Test Drive</a>
                 <a href="/sell-your-car">Sell Your Car</a>
+                <a href="/buying-costs">Taxes &amp; fees</a>
+                <a href="/recall-check">Free recall check</a>
                 <a href="#about">Our story</a>
                 <a href="/road-trip">Road Trip</a>
                 <a href="#maintenance">Car care</a>
@@ -133,11 +155,18 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="/inventory" aria-current={currentPage === "inventory" ? "page" : undefined}>
                   Inventory
                 </a>
+                <a href="/cars-under/5000">Cars under $5,000</a>
                 <a href="/test-drive" aria-current={currentPage === "test-drive" ? "page" : undefined}>
                   Test Drive
                 </a>
                 <a href="/sell-your-car" aria-current={currentPage === "sell-your-car" ? "page" : undefined}>
                   Sell Your Car
+                </a>
+                <a href="/buying-costs" aria-current={currentPage === "buying-costs" ? "page" : undefined}>
+                  Taxes &amp; fees
+                </a>
+                <a href="/recall-check" aria-current={currentPage === "recall-check" ? "page" : undefined}>
+                  Free recall check
                 </a>
                 <a href="/road-trip" aria-current={currentPage === "road-trip" ? "page" : undefined}>
                   Road Trip
