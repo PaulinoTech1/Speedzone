@@ -175,7 +175,7 @@ export function HomePageContent() {
           <dl className="proof-strip" aria-label="SpeedZone highlights">
             <div>
               <dt>Starting at</dt>
-              <dd>$4,500</dd>
+              <dd>$2,500</dd>
             </div>
             <div>
               <dt>Google rating</dt>
