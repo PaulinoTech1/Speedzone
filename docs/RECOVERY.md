@@ -35,11 +35,11 @@ If the registration response or recovery-code screen is lost:
 
 1. Try a fresh login using the provisioned password and newly registered passkey.
 2. If it succeeds, activation committed. Complete password-plus-passkey reauthentication in Security and replace all recovery codes.
-3. If `/admin/setup` returns 404 but login fails, set `ADMIN_DISABLED=true` and inspect the authoritative private auth object and ETag. Do not trust a lagging Global Config mirror or force the state backward.
+3. If `/admin/setup` returns 404 but login fails, set `ADMIN_DISABLED=true` and inspect the `auth_state` row in `SEcure_Auth` with `npm.cmd run migrate:auth-db -- --check`. Never edit the row by hand to force the lifecycle backward.
 4. If the authoritative state remains `BOOTSTRAP_READY`, obtain fresh registration options and retry with the same still-valid bootstrap credential. A failed challenge cannot be replayed.
 5. If the authoritative state is `ACTIVE`, do not repeat bootstrap. Repair the login/configuration problem through the incident process.
 
-A Global Config mirror failure after a private-Blob commit does not undo activation. Remove `ADMIN_BOOTSTRAP_TOKEN_HASH` only after fresh login is confirmed; once `ACTIVE`, its absence does not break login.
+Activation is a single compare-and-swap on the `auth_state` row, so it either committed or it did not; a failed response never leaves a half-activated record. Remove `ADMIN_BOOTSTRAP_TOKEN_HASH` only after fresh login is confirmed; once `ACTIVE`, its absence does not break login.
 
 ## Lost every passkey and every recovery code
 
@@ -48,10 +48,10 @@ There is intentionally no password-only, email, SMS, public registration, or hid
 Use operator-controlled restoration only after independently verifying authority:
 
 1. Set `ADMIN_DISABLED=true` and deploy.
-2. Export the authoritative `security/auth/state-v1.json` private object, its ETag, the auth mirror, and relevant audit/challenge evidence.
+2. Export the `auth_state` row with its `revision` and `updated_at`, the relevant `auth_consume_markers` rows, and the related audit evidence. Note the Neon point-in-time restore timestamp that precedes the incident.
 3. Restore a verified pre-incident authoritative object or construct a separately reviewed recovery change through Vercel's control plane. Use an ETag precondition so a concurrent change cannot be overwritten.
-4. Repair the Global Config mirror from that exact committed revision.
-5. Rotate the password hash, `AUTH_COOKIE_SECRET`, optional password pepper, Vercel API token, and affected Blob tokens. Cookie-secret rotation also changes recovery-code hashes and therefore requires a coordinated record migration.
+4. If the record must be rolled back, use Neon point-in-time restore to that exact committed revision rather than a manual `UPDATE`.
+5. Rotate the password hash, `AUTH_COOKIE_SECRET`, optional password pepper, the `SEcure_Auth` role password in `AUTH_DATABASE_URL`, and affected Blob tokens. Cookie-secret rotation also changes recovery-code hashes and therefore requires a coordinated record migration.
 6. Have a second operator review the change, restore two-factor access, register two passkeys, store new codes, and re-enable the account.
 
 Resetting the lifecycle to `BOOTSTRAP_READY` is not an application recovery feature. If an incident review authorizes that destructive reset, create a completely new offline provisioning set and verify that no credential remains. This manual process is outside the application's transactional guarantees.
@@ -64,4 +64,4 @@ For urgent containment, set `ADMIN_DISABLED=true` and deploy. Shared authorizati
 
 ## Ambiguous or failed storage operation
 
-Keep the administrator disabled until an uncached read of the authoritative private object establishes its lifecycle and revision. A consumed WebAuthn challenge can be replaced; do not delete a consume marker to replay it. If the state write committed but its response or mirror write failed, accept the private object as authoritative and reconcile the mirror. If the state write did not commit, request a fresh challenge and retry only from the state the server currently reports.
+Keep the administrator disabled until an uncached read of the `auth_state` row establishes its lifecycle and revision. A consumed WebAuthn challenge can be replaced; do not delete a row from `auth_consume_markers` to replay one. If the compare-and-swap committed but its response was lost, the row's revision is authoritative and no repair is needed. If it did not commit, request a fresh challenge and retry only from the state the server currently reports.

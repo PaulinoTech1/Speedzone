@@ -12,45 +12,97 @@ These steps require a Vercel Pro team, the final production domain, and an inter
 
 Initial passkey enrollment is deliberately unavailable on Preview deployments, random `*.vercel.app` deployments, temporary domains, and ordinary local development. The server permits it only when `VERCEL_ENV=production`, the configured origin is HTTPS, and that exact origin belongs to the configured RP ID. It never derives either value from `Host`, `X-Forwarded-Host`, or another request header.
 
-## 2. Global Config
+## 2. Authentication database
 
-Create and connect two Production Global Config stores:
+All server-side authentication state lives in the **`SEcure_Auth`** database in Neon project **`shy-sunset-14721124`**. It holds two tables:
 
-- `speedzone-inventory-production`
-- `speedzone-auth-production`
+| Table | Contents |
+| --- | --- |
+| `auth_state` | One row: lifecycle state, administrator user ID, session epoch, FIDO2 passkey metadata, recovery-code hashes, revoked session hashes, and the `revision` used for compare-and-swap. |
+| `auth_consume_markers` | One row per burned ceremony, step-up assertion, recovery code, or bootstrap token. The composite primary key is what makes a replay impossible. |
 
-Record each connection string and Config ID. The application stores inventory in `inventory_state_v1`. The `auth_state_v1` value is only a best-effort operational mirror of the authoritative private-Blob authentication record; it is never used to authorize a request after the private object exists.
+This database serves exactly one person. Two layers enforce that:
 
-Create a Vercel Access Token able to update the stores through the management REST API, then set these server-only Production variables:
+- **In the schema.** `auth_state` has a `CHECK (id = 1)` primary key, so a second administrator record cannot exist. `auth_state_single_administrator` additionally refuses any `ACTIVE` or `RECOVERY` record that does not name an administrator and hold at least one passkey and one recovery code, and caps the record at 20 passkeys and 10 recovery codes. Those are the same invariants the application validates, restated where direct SQL access cannot bypass them.
+- **In the grants.** Create a runtime role in the Neon console that owns nothing, then apply least-privilege grants with the command below. It receives `SELECT, INSERT, UPDATE, DELETE` on those two tables and no `CREATE` right anywhere, so a leaked `AUTH_DATABASE_URL` cannot reshape the schema, drop the constraints above, or add a table of its own. Keep a **separate**, more privileged role for migrations.
+
+The identity anchor is `ADMIN_ID`, a Vercel environment variable, not a database column: every session is validated against it, so database write access alone cannot introduce a second administrator identity. The runtime never issues DDL — if the schema is missing, every administrator request fails closed with `SERVICE_NOT_CONFIGURED` rather than creating tables from a request path.
+
+Set this server-only Production variable, marked Sensitive:
 
 ```text
-INVENTORY_GLOBAL_CONFIG
-AUTH_GLOBAL_CONFIG
-INVENTORY_GLOBAL_CONFIG_ID
-AUTH_GLOBAL_CONFIG_ID
-GLOBAL_CONFIG_TEAM_ID
-GLOBAL_CONFIG_API_TOKEN
+AUTH_DATABASE_URL
 ```
 
-The runtime token is broader than a store-only credential. Use the narrowest available team/account scope and rotate it. Global Config is non-transactional, so inventory concurrency and uniqueness remain best effort. Authentication does not rely on those semantics.
+The value must be a pooled Neon connection string ending in `/SEcure_Auth?sslmode=require`. The application refuses to start an authentication request when the URL names any other database, so a pasted `neondb` string fails loudly instead of silently splitting the record across two databases. Set `AUTH_DATABASE_NAME` only if the database is ever renamed.
+
+Use a separate Neon **branch** for Preview with its own role and connection string. Preview must never share the Production branch: enrollment, epochs, and revoked-session hashes are not test data.
+
+Apply the schema before the first deployment, from a trusted workstation or from CI with `AUTH_DATABASE_URL` supplied as a secret:
+
+```powershell
+npm.cmd run migrate:auth-db
+```
+
+Apply the least-privilege grants once the runtime role exists:
+
+```powershell
+npm.cmd run migrate:auth-db -- --grant-role speedzone_auth_app
+```
+
+The script is idempotent, so re-running it is always safe. It applies [db/001-auth-schema.sql](../db/001-auth-schema.sql) (and [db/002-auth-role.sql](../db/002-auth-role.sql) with `--grant-role`), sweeps expired one-time markers, and prints the lifecycle state, revision, and passkey count of the authentication record followed by **every role that can reach the authentication tables**. Anything in that list beyond the owner and the single runtime role is a finding. `npm.cmd run migrate:auth-db -- --check` reports the same summary without issuing DDL, grants, or deletes. Re-run it after any schema change and as a periodic maintenance sweep.
+
+Enable Neon point-in-time restore on this project. It is the only rollback available for the authentication record; there is no mirror and no second copy.
+
+### Legacy authentication cutover
+
+A deployment that already authenticated against the private Blob object `security/auth/state-v1.json`, or the older `auth_state_v1` Global Config value, is carried over automatically and exactly once:
+
+1. Record the current lifecycle state, revision, passkey count, and recovery-code count before deploying.
+2. Keep `BLOB_PRIVATE_READ_WRITE_TOKEN` (or `AUTH_GLOBAL_CONFIG`) connected during the cutover window and do not alter the legacy record.
+3. Deploy. On the first authenticated request, an empty `auth_state` table is seeded once from the legacy Blob object, or from the legacy Global Config mirror, or from a fresh `BOOTSTRAP_READY` record when neither exists. The insert is `ON CONFLICT DO NOTHING`, so competing first requests cannot both seed it.
+4. Run `npm.cmd run migrate:auth-db -- --check` and verify the reported lifecycle state, revision, and passkey count against step 1. Then confirm a real password-plus-passkey login.
+5. Only after that login succeeds, remove `AUTH_GLOBAL_CONFIG` and redeploy. Keep `BLOB_PRIVATE_READ_WRITE_TOKEN`: audit snapshots and upload staging still use that store.
+
+Once the `auth_state` row exists it is authoritative and both legacy sources are ignored. Never delete the row to force a reseed: a later absence can pull back stale legacy state or an empty record, and must be handled as a security incident with a reviewed point-in-time restore.
+
+`INVENTORY_GLOBAL_CONFIG` remains migration-only for inventory. Keep the legacy inventory connection temporarily if Production already contains `inventory_state_v1`; do not create a Global Config store for a fresh installation. The application never writes Global Config, so no management API token is needed.
 
 ## 3. Blob
 
-Create and connect two Blob stores:
+Connect these Production Blob stores:
 
-1. A private store for authoritative authentication state, one-time challenge markers, upload staging, and audit snapshots.
-2. A public store for immutable published vehicle photographs.
+1. The existing `speedzone-blbob` store for authoritative inventory state. Confirm in Vercel that its access mode is **Private** before deploying. A public store cannot protect drafts, VINs, sold/archived records, or other unpublished inventory data.
+2. A private store for upload staging and audit snapshots. Authentication no longer uses Blob; it lives in `SEcure_Auth`.
+3. A public store for immutable published vehicle photographs.
 
-Set server-only Production tokens:
+Connect `speedzone-blbob` with the dedicated environment-variable prefix `BLOB_INVENTORY`. Prefer Vercel's short-lived OIDC authentication: the application uses `BLOB_INVENTORY_STORE_ID` with the runtime-provided `VERCEL_OIDC_TOKEN` when both are available. A legacy/static connection may instead provide `BLOB_INVENTORY_READ_WRITE_TOKEN`.
+
+If the existing store is connected with Vercel Blob's default `BLOB` prefix, the application accepts `BLOB_STORE_ID`/runtime OIDC or `BLOB_READ_WRITE_TOKEN` as a fallback. Dedicated `BLOB_INVENTORY_*` credentials take precedence, so do not configure the dedicated and default prefixes to different inventory stores. Keep the other store credentials separate:
 
 ```text
 BLOB_PRIVATE_READ_WRITE_TOKEN
 BLOB_PHOTO_READ_WRITE_TOKEN
 ```
 
-Do not prefix these names with `NEXT_PUBLIC_`. The authoritative administrator record is the deterministic private object `security/auth/state-v1.json`. Reads bypass cache. Mutations validate its revision and use its ETag with `ifMatch`; a competing writer must re-read, while a stale expected revision fails. The committed private object remains authoritative if the later Global Config mirror write fails.
+Never prefix a Blob store ID, read-write token, or `VERCEL_OIDC_TOKEN` with `NEXT_PUBLIC_`; none belongs in browser code. Prefer OIDC over a long-lived inventory token where the connected Vercel project supports it. Use static tokens only as a compatibility fallback, store them as Sensitive Environment Variables, and rotate them after suspected exposure.
 
-On first installation, a missing private object is created once from the auth mirror or the empty versioned schema. Verify any existing mirror before first deployment. Never manually delete the private object: deletion can reseed from a stale mirror and must be treated as a security incident.
+The authoritative inventory record is the deterministic private object `inventory/state-v1.json`. Reads use `useCache: false`. Mutations validate its schema revision, read its ETag, and replace the complete object with `ifMatch`; a competing writer is re-read and retried within a fixed bound, while a stale expected revision fails. Never manually expose, make public, or delete this object.
+
+The authoritative administrator record is the `auth_state` row in `SEcure_Auth`, not a Blob object. `security/auth/state-v1.json` is read once during the cutover described in section 2 and never written again; leave it in place as evidence until the cutover is verified, then archive it offline.
+
+### Legacy inventory migration
+
+For a deployment that already stores inventory in Global Config:
+
+1. Before deploying this version, record the legacy `inventory_state_v1` schema version, revision, total vehicle count, and counts by status. Keep `INVENTORY_GLOBAL_CONFIG` connected and do not alter the legacy record during the migration window.
+2. Connect `speedzone-blbob` to Production under the `BLOB_INVENTORY` prefix (or the supported default `BLOB` fallback) and confirm that the store is Private.
+3. Confirm that `inventory/state-v1.json` does not already contain unrelated or stale data, then deploy. When that object is absent, the first inventory read automatically reads `inventory_state_v1` from the legacy connection and creates the private Blob object once with overwrite disabled. Competing first reads cannot replace the winner.
+4. Inspect the new private object through Vercel's authenticated control plane. Verify its schema version, revision, total vehicle count, status counts, and representative records against the values recorded in step 1. Do not expose the object through a public URL or copy its contents into logs or tickets.
+5. Perform one controlled inventory edit, confirm the Blob revision increments, and verify the public published count and administrator count remain correct.
+6. Only after those checks pass, remove `INVENTORY_GLOBAL_CONFIG` from the Production environment, redeploy, and repeat the count/revision checks.
+
+If `inventory/state-v1.json` already exists, it is authoritative and the legacy Global Config value is ignored. Never delete the Blob object to force migration to run again: a later absence can reseed stale legacy data or an empty state and must be handled as a data-loss incident with a reviewed restore.
 
 ## 4. Provision the administrator offline
 
@@ -110,9 +162,10 @@ npm.cmd test
 npm.cmd run build
 npm.cmd run test:production-security
 npm.cmd run test:e2e
+npm.cmd run migrate:auth-db -- --check
 ```
 
-Deploy only after every check passes. Confirm public routes, `robots.txt`, `sitemap.xml`, CSP/security headers, and `no-store`/`noindex` on administrator routes. The automated browser harness has an explicit non-Vercel, loopback-only enrollment exception; do not set its test flag in a manual or deployed environment.
+Deploy only after every check passes and `migrate:auth-db --check` reports the expected `SEcure_Auth` database, schema, and authentication record. Confirm public routes, `robots.txt`, `sitemap.xml`, CSP/security headers, and `no-store`/`noindex` on administrator routes. The automated browser harness has an explicit non-Vercel, loopback-only enrollment exception; do not set its test flag in a manual or deployed environment.
 
 ## 6. One-time enrollment
 
@@ -161,4 +214,4 @@ Both routes are public and unauthenticated by design; they are protected only by
 
 The trade-in form's "Decode VIN" button calls `GET /api/vin-decode`, which the server proxies to the free, public [NHTSA vPIC API](https://vpic.nhtsa.dot.gov/api/) (no API key, no environment variable, no cost). The browser never calls NHTSA directly, so the site's Content-Security-Policy `connect-src` does not need to allow a third-party host. If NHTSA is unreachable or a VIN can't be decoded, the form degrades to manual entry rather than blocking submission.
 
-Official references: [Vercel environment variables](https://vercel.com/docs/environment-variables), [deployment environments](https://vercel.com/docs/deployments/environments), [Global Config SDK](https://vercel.com/docs/global-config/global-config-sdk), [Global Config REST writes](https://vercel.com/docs/global-config/vercel-api), and [Blob conditional writes](https://vercel.com/docs/vercel-blob#conditional-writes).
+Official references: [Vercel environment variables](https://vercel.com/docs/environment-variables), [deployment environments](https://vercel.com/docs/deployments/environments), [Neon serverless driver](https://neon.com/docs/serverless/serverless-driver), [Neon connection strings](https://neon.com/docs/connect/connect-from-any-app), [Neon branching](https://neon.com/docs/introduction/branching), [Neon point-in-time restore](https://neon.com/docs/introduction/point-in-time-restore), [private Blob storage](https://vercel.com/docs/vercel-blob/private-storage), [Blob SDK and conditional writes](https://vercel.com/docs/vercel-blob/using-blob-sdk), and [consistent private reads](https://vercel.com/changelog/vercel-blob-now-supports-consistent-reads-on-private-storage).

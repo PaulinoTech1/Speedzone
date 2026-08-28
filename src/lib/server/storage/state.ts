@@ -16,35 +16,44 @@ import {
   emptyInventoryState,
   inventoryStateSchema,
   type InventoryState,
-  type VehicleRecord,
 } from "@/lib/domain/vehicle";
 import {
   globalConfigSettings,
   adminConfig,
+  inventoryBlobCredentials,
   localStatePath,
   privateBlobToken,
   tokenConfig,
   webAuthnConfig,
   type GlobalConfigKind,
+  type InventoryBlobCredentials,
 } from "@/lib/server/env";
+import { StateConfigurationError, StateConflictError } from "@/lib/server/storage/errors";
+import {
+  authDatabase,
+  authDatabaseConfigured,
+  translateAuthDatabaseError,
+  type AuthSql,
+} from "@/lib/server/storage/neon";
+
+export { StateConfigurationError, StateConflictError };
 
 const stateKeys = {
   auth: "auth_state_v1",
   inventory: "inventory_state_v1",
 } as const;
 
-const authStateBlobPath = "security/auth/state-v1.json";
-const authStateMaximumBytes = 256 * 1024;
+// Read-only migration sources for the one-time move of authentication into the
+// SEcure_Auth Neon database. Nothing writes back to either of them.
+const legacyAuthStateBlobPath = "security/auth/state-v1.json";
+const legacyAuthStateMaximumBytes = 256 * 1024;
+
 const authStateMutationAttempts = 5;
-const authMirrorAttempts = 3;
+const inventoryStateBlobPath = "inventory/state-v1.json";
+const inventoryStateMaximumBytes = 32 * 1024 * 1024;
+const inventoryStateMutationAttempts = 5;
 
 type LocalState = { auth: AuthState; inventory: InventoryState };
-type MutationOperation =
-  | { operation: "upsert" | "create" | "update"; key: string; value: unknown }
-  | { operation: "delete"; key: string };
-
-export class StateConflictError extends Error {}
-export class StateConfigurationError extends Error {}
 
 function validatedAuthState(value: unknown): AuthState {
   try {
@@ -54,10 +63,18 @@ function validatedAuthState(value: unknown): AuthState {
   }
 }
 
-type AuthBlobSnapshot = {
-  state: AuthState;
+type InventoryBlobSnapshot = {
+  state: InventoryState;
   etag: string;
 };
+
+function validatedInventoryState(value: unknown): InventoryState {
+  try {
+    return inventoryStateSchema.parse(value);
+  } catch {
+    throw new StateConfigurationError("Inventory record is malformed");
+  }
+}
 
 function emptyLocalState(): LocalState {
   return { auth: emptyAuthState(), inventory: emptyInventoryState() };
@@ -91,27 +108,29 @@ function hasGlobalConfig(kind: GlobalConfigKind): boolean {
   return Boolean(settings.connectionString);
 }
 
-function assertAuthMirrorConfigured(forWrite: boolean): void {
-  if (process.env.NODE_ENV !== "production") return;
-  const settings = globalConfigSettings("auth");
-  if (!settings.connectionString) {
-    throw new StateConfigurationError("Auth Global Config mirror is not configured");
+/**
+ * Authentication is authoritative in Neon. Production must have the connection
+ * configured or every authorization read fails closed; local development still
+ * falls back to the on-disk record so `npm run dev` needs no database.
+ */
+function authDatabaseIsAuthoritative(): boolean {
+  if (authDatabaseConfigured()) return true;
+  if (process.env.NODE_ENV === "production") {
+    throw new StateConfigurationError("Authentication database is not configured");
   }
-  if (forWrite && (!settings.configId || !settings.apiToken)) {
-    throw new StateConfigurationError("Auth Global Config mirror write settings are incomplete");
-  }
+  return false;
 }
 
-function authoritativeAuthBlobToken(): string | undefined {
-  const token = privateBlobToken();
-  const requiresBlob = process.env.NODE_ENV === "production" || hasGlobalConfig("auth");
+function authoritativeInventoryBlobCredentials(): InventoryBlobCredentials | undefined {
+  const credentials = inventoryBlobCredentials();
+  const requiresBlob = process.env.NODE_ENV === "production" || hasGlobalConfig("inventory");
   if (!requiresBlob) return undefined;
-  if (!token) {
+  if (!credentials) {
     throw new StateConfigurationError(
-      "Private Blob storage is required for authoritative authentication state",
+      "Private Blob storage is required for authoritative inventory state",
     );
   }
-  return token;
+  return credentials;
 }
 
 async function readGlobal<T>(kind: GlobalConfigKind, fallback: T): Promise<T> {
@@ -121,51 +140,151 @@ async function readGlobal<T>(kind: GlobalConfigKind, fallback: T): Promise<T> {
   return (await client.get<T>(stateKeys[kind], { consistentRead: true })) ?? fallback;
 }
 
-async function patchGlobal(kind: GlobalConfigKind, items: MutationOperation[]): Promise<void> {
-  const settings = globalConfigSettings(kind);
-  if (!settings.configId || !settings.apiToken) {
-    throw new StateConfigurationError(`${kind} Global Config write settings are incomplete`);
-  }
-  const url = new URL(`https://api.vercel.com/v1/global-config/${encodeURIComponent(settings.configId)}/items`);
-  if (settings.teamId) url.searchParams.set("teamId", settings.teamId);
-  const response = await fetch(url, {
-    method: "PATCH",
-    headers: {
-      authorization: `Bearer ${settings.apiToken}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ items }),
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Global Config ${kind} update failed with status ${response.status}`);
+async function runAuthQuery<T>(run: (sql: AuthSql) => Promise<T>): Promise<T> {
+  try {
+    return await run(authDatabase());
+  } catch (error) {
+    throw translateAuthDatabaseError(error);
   }
 }
 
-async function readAuthBlob(token: string): Promise<AuthBlobSnapshot | null> {
-  const result = await get(authStateBlobPath, {
+async function selectAuthState(): Promise<AuthState | null> {
+  const rows = (await runAuthQuery(
+    (sql) => sql`SELECT state::text AS state FROM auth_state WHERE id = 1`,
+  )) as Array<{ state: string }>;
+  const row = rows[0];
+  if (!row) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.state) as unknown;
+  } catch {
+    throw new StateConfigurationError("Authentication record is malformed");
+  }
+  return validatedAuthState(parsed);
+}
+
+/** Create the singleton row. Returns false when a concurrent writer won the race. */
+async function insertAuthState(state: AuthState): Promise<boolean> {
+  const rows = (await runAuthQuery(
+    (sql) => sql`
+      INSERT INTO auth_state (id, revision, state)
+      VALUES (1, ${state.revision}, ${JSON.stringify(state)}::jsonb)
+      ON CONFLICT (id) DO NOTHING
+      RETURNING 1 AS inserted
+    `,
+  )) as unknown[];
+  return rows.length === 1;
+}
+
+/**
+ * The compare-and-swap that serialises authentication mutations across every
+ * serverless instance. One statement is its own transaction, so a competing
+ * writer either loses the revision match or is rejected; it cannot interleave.
+ */
+async function compareAndSwapAuthState(expectedRevision: number, next: AuthState): Promise<boolean> {
+  const rows = (await runAuthQuery(
+    (sql) => sql`
+      UPDATE auth_state
+         SET revision = ${next.revision},
+             state = ${JSON.stringify(next)}::jsonb,
+             updated_at = now()
+       WHERE id = 1 AND revision = ${expectedRevision}
+      RETURNING 1 AS updated
+    `,
+  )) as unknown[];
+  return rows.length === 1;
+}
+
+async function readLegacyAuthBlob(token: string): Promise<AuthState | null> {
+  const result = await get(legacyAuthStateBlobPath, {
     access: "private",
     token,
     useCache: false,
   });
   if (!result) return null;
   if (result.statusCode !== 200 || !result.stream) {
-    throw new StateConfigurationError("Authoritative authentication state could not be read");
+    throw new StateConfigurationError("Legacy authentication state could not be read");
   }
-  if (result.blob.size > authStateMaximumBytes) {
-    throw new StateConfigurationError("Authoritative authentication state exceeds its size limit");
+  if (result.blob.size > legacyAuthStateMaximumBytes) {
+    throw new StateConfigurationError("Legacy authentication state exceeds its size limit");
   }
   const body = await new Response(result.stream).text();
-  return {
-    state: validatedAuthState(JSON.parse(body) as unknown),
-    etag: result.blob.etag,
-  };
+  return validatedAuthState(JSON.parse(body) as unknown);
 }
 
-async function createAuthBlob(token: string, state: AuthState): Promise<AuthBlobSnapshot> {
-  const result = await put(authStateBlobPath, `${JSON.stringify(state)}\n`, {
+/**
+ * Seed value for the first SEcure_Auth row. An existing deployment is carried
+ * over from its former private-Blob object, or the older Global Config mirror,
+ * so enrolled passkeys and the session epoch survive the cutover.
+ */
+async function legacyAuthSeed(): Promise<AuthState> {
+  const token = privateBlobToken();
+  if (token) {
+    const legacy = await readLegacyAuthBlob(token);
+    if (legacy) return legacy;
+  }
+  if (hasGlobalConfig("auth")) {
+    return validatedAuthState(await readGlobal("auth", emptyAuthState()));
+  }
+  return emptyAuthState();
+}
+
+async function readAuthoritativeAuthState(): Promise<AuthState> {
+  for (let attempt = 0; attempt < authStateMutationAttempts; attempt += 1) {
+    const existing = await selectAuthState();
+    if (existing) return existing;
+    // First cutover only. Once the singleton row exists, every authentication
+    // read and write stays inside SEcure_Auth.
+    await insertAuthState(await legacyAuthSeed());
+  }
+  throw new StateConflictError("Authentication state initialization conflicted; retry the operation");
+}
+
+function serializedInventoryState(state: InventoryState): string {
+  const body = `${JSON.stringify(state)}\n`;
+  if (Buffer.byteLength(body, "utf8") > inventoryStateMaximumBytes) {
+    throw new StateConfigurationError("Inventory record exceeds its size limit");
+  }
+  return body;
+}
+
+async function readInventoryBlob(
+  credentials: InventoryBlobCredentials,
+): Promise<InventoryBlobSnapshot | null> {
+  const result = await get(inventoryStateBlobPath, {
     access: "private",
-    token,
+    ...credentials,
+    useCache: false,
+  });
+  if (!result) return null;
+  if (result.statusCode !== 200 || !result.stream) {
+    throw new StateConfigurationError("Authoritative inventory state could not be read");
+  }
+  if (result.blob.size > inventoryStateMaximumBytes) {
+    throw new StateConfigurationError("Authoritative inventory state exceeds its size limit");
+  }
+  if (result.blob.contentType.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    throw new StateConfigurationError("Authoritative inventory state has an invalid content type");
+  }
+  try {
+    const body = await new Response(result.stream).text();
+    return {
+      state: validatedInventoryState(JSON.parse(body) as unknown),
+      etag: result.blob.etag,
+    };
+  } catch (error) {
+    if (error instanceof StateConfigurationError) throw error;
+    throw new StateConfigurationError("Inventory record is malformed");
+  }
+}
+
+async function createInventoryBlob(
+  credentials: InventoryBlobCredentials,
+  state: InventoryState,
+): Promise<InventoryBlobSnapshot> {
+  const result = await put(inventoryStateBlobPath, serializedInventoryState(state), {
+    access: "private",
+    ...credentials,
     addRandomSuffix: false,
     allowOverwrite: false,
     contentType: "application/json",
@@ -173,14 +292,14 @@ async function createAuthBlob(token: string, state: AuthState): Promise<AuthBlob
   return { state, etag: result.etag };
 }
 
-async function replaceAuthBlob(
-  token: string,
+async function replaceInventoryBlob(
+  credentials: InventoryBlobCredentials,
   expectedEtag: string,
-  state: AuthState,
-): Promise<AuthBlobSnapshot> {
-  const result = await put(authStateBlobPath, `${JSON.stringify(state)}\n`, {
+  state: InventoryState,
+): Promise<InventoryBlobSnapshot> {
+  const result = await put(inventoryStateBlobPath, serializedInventoryState(state), {
     access: "private",
-    token,
+    ...credentials,
     addRandomSuffix: false,
     allowOverwrite: true,
     ifMatch: expectedEtag,
@@ -189,25 +308,26 @@ async function replaceAuthBlob(
   return { state, etag: result.etag };
 }
 
-async function readAuthoritativeAuthState(token: string): Promise<AuthBlobSnapshot> {
-  for (let attempt = 0; attempt < authStateMutationAttempts; attempt += 1) {
-    const existing = await readAuthBlob(token);
+async function readAuthoritativeInventoryState(
+  credentials: InventoryBlobCredentials,
+): Promise<InventoryBlobSnapshot> {
+  for (let attempt = 0; attempt < inventoryStateMutationAttempts; attempt += 1) {
+    const existing = await readInventoryBlob(credentials);
     if (existing) return existing;
 
-    // This is both first-install initialization and the migration path from the
-    // former Global-Config-authoritative implementation. Once this immutable
-    // pathname exists, every authentication read comes from private Blob.
-    const seed = hasGlobalConfig("auth")
-      ? validatedAuthState(await readGlobal("auth", emptyAuthState()))
-      : emptyAuthState();
+    // This seeds the new authoritative object from the former Global Config
+    // record once. After creation, every inventory read comes from private Blob.
+    const seed = hasGlobalConfig("inventory")
+      ? validatedInventoryState(await readGlobal("inventory", emptyInventoryState()))
+      : emptyInventoryState();
     try {
-      return await createAuthBlob(token, seed);
+      return await createInventoryBlob(credentials, seed);
     } catch (error) {
       if (error instanceof BlobPreconditionFailedError) continue;
       throw error;
     }
   }
-  throw new StateConflictError("Authentication state initialization conflicted; retry the operation");
+  throw new StateConflictError("Inventory state initialization conflicted; retry the operation");
 }
 
 function validateProtectedAuthProgression(current: AuthState, next: AuthState): void {
@@ -230,59 +350,6 @@ function validateProtectedAuthProgression(current: AuthState, next: AuthState): 
       throw new StateConflictError("Authenticator counters cannot move backwards");
     }
   }
-}
-
-function logAuthMirrorFailure(error: unknown): void {
-  console.error(
-    JSON.stringify({
-      type: "speedzone.storage",
-      timestamp: new Date().toISOString(),
-      event: "auth_state_mirror",
-      outcome: "failure",
-      reason: error instanceof Error ? error.name : "unknown",
-    }),
-  );
-}
-
-async function mirrorCurrentAuthState(token: string): Promise<void> {
-  if (!hasGlobalConfig("auth")) return;
-  for (let attempt = 0; attempt < authMirrorAttempts; attempt += 1) {
-    const before = await readAuthBlob(token);
-    if (!before) throw new StateConfigurationError("Authoritative authentication state is missing");
-    await patchGlobal("auth", [{ operation: "upsert", key: stateKeys.auth, value: before.state }]);
-    const after = await readAuthBlob(token);
-    if (after?.state.revision === before.state.revision) return;
-  }
-  throw new StateConflictError("Authentication mirror could not catch up with authoritative state");
-}
-
-function indexKey(kind: "stock" | "vin" | "slug", value: string): string {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-  return `${kind}_${normalized}`.slice(0, 256);
-}
-
-function vehicleIndexes(vehicle: VehicleRecord): Map<string, string> {
-  return new Map([
-    [indexKey("stock", vehicle.stockNumber), vehicle.id],
-    [indexKey("vin", vehicle.vin), vehicle.id],
-    [indexKey("slug", vehicle.slug), vehicle.id],
-  ]);
-}
-
-function inventoryOperations(previous: InventoryState, next: InventoryState): MutationOperation[] {
-  const before = new Map<string, string>();
-  const after = new Map<string, string>();
-  for (const vehicle of previous.vehicles) for (const entry of vehicleIndexes(vehicle)) before.set(...entry);
-  for (const vehicle of next.vehicles) for (const entry of vehicleIndexes(vehicle)) after.set(...entry);
-
-  const operations: MutationOperation[] = [
-    { operation: "upsert", key: stateKeys.inventory, value: next },
-  ];
-  for (const key of before.keys()) if (!after.has(key)) operations.push({ operation: "delete", key });
-  for (const [key, id] of after) {
-    if (!before.has(key)) operations.push({ operation: "create", key, value: id });
-  }
-  return operations;
 }
 
 type LockMap = Map<string, Promise<void>>;
@@ -314,14 +381,7 @@ export async function readAuthState(): Promise<AuthState> {
   } catch {
     throw new StateConfigurationError("Authentication environment is not configured");
   }
-  const blobToken = authoritativeAuthBlobToken();
-  let state: AuthState;
-  if (blobToken) {
-    assertAuthMirrorConfigured(false);
-    state = (await readAuthoritativeAuthState(blobToken)).state;
-  } else {
-    state = (await readLocal()).auth;
-  }
+  const state = authDatabaseIsAuthoritative() ? await readAuthoritativeAuthState() : (await readLocal()).auth;
   if (state.state === "UNCONFIGURED") {
     throw new StateConfigurationError("Authentication record is not configured");
   }
@@ -329,12 +389,8 @@ export async function readAuthState(): Promise<AuthState> {
 }
 
 export async function readInventoryState(): Promise<InventoryState> {
-  if (hasGlobalConfig("inventory")) {
-    return inventoryStateSchema.parse(await readGlobal("inventory", emptyInventoryState()));
-  }
-  if (process.env.NODE_ENV === "production") {
-    throw new StateConfigurationError("Inventory Global Config is not configured");
-  }
+  const credentials = authoritativeInventoryBlobCredentials();
+  if (credentials) return (await readAuthoritativeInventoryState(credentials)).state;
   return (await readLocal()).inventory;
 }
 
@@ -343,8 +399,7 @@ export async function mutateAuthState(
   expectedRevision?: number,
 ): Promise<AuthState> {
   return withLock("auth", async () => {
-    const blobToken = authoritativeAuthBlobToken();
-    if (!blobToken) {
+    if (!authDatabaseIsAuthoritative()) {
       const local = await readLocal();
       const current = local.auth;
       if (expectedRevision !== undefined && current.revision !== expectedRevision) {
@@ -359,36 +414,17 @@ export async function mutateAuthState(
       return next;
     }
 
-    assertAuthMirrorConfigured(true);
     for (let attempt = 0; attempt < authStateMutationAttempts; attempt += 1) {
-      const current = await readAuthoritativeAuthState(blobToken);
-      if (expectedRevision !== undefined && current.state.revision !== expectedRevision) {
+      const current = await readAuthoritativeAuthState();
+      if (expectedRevision !== undefined && current.revision !== expectedRevision) {
         throw new StateConflictError("Authentication state changed; retry the operation");
       }
       const next = authStateSchema.parse({
-        ...mutate(structuredClone(current.state)),
-        revision: current.state.revision + 1,
+        ...mutate(structuredClone(current)),
+        revision: current.revision + 1,
       });
-      validateProtectedAuthProgression(current.state, next);
-
-      try {
-        await replaceAuthBlob(blobToken, current.etag, next);
-      } catch (error) {
-        if (error instanceof BlobPreconditionFailedError) {
-          if (attempt + 1 < authStateMutationAttempts) continue;
-          throw new StateConflictError("Authentication state remained busy; retry the operation");
-        }
-        throw error;
-      }
-
-      // The private Blob commit is authoritative. A mirror outage must not turn
-      // a completed one-time security operation into an ambiguous client retry.
-      try {
-        await mirrorCurrentAuthState(blobToken);
-      } catch (error) {
-        logAuthMirrorFailure(error);
-      }
-      return next;
+      validateProtectedAuthProgression(current, next);
+      if (await compareAndSwapAuthState(current.revision, next)) return next;
     }
     throw new StateConflictError("Authentication state remained busy; retry the operation");
   });
@@ -399,23 +435,41 @@ export async function mutateInventoryState(
   expectedRevision?: number,
 ): Promise<InventoryState> {
   return withLock("inventory", async () => {
-    const current = await readInventoryState();
-    if (expectedRevision !== undefined && current.revision !== expectedRevision) {
-      throw new StateConflictError("Inventory changed; reload before saving again");
-    }
-    const next = inventoryStateSchema.parse({
-      ...mutate(structuredClone(current)),
-      revision: current.revision + 1,
-    });
-    if (hasGlobalConfig("inventory")) {
-      await patchGlobal("inventory", inventoryOperations(current, next));
-    } else {
-      if (process.env.NODE_ENV === "production") {
-        throw new StateConfigurationError("Inventory Global Config is not configured");
-      }
+    const credentials = authoritativeInventoryBlobCredentials();
+    if (!credentials) {
       const local = await readLocal();
+      const current = local.inventory;
+      if (expectedRevision !== undefined && current.revision !== expectedRevision) {
+        throw new StateConflictError("Inventory changed; reload before saving again");
+      }
+      const next = inventoryStateSchema.parse({
+        ...mutate(structuredClone(current)),
+        revision: current.revision + 1,
+      });
       await writeLocal({ ...local, inventory: next });
+      return next;
     }
-    return next;
+
+    for (let attempt = 0; attempt < inventoryStateMutationAttempts; attempt += 1) {
+      const current = await readAuthoritativeInventoryState(credentials);
+      if (expectedRevision !== undefined && current.state.revision !== expectedRevision) {
+        throw new StateConflictError("Inventory changed; reload before saving again");
+      }
+      const next = inventoryStateSchema.parse({
+        ...mutate(structuredClone(current.state)),
+        revision: current.state.revision + 1,
+      });
+      try {
+        await replaceInventoryBlob(credentials, current.etag, next);
+        return next;
+      } catch (error) {
+        if (error instanceof BlobPreconditionFailedError) {
+          if (attempt + 1 < inventoryStateMutationAttempts) continue;
+          throw new StateConflictError("Inventory state remained busy; retry the operation");
+        }
+        throw error;
+      }
+    }
+    throw new StateConflictError("Inventory state remained busy; retry the operation");
   });
 }

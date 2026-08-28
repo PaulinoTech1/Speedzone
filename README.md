@@ -1,6 +1,6 @@
 # SpeedZone Motorsports
 
-Mobile-first public dealership site plus a security-focused vehicle inventory portal for Vercel Pro. The application uses Next.js App Router, TypeScript, Vercel Functions, Global Config, and Blob. It does not use a third-party database or authentication provider.
+Mobile-first public dealership site plus a security-focused vehicle inventory portal for Vercel Pro. The application uses Next.js App Router, TypeScript, Vercel Functions, the `SEcure_Auth` Neon Postgres database for all server-side authentication state, and private and public Blob storage for inventory, audit, and photographs. It uses no third-party authentication provider.
 
 ## Included
 
@@ -11,7 +11,7 @@ Mobile-first public dealership site plus a security-focused vehicle inventory po
 - Draft, published, pending, sold, and archived inventory states
 - Browser-side photo resize/orientation handling, metadata-stripping WebP conversion, private staging, and server byte validation
 - Optional encrypted IndexedDB drafts using a separate local vault passphrase
-- ETag-protected authoritative authentication state, append-only vehicle audit snapshots, and one-time security markers in private Blob
+- ETag-protected authoritative authentication and inventory state, append-only vehicle audit snapshots, and one-time security markers in private Blob
 - Strict Origin/CSRF controls, host-only cookies, nonce CSP, structured security events, and layered rate limiting
 
 ## Local preview
@@ -42,9 +42,11 @@ keeps its state under `.data/e2e`.
 
 ## Production setup
 
-Run `npm.cmd run provision-admin` on a trusted interactive workstation, then follow [docs/SETUP.md](docs/SETUP.md) for exact Global Config, Blob, Vercel environment, bootstrap, deployment, and Argon2 benchmark steps. Recovery procedures are in [docs/RECOVERY.md](docs/RECOVERY.md), and the proposed logging-first WAF rollout is in [docs/WAF.md](docs/WAF.md).
+Run `npm.cmd run provision-admin` on a trusted interactive workstation, apply the authentication schema with `npm.cmd run migrate:auth-db`, then follow [docs/SETUP.md](docs/SETUP.md) for exact `SEcure_Auth`, Blob, Vercel environment, legacy-inventory migration, bootstrap, deployment, and Argon2 benchmark steps. Recovery procedures are in [docs/RECOVERY.md](docs/RECOVERY.md), and the proposed logging-first WAF rollout is in [docs/WAF.md](docs/WAF.md).
 
-Read [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md) before production use. Authentication uses uncached private-Blob reads and conditional ETag writes; its Global Config value is only an operational mirror. Inventory remains in replicated, non-transactional Global Config, so concurrent updates and stock/VIN/slug uniqueness retain the documented best-effort limits.
+Read [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md) before production use. Authentication reads the single `auth_state` row in `SEcure_Auth` uncached and commits with a `revision` compare-and-swap. Inventory uses uncached reads from a deterministic private-Blob object and conditional ETag writes. Inventory mutations replace one versioned JSON object, so competing writers cannot silently overwrite a newer revision, but each read and write processes the complete inventory and callers must handle bounded conflict retries.
+
+The intended inventory store is the existing Vercel Blob store named `speedzone-blbob`. Its access mode must be confirmed as **Private** before deployment; public Blob is appropriate only for the published vehicle photographs.
 
 ## Deployment status
 

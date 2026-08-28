@@ -222,14 +222,65 @@ export function bootstrapEnrollmentRuntimePermitted(): boolean {
 
 export type GlobalConfigKind = "auth" | "inventory";
 
+/**
+ * Read-only migration sources. Authentication now lives in SEcure_Auth and
+ * inventory in private Blob, so the application never writes Global Config and
+ * needs no management API token for it.
+ */
 export function globalConfigSettings(kind: GlobalConfigKind) {
   const prefix = kind === "auth" ? "AUTH" : "INVENTORY";
   return {
     connectionString: optional(`${prefix}_GLOBAL_CONFIG`),
-    configId: optional(`${prefix}_GLOBAL_CONFIG_ID`),
-    teamId: optional("GLOBAL_CONFIG_TEAM_ID"),
-    apiToken: optional("GLOBAL_CONFIG_API_TOKEN"),
   };
+}
+
+/**
+ * Server-side authentication lives in the dedicated `SEcure_Auth` Neon database
+ * (project `shy-sunset-14721124`), never in the inventory or photo stores. The
+ * database name is verified here so a copy-pasted connection string cannot
+ * silently point administrator credentials at a different database.
+ */
+export const authDatabaseDefaults = {
+  name: "SEcure_Auth",
+  projectId: "shy-sunset-14721124",
+} as const;
+
+export type AuthDatabaseSettings = Readonly<{
+  connectionString: string;
+  host: string;
+  database: string;
+}>;
+
+export function authDatabaseSettings(): AuthDatabaseSettings | undefined {
+  const raw = optional("AUTH_DATABASE_URL") ?? optional("DATABASE_URL");
+  if (!raw) return undefined;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error("AUTH_DATABASE_URL must be a PostgreSQL connection URL");
+  }
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
+    throw new Error("AUTH_DATABASE_URL must use the postgres:// or postgresql:// scheme");
+  }
+  if (!parsed.hostname) {
+    throw new Error("AUTH_DATABASE_URL must include a database host");
+  }
+  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+  if (!database) {
+    throw new Error("AUTH_DATABASE_URL must name a database");
+  }
+  const expected = optional("AUTH_DATABASE_NAME") ?? authDatabaseDefaults.name;
+  if (database !== expected) {
+    throw new Error(
+      `AUTH_DATABASE_URL points at "${database}" but authentication must use "${expected}"`,
+    );
+  }
+  if (process.env.NODE_ENV === "production" && parsed.searchParams.get("sslmode") !== "require") {
+    throw new Error("AUTH_DATABASE_URL must request sslmode=require in production");
+  }
+  return { connectionString: raw, host: parsed.hostname, database };
 }
 
 // Shared by every public lead form (test drive, sell/trade-in) that emails a
@@ -256,6 +307,35 @@ export function privateBlobToken(): string | undefined {
 
 export function photoBlobToken(): string | undefined {
   return optional("BLOB_PHOTO_READ_WRITE_TOKEN");
+}
+
+export type InventoryBlobCredentials = Readonly<{
+  token?: string;
+  oidcToken?: string;
+  storeId?: string;
+}>;
+
+/**
+ * The inventory store can use a dedicated Vercel connection prefix
+ * (`BLOB_INVENTORY`) or Vercel Blob's default `BLOB` prefix. Prefer OIDC
+ * whenever a store ID and runtime OIDC token are both available; the static
+ * read-write token remains supported for existing Blob connections.
+ */
+export function inventoryBlobCredentials(): InventoryBlobCredentials | undefined {
+  const oidcToken = optional("VERCEL_OIDC_TOKEN");
+  const dedicatedStoreId = optional("BLOB_INVENTORY_STORE_ID");
+  const dedicatedToken = optional("BLOB_INVENTORY_READ_WRITE_TOKEN");
+
+  if (dedicatedStoreId && oidcToken) return { storeId: dedicatedStoreId, oidcToken };
+  if (dedicatedToken) return { token: dedicatedToken };
+  if (dedicatedStoreId) return { storeId: dedicatedStoreId };
+
+  const storeId = optional("BLOB_STORE_ID");
+  const token = optional("BLOB_READ_WRITE_TOKEN");
+  if (storeId && oidcToken) return { storeId, oidcToken };
+  if (token) return { token };
+  if (storeId) return { storeId };
+  return undefined;
 }
 
 export function encryptedDraftsEnabled(): boolean {
