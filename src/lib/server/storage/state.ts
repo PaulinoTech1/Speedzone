@@ -3,7 +3,7 @@ import "server-only";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { BlobPreconditionFailedError, get, put } from "@vercel/blob";
+import { get } from "@vercel/blob";
 import { createClient } from "@vercel/global-config";
 
 import {
@@ -13,20 +13,12 @@ import {
   type AuthState,
 } from "@/lib/domain/auth";
 import {
-  emptyInventoryState,
-  inventoryStateSchema,
-  type InventoryState,
-} from "@/lib/domain/vehicle";
-import {
-  globalConfigSettings,
+  authGlobalConfigSettings,
   adminConfig,
-  inventoryBlobCredentials,
   localStatePath,
   privateBlobToken,
   tokenConfig,
   webAuthnConfig,
-  type GlobalConfigKind,
-  type InventoryBlobCredentials,
 } from "@/lib/server/env";
 import { StateConfigurationError, StateConflictError } from "@/lib/server/storage/errors";
 import {
@@ -38,10 +30,7 @@ import {
 
 export { StateConfigurationError, StateConflictError };
 
-const stateKeys = {
-  auth: "auth_state_v1",
-  inventory: "inventory_state_v1",
-} as const;
+const authStateGlobalConfigKey = "auth_state_v1";
 
 // Read-only migration sources for the one-time move of authentication into the
 // SEcure_Auth Neon database. Nothing writes back to either of them.
@@ -49,11 +38,8 @@ const legacyAuthStateBlobPath = "security/auth/state-v1.json";
 const legacyAuthStateMaximumBytes = 256 * 1024;
 
 const authStateMutationAttempts = 5;
-const inventoryStateBlobPath = "inventory/state-v1.json";
-const inventoryStateMaximumBytes = 32 * 1024 * 1024;
-const inventoryStateMutationAttempts = 5;
 
-type LocalState = { auth: AuthState; inventory: InventoryState };
+type LocalState = { auth: AuthState };
 
 function validatedAuthState(value: unknown): AuthState {
   try {
@@ -63,21 +49,8 @@ function validatedAuthState(value: unknown): AuthState {
   }
 }
 
-type InventoryBlobSnapshot = {
-  state: InventoryState;
-  etag: string;
-};
-
-function validatedInventoryState(value: unknown): InventoryState {
-  try {
-    return inventoryStateSchema.parse(value);
-  } catch {
-    throw new StateConfigurationError("Inventory record is malformed");
-  }
-}
-
 function emptyLocalState(): LocalState {
-  return { auth: emptyAuthState(), inventory: emptyInventoryState() };
+  return { auth: emptyAuthState() };
 }
 
 async function readLocal(): Promise<LocalState> {
@@ -85,10 +58,7 @@ async function readLocal(): Promise<LocalState> {
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
     const candidate = parsed as Partial<LocalState>;
-    return {
-      auth: validatedAuthState(candidate.auth ?? emptyAuthState()),
-      inventory: inventoryStateSchema.parse(candidate.inventory ?? emptyInventoryState()),
-    };
+    return { auth: validatedAuthState(candidate.auth ?? emptyAuthState()) };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyLocalState();
     throw error;
@@ -103,9 +73,8 @@ async function writeLocal(state: LocalState): Promise<void> {
   await rename(temporary, path);
 }
 
-function hasGlobalConfig(kind: GlobalConfigKind): boolean {
-  const settings = globalConfigSettings(kind);
-  return Boolean(settings.connectionString);
+function hasAuthGlobalConfig(): boolean {
+  return Boolean(authGlobalConfigSettings().connectionString);
 }
 
 /**
@@ -121,23 +90,11 @@ function authDatabaseIsAuthoritative(): boolean {
   return false;
 }
 
-function authoritativeInventoryBlobCredentials(): InventoryBlobCredentials | undefined {
-  const credentials = inventoryBlobCredentials();
-  const requiresBlob = process.env.NODE_ENV === "production" || hasGlobalConfig("inventory");
-  if (!requiresBlob) return undefined;
-  if (!credentials) {
-    throw new StateConfigurationError(
-      "Private Blob storage is required for authoritative inventory state",
-    );
-  }
-  return credentials;
-}
-
-async function readGlobal<T>(kind: GlobalConfigKind, fallback: T): Promise<T> {
-  const settings = globalConfigSettings(kind);
+async function readAuthGlobalConfig(fallback: AuthState): Promise<AuthState> {
+  const settings = authGlobalConfigSettings();
   if (!settings.connectionString) return fallback;
   const client = createClient(settings.connectionString);
-  return (await client.get<T>(stateKeys[kind], { consistentRead: true })) ?? fallback;
+  return (await client.get<AuthState>(authStateGlobalConfigKey, { consistentRead: true })) ?? fallback;
 }
 
 async function runAuthQuery<T>(run: (sql: AuthSql) => Promise<T>): Promise<T> {
@@ -223,8 +180,8 @@ async function legacyAuthSeed(): Promise<AuthState> {
     const legacy = await readLegacyAuthBlob(token);
     if (legacy) return legacy;
   }
-  if (hasGlobalConfig("auth")) {
-    return validatedAuthState(await readGlobal("auth", emptyAuthState()));
+  if (hasAuthGlobalConfig()) {
+    return validatedAuthState(await readAuthGlobalConfig(emptyAuthState()));
   }
   return emptyAuthState();
 }
@@ -238,96 +195,6 @@ async function readAuthoritativeAuthState(): Promise<AuthState> {
     await insertAuthState(await legacyAuthSeed());
   }
   throw new StateConflictError("Authentication state initialization conflicted; retry the operation");
-}
-
-function serializedInventoryState(state: InventoryState): string {
-  const body = `${JSON.stringify(state)}\n`;
-  if (Buffer.byteLength(body, "utf8") > inventoryStateMaximumBytes) {
-    throw new StateConfigurationError("Inventory record exceeds its size limit");
-  }
-  return body;
-}
-
-async function readInventoryBlob(
-  credentials: InventoryBlobCredentials,
-): Promise<InventoryBlobSnapshot | null> {
-  const result = await get(inventoryStateBlobPath, {
-    access: "private",
-    ...credentials,
-    useCache: false,
-  });
-  if (!result) return null;
-  if (result.statusCode !== 200 || !result.stream) {
-    throw new StateConfigurationError("Authoritative inventory state could not be read");
-  }
-  if (result.blob.size > inventoryStateMaximumBytes) {
-    throw new StateConfigurationError("Authoritative inventory state exceeds its size limit");
-  }
-  if (result.blob.contentType.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
-    throw new StateConfigurationError("Authoritative inventory state has an invalid content type");
-  }
-  try {
-    const body = await new Response(result.stream).text();
-    return {
-      state: validatedInventoryState(JSON.parse(body) as unknown),
-      etag: result.blob.etag,
-    };
-  } catch (error) {
-    if (error instanceof StateConfigurationError) throw error;
-    throw new StateConfigurationError("Inventory record is malformed");
-  }
-}
-
-async function createInventoryBlob(
-  credentials: InventoryBlobCredentials,
-  state: InventoryState,
-): Promise<InventoryBlobSnapshot> {
-  const result = await put(inventoryStateBlobPath, serializedInventoryState(state), {
-    access: "private",
-    ...credentials,
-    addRandomSuffix: false,
-    allowOverwrite: false,
-    contentType: "application/json",
-  });
-  return { state, etag: result.etag };
-}
-
-async function replaceInventoryBlob(
-  credentials: InventoryBlobCredentials,
-  expectedEtag: string,
-  state: InventoryState,
-): Promise<InventoryBlobSnapshot> {
-  const result = await put(inventoryStateBlobPath, serializedInventoryState(state), {
-    access: "private",
-    ...credentials,
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    ifMatch: expectedEtag,
-    contentType: "application/json",
-  });
-  return { state, etag: result.etag };
-}
-
-async function readAuthoritativeInventoryState(
-  credentials: InventoryBlobCredentials,
-): Promise<InventoryBlobSnapshot> {
-  for (let attempt = 0; attempt < inventoryStateMutationAttempts; attempt += 1) {
-    const existing = await readInventoryBlob(credentials);
-    if (existing) return existing;
-
-    // This seeds the new authoritative object from the former Global Config
-    // record once. After creation, every inventory read comes from private Blob.
-    const seed = hasGlobalConfig("inventory")
-      ? validatedInventoryState(await readGlobal("inventory", emptyInventoryState()))
-      : emptyInventoryState();
-    try {
-      return await createInventoryBlob(credentials, seed);
-    } catch (error) {
-      if (error instanceof BlobPreconditionFailedError) continue;
-      throw error;
-    }
-  }
-  throw new StateConflictError("Inventory state initialization conflicted; retry the operation");
 }
 
 function validateProtectedAuthProgression(current: AuthState, next: AuthState): void {
@@ -388,12 +255,6 @@ export async function readAuthState(): Promise<AuthState> {
   return state;
 }
 
-export async function readInventoryState(): Promise<InventoryState> {
-  const credentials = authoritativeInventoryBlobCredentials();
-  if (credentials) return (await readAuthoritativeInventoryState(credentials)).state;
-  return (await readLocal()).inventory;
-}
-
 export async function mutateAuthState(
   mutate: (current: AuthState) => AuthState,
   expectedRevision?: number,
@@ -410,7 +271,7 @@ export async function mutateAuthState(
         revision: current.revision + 1,
       });
       validateProtectedAuthProgression(current, next);
-      await writeLocal({ ...local, auth: next });
+      await writeLocal({ auth: next });
       return next;
     }
 
@@ -427,49 +288,5 @@ export async function mutateAuthState(
       if (await compareAndSwapAuthState(current.revision, next)) return next;
     }
     throw new StateConflictError("Authentication state remained busy; retry the operation");
-  });
-}
-
-export async function mutateInventoryState(
-  mutate: (current: InventoryState) => InventoryState,
-  expectedRevision?: number,
-): Promise<InventoryState> {
-  return withLock("inventory", async () => {
-    const credentials = authoritativeInventoryBlobCredentials();
-    if (!credentials) {
-      const local = await readLocal();
-      const current = local.inventory;
-      if (expectedRevision !== undefined && current.revision !== expectedRevision) {
-        throw new StateConflictError("Inventory changed; reload before saving again");
-      }
-      const next = inventoryStateSchema.parse({
-        ...mutate(structuredClone(current)),
-        revision: current.revision + 1,
-      });
-      await writeLocal({ ...local, inventory: next });
-      return next;
-    }
-
-    for (let attempt = 0; attempt < inventoryStateMutationAttempts; attempt += 1) {
-      const current = await readAuthoritativeInventoryState(credentials);
-      if (expectedRevision !== undefined && current.state.revision !== expectedRevision) {
-        throw new StateConflictError("Inventory changed; reload before saving again");
-      }
-      const next = inventoryStateSchema.parse({
-        ...mutate(structuredClone(current.state)),
-        revision: current.state.revision + 1,
-      });
-      try {
-        await replaceInventoryBlob(credentials, current.etag, next);
-        return next;
-      } catch (error) {
-        if (error instanceof BlobPreconditionFailedError) {
-          if (attempt + 1 < inventoryStateMutationAttempts) continue;
-          throw new StateConflictError("Inventory state remained busy; retry the operation");
-        }
-        throw error;
-      }
-    }
-    throw new StateConflictError("Inventory state remained busy; retry the operation");
   });
 }

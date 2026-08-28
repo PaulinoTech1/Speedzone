@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "1.1.0",
+    "@sanity/client": "8.4.0",
     "@simplewebauthn/browser": "13.3.0",
     "@simplewebauthn/server": "13.3.2",
     "@vercel/blob": "2.8.0",

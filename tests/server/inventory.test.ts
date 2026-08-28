@@ -1,23 +1,144 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/server/storage/audit", () => ({
-  writeVehicleAuditSnapshot: vi.fn(async () => "test-audit.json"),
+type StoredDoc = Record<string, unknown> & { _id: string; _type: string; _rev: string };
+
+const store = vi.hoisted(() => ({
+  docs: new Map<string, StoredDoc>(),
+  // One-shot override consumed by the next getDocument() call only, so a test
+  // can simulate a reader whose snapshot predates a since-committed write.
+  forcedGetDocument: undefined as StoredDoc | null | undefined,
 }));
 
-import {
-  createVehicle,
-  InventoryValidationError,
-  listAllVehicles,
-  listPublishedVehicles,
-  updateVehicle,
-} from "@/lib/server/inventory";
-import { writeVehicleAuditSnapshot } from "@/lib/server/storage/audit";
+vi.mock("@sanity/client", () => {
+  class ClientError extends Error {
+    constructor(
+      readonly statusCode: number,
+      message: string,
+    ) {
+      super(message);
+    }
+  }
 
-let testDirectory = "";
+  type Operation =
+    | { kind: "create"; doc: StoredDoc }
+    | { kind: "patch"; id: string; set: Record<string, unknown>; ifRevisionId?: string }
+    | { kind: "delete"; id: string };
+
+  function transaction() {
+    const ops: Operation[] = [];
+    const tx = {
+      create(doc: StoredDoc) {
+        ops.push({ kind: "create", doc });
+        return tx;
+      },
+      patch(id: string, builder: unknown) {
+        const patchBuilder = {
+          _set: {} as Record<string, unknown>,
+          _rev: undefined as string | undefined,
+          set(attrs: Record<string, unknown>) {
+            this._set = attrs;
+            return this;
+          },
+          ifRevisionId(rev: string) {
+            this._rev = rev;
+            return this;
+          },
+        };
+        const built =
+          typeof builder === "function"
+            ? (builder as (p: typeof patchBuilder) => typeof patchBuilder)(patchBuilder)
+            : patchBuilder;
+        ops.push({ kind: "patch", id, set: built._set, ifRevisionId: built._rev });
+        return tx;
+      },
+      delete(id: string) {
+        ops.push({ kind: "delete", id });
+        return tx;
+      },
+      async commit() {
+        // Atomicity: validate every operation before applying any of them.
+        for (const op of ops) {
+          if (op.kind === "create" && store.docs.has(op.doc._id)) {
+            throw new ClientError(409, `Document with ID "${op.doc._id}" already exists`);
+          }
+          if (op.kind === "patch" && op.ifRevisionId !== undefined) {
+            const current = store.docs.get(op.id);
+            if (!current || current._rev !== op.ifRevisionId) {
+              throw new ClientError(409, "The document has been changed by a third party");
+            }
+          }
+        }
+        for (const op of ops) {
+          if (op.kind === "create") {
+            store.docs.set(op.doc._id, { ...op.doc, _rev: randomUUID() });
+          } else if (op.kind === "patch") {
+            const current = store.docs.get(op.id);
+            if (current) store.docs.set(op.id, { ...current, ...op.set, _rev: randomUUID() });
+          } else {
+            store.docs.delete(op.id);
+          }
+        }
+        return { results: [] };
+      },
+    };
+    return tx;
+  }
+
+  function fetchImpl(query: string, params: Record<string, unknown> = {}) {
+    const normalized = query.replace(/\s+/g, " ").trim();
+    if (normalized.startsWith('*[_type == "vehicle" && status == "published" && slug == $slug][0]')) {
+      const match = [...store.docs.values()].find(
+        (doc) => doc._type === "vehicle" && doc.status === "published" && doc.slug === params.slug,
+      );
+      return Promise.resolve(match ?? null);
+    }
+    if (normalized.startsWith('*[_type == "vehicle" && status == "published"]')) {
+      return Promise.resolve(
+        [...store.docs.values()]
+          .filter((doc) => doc._type === "vehicle" && doc.status === "published")
+          .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
+      );
+    }
+    if (normalized.startsWith('*[_type == "vehicle"]')) {
+      return Promise.resolve(
+        [...store.docs.values()]
+          .filter((doc) => doc._type === "vehicle")
+          .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
+      );
+    }
+    if (normalized.startsWith("*[_id in $ids]")) {
+      const ids = params.ids as string[];
+      return Promise.resolve(
+        [...store.docs.values()]
+          .filter((doc) => ids.includes(doc._id))
+          .map((doc) => ({ _id: doc._id, vehicleId: doc.vehicleId })),
+      );
+    }
+    return Promise.reject(new Error(`Unexpected GROQ query in test fixture: ${query}`));
+  }
+
+  return {
+    ClientError,
+    createClient: vi.fn(() => ({
+      fetch: vi.fn(fetchImpl),
+      getDocument: vi.fn((id: string) => {
+        if (store.forcedGetDocument !== undefined) {
+          const forced = store.forcedGetDocument;
+          store.forcedGetDocument = undefined;
+          return Promise.resolve(forced ?? undefined);
+        }
+        return Promise.resolve(store.docs.get(id));
+      }),
+      transaction: vi.fn(transaction),
+      assets: { upload: vi.fn() },
+    })),
+  };
+});
+
+import { InventoryValidationError, createVehicle, listAllVehicles, listPublishedVehicles, updateVehicle } from "@/lib/server/inventory";
+import { StateConflictError } from "@/lib/server/storage/errors";
 
 function vehicle(overrides: Record<string, unknown> = {}) {
   return {
@@ -47,8 +168,8 @@ function vehicle(overrides: Record<string, unknown> = {}) {
 
 function photo() {
   return {
-    url: "https://fixture.public.blob.vercel-storage.com/vehicles/test/photo.webp",
-    pathname: "vehicles/test/photo.webp",
+    url: "https://cdn.sanity.io/images/fixture/production/abc-1200x800.webp",
+    pathname: "image-abc123-1200x800-webp",
     width: 1200,
     height: 800,
     bytes: 120_000,
@@ -57,15 +178,16 @@ function photo() {
   };
 }
 
-beforeEach(async () => {
-  vi.clearAllMocks();
-  testDirectory = await mkdtemp(join(tmpdir(), "speedzone-inventory-"));
-  process.env.LOCAL_STATE_PATH = join(testDirectory, "state.json");
+beforeEach(() => {
+  store.docs.clear();
+  store.forcedGetDocument = undefined;
+  vi.stubEnv("SANITY_PROJECT_ID", "fixture");
+  vi.stubEnv("SANITY_DATASET", "test");
+  vi.stubEnv("SANITY_API_TOKEN", "fixture-token");
 });
 
-afterEach(async () => {
-  delete process.env.LOCAL_STATE_PATH;
-  await rm(testDirectory, { recursive: true, force: true });
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("inventory persistence rules", () => {
@@ -129,13 +251,8 @@ describe("inventory persistence rules", () => {
     );
     expect(restored).toMatchObject({ status: "draft", version: 5 });
     await expect(listAllVehicles()).resolves.toMatchObject({
-      revision: 5,
       vehicles: [{ id: draft.id, status: "draft", version: 5 }],
     });
-
-    expect(
-      vi.mocked(writeVehicleAuditSnapshot).mock.calls.map(([entry]) => entry.action),
-    ).toEqual(["create", "publish", "sold", "archive", "restore"]);
   });
 
   it("stores hostile listing copy only as plain text data", async () => {
@@ -147,5 +264,67 @@ describe("inventory persistence rules", () => {
     expect(created.description).toBe(payload);
     expect(persisted?.description).toBe(payload);
     expect(persisted?.features).toEqual([payload]);
+  });
+
+  it("rejects a lock collision introduced by an update, not just at create time", async () => {
+    await createVehicle(vehicle());
+    const other = await createVehicle(
+      vehicle({ stockNumber: "SZ-201", vin: "2HGFG12698H304821", slug: "different-car" }),
+    );
+    // Only the VIN collides — stockNumber/slug stay at `other`'s own current
+    // values, so this isolates the VIN check from the other two unique fields.
+    await expect(
+      updateVehicle(
+        other.id,
+        vehicle({
+          expectedVersion: other.version,
+          stockNumber: other.stockNumber,
+          slug: other.slug,
+          vin: "1HGCM82633A004352",
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "DUPLICATE_VIN" } satisfies Partial<InventoryValidationError>);
+    // The failed transaction must not have touched the target document.
+    await expect(listAllVehicles()).resolves.toMatchObject({
+      vehicles: expect.arrayContaining([expect.objectContaining({ id: other.id, version: 1 })]),
+    });
+  });
+
+  it("releases the old slug lock and claims the new one on a same-vehicle edit, without disturbing untouched locks", async () => {
+    const created = await createVehicle(vehicle());
+    const renamed = await updateVehicle(
+      created.id,
+      vehicle({ expectedVersion: created.version, slug: "renamed-honda-civic" }),
+    );
+    expect(renamed.slug).toBe("renamed-honda-civic");
+
+    // A new vehicle can now reuse the released slug...
+    const reused = await createVehicle(
+      vehicle({ stockNumber: "SZ-202", vin: "3HGFG12698H304822", slug: "2020-honda-civic" }),
+    );
+    expect(reused.slug).toBe("2020-honda-civic");
+
+    // ...while the untouched stockNumber/VIN locks still protect the original vehicle.
+    await expect(
+      createVehicle(vehicle({ slug: "yet-another-slug" })),
+    ).rejects.toMatchObject({ code: "DUPLICATE_STOCK" } satisfies Partial<InventoryValidationError>);
+  });
+
+  it("surfaces a conflict rather than a duplicate code when the revision truly moved", async () => {
+    const created = await createVehicle(vehicle());
+    const staleSnapshot = store.docs.get(created.id);
+
+    // A second writer commits a real, unrelated change first...
+    await updateVehicle(created.id, vehicle({ expectedVersion: created.version, price: 20000 }));
+
+    // ...then this caller's own read is forced back to the pre-race snapshot,
+    // simulating a reader whose getDocument() happened before that commit.
+    // Only the *next* getDocument() call is overridden, so the re-read inside
+    // updateVehicle's own conflict handling still sees the true, current state.
+    store.forcedGetDocument = staleSnapshot ?? null;
+
+    await expect(
+      updateVehicle(created.id, vehicle({ expectedVersion: created.version, price: 15900 })),
+    ).rejects.toBeInstanceOf(StateConflictError);
   });
 });

@@ -36,7 +36,3 @@ export function constantTimeTextEqual(left: string, right: string): boolean {
   const rightDigest = createHash("sha256").update(right).digest();
   return timingSafeEqual(leftDigest, rightDigest);
 }
-
-export function stableJsonHash(value: unknown): string {
-  return sha256(JSON.stringify(value));
-}

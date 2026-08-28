@@ -12,7 +12,6 @@ import {
   type AuthState,
   type PasskeyRecord,
 } from "@/lib/domain/auth";
-import { emptyInventoryState } from "@/lib/domain/vehicle";
 import { resolveAdministratorAuthState } from "@/lib/server/auth/state-machine";
 import {
   createBootstrapPreAuthentication,
@@ -58,7 +57,7 @@ function activeState(overrides: Partial<AuthState> = {}): AuthState {
 async function writeAuthState(state: AuthState): Promise<void> {
   await writeFile(
     statePath,
-    `${JSON.stringify({ auth: state, inventory: emptyInventoryState() }, null, 2)}\n`,
+    `${JSON.stringify({ auth: state }, null, 2)}\n`,
     "utf8",
   );
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import { upload } from "@vercel/blob/client";
 import Image from "next/image";
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 
@@ -21,7 +20,7 @@ import {
   type VehicleRecord,
   type VehicleStatus,
 } from "@/lib/domain/vehicle";
-import { AdminApiError, adminFetch, getCsrfToken } from "@/lib/client/admin-api";
+import { AdminApiError, adminFetch } from "@/lib/client/admin-api";
 import { deleteEncryptedDraft, isDraftVaultUnlocked } from "@/lib/client/draft-vault";
 import { processVehiclePhoto } from "@/lib/client/image-processing";
 
@@ -178,7 +177,6 @@ export function VehicleEditor({
   const [previewing, setPreviewing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadAlt, setUploadAlt] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [status, setStatus] = useState("");
@@ -300,40 +298,24 @@ export function VehicleEditor({
           maximumImageDimension,
           maximumImageBytes,
         );
-        // Blob's client-upload helper performs its own request rather than
-        // using adminFetch, so renew the HttpOnly-bound token before each
-        // upload instead of risking a stale long-lived editor session.
-        const csrfToken = await getCsrfToken(true);
-        const blob = await upload(
-          `staging/vehicles/${savedRecord.id}/photo.webp`,
-          processed.file,
-          {
-            access: "private",
-            contentType: "image/webp",
-            multipart: false,
-            handleUploadUrl: "/api/admin/uploads",
-            clientPayload: JSON.stringify({ vehicleId: savedRecord.id }),
-            headers: { "x-csrf-token": csrfToken },
-            onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
-          },
-        );
         const defaultAlt = [workingForm.year, workingForm.make, workingForm.model, workingForm.trim]
           .filter(Boolean)
           .join(" ");
-        const finalized = await adminFetch<{ ok: true; photograph: VehiclePhoto }>(
-          "/api/admin/uploads/finalize",
+        const query = new URLSearchParams({
+          vehicleId: savedRecord.id,
+          alt: uploadAlt.trim() || defaultAlt,
+        });
+        const uploaded = await adminFetch<{ ok: true; photograph: VehiclePhoto }>(
+          `/api/admin/uploads?${query.toString()}`,
           {
             method: "POST",
-            json: {
-              stagingUrl: blob.url,
-              vehicleId: savedRecord.id,
-              alt: uploadAlt.trim() || defaultAlt,
-            },
+            body: processed.file,
+            headers: { "content-type": "image/webp" },
           },
         );
         workingForm = {
           ...workingForm,
-          photographs: [...workingForm.photographs, finalized.photograph],
+          photographs: [...workingForm.photographs, uploaded.photograph],
         };
         savedRecord = await persistCandidate(
           workingForm,
@@ -342,7 +324,6 @@ export function VehicleEditor({
         );
         workingForm = vehicleToForm(savedRecord);
       }
-      setUploadProgress(100);
       const summary = `${selected.length} photograph${selected.length === 1 ? "" : "s"} processed, uploaded, and attached.`;
       setStatus(summary);
       notify("success", summary);
@@ -352,7 +333,6 @@ export function VehicleEditor({
       notify(described.tone, described.message);
     } finally {
       setUploading(false);
-      setUploadProgress(0);
     }
   }
 
@@ -471,7 +451,7 @@ export function VehicleEditor({
                 <input value={uploadAlt} onChange={(event) => setUploadAlt(event.target.value)} maxLength={180} placeholder="Defaults to year, make, model, and trim" />
               </label>
               <label className={`admin-file-button ${uploading || form.photographs.length >= 12 ? "is-disabled" : ""}`}>
-                <span>{uploading ? `Uploading ${uploadProgress}%` : "Choose photographs"}</span>
+                <span>{uploading ? "Uploading…" : "Choose photographs"}</span>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
@@ -486,7 +466,6 @@ export function VehicleEditor({
                 converts to WebP, and enforces a post-compression limit of {Math.ceil(maximumImageBytes / (1024 * 1024))} MiB before upload.
                 Choosing files saves current form changes first.
               </p>
-              {uploading ? <progress value={uploadProgress} max="100">{uploadProgress}%</progress> : null}
             </div>
 
             {form.photographs.length ? (

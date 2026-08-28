@@ -188,9 +188,15 @@ function assertDeclaredBodyLimit(request: NextRequest, maximumBytes: number): vo
   }
 }
 
-async function readBoundedUtf8Body(request: NextRequest, maximumBytes: number): Promise<string> {
+/**
+ * Streams the body with an early-abort byte cap, rather than buffering first
+ * and checking after: an oversized body is cancelled mid-stream instead of
+ * being fully read into memory. Shared by the UTF-8 (JSON) and raw-binary
+ * (photo upload) readers below.
+ */
+async function readBoundedBytes(request: NextRequest, maximumBytes: number): Promise<Uint8Array> {
   assertDeclaredBodyLimit(request, maximumBytes);
-  if (!request.body) return "";
+  if (!request.body) return new Uint8Array(0);
 
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -220,11 +226,21 @@ async function readBoundedUtf8Body(request: NextRequest, maximumBytes: number): 
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  return bytes;
+}
+
+async function readBoundedUtf8Body(request: NextRequest, maximumBytes: number): Promise<string> {
+  const bytes = await readBoundedBytes(request, maximumBytes);
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     throw new RequestValidationError("Request body must be valid UTF-8 JSON");
   }
+}
+
+/** Raw-binary counterpart of `readBoundedUtf8Body`, for uploads rather than JSON. */
+export async function readBoundedBinaryBody(request: NextRequest, maximumBytes: number): Promise<Buffer> {
+  return Buffer.from(await readBoundedBytes(request, maximumBytes));
 }
 
 export function assertAllowedOrigin(request: NextRequest): void {

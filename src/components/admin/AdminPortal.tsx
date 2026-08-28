@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { PhotoLibraryPanel } from "@/components/admin/PhotoLibraryPanel";
 import { SecurityPanel } from "@/components/admin/SecurityPanel";
 import { ToastProvider } from "@/components/admin/Toast";
 import type { InventoryResponse, SessionSummary } from "@/components/admin/types";
@@ -20,7 +19,7 @@ type AdminPortalProps = {
   maximumImageDimension: number;
 };
 
-type AdminView = "inventory" | "editor" | "photos" | "security";
+type AdminView = "inventory" | "editor" | "security";
 type SessionResponse = { ok: true; authenticated: true } & SessionSummary;
 
 const money = new Intl.NumberFormat("en-US", {
@@ -225,9 +224,6 @@ function AdminPortalWorkspace({
         <button className={view === "inventory" || view === "editor" ? "is-active" : ""} type="button" onClick={() => setView("inventory")}>
           <span aria-hidden="true">▦</span> Inventory
         </button>
-        <button className={view === "photos" ? "is-active" : ""} type="button" onClick={() => setView("photos")}>
-          <span aria-hidden="true">▤</span> Photos
-        </button>
         <button className={view === "security" ? "is-active" : ""} type="button" onClick={() => setView("security")}>
           <span aria-hidden="true">◆</span> Security
         </button>
@@ -241,7 +237,6 @@ function AdminPortalWorkspace({
           </div>
           <nav aria-label="Administrator navigation">
             <button className={view === "inventory" || view === "editor" ? "is-active" : ""} type="button" onClick={() => setView("inventory")}><span aria-hidden="true">▦</span>Inventory</button>
-            <button className={view === "photos" ? "is-active" : ""} type="button" onClick={() => setView("photos")}><span aria-hidden="true">▤</span>Photos</button>
             <button className={view === "security" ? "is-active" : ""} type="button" onClick={() => setView("security")}><span aria-hidden="true">◆</span>Security</button>
           </nav>
           <div className="admin-session-note">
@@ -264,8 +259,6 @@ function AdminPortalWorkspace({
               onClose={() => setView("inventory")}
             />
           ) : null}
-
-          {view === "photos" ? <PhotoLibraryPanel onOpenVehicle={openVehicle} /> : null}
 
           {view === "security" ? (
             <SecurityPanel

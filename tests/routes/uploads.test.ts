@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,87 +6,36 @@ import { NextRequest, NextResponse } from "next/server";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const uploadMocks = vi.hoisted(() => ({
-  handleUpload: vi.fn(),
-  finalizeVehiclePhoto: vi.fn(),
+  verifyAndNormalizeWebP: vi.fn(),
+  uploadVehiclePhoto: vi.fn(),
 }));
 
-vi.mock("@vercel/blob/client", () => ({
-  handleUpload: uploadMocks.handleUpload,
-}));
+const sanityMocks = vi.hoisted(() => ({ getDocument: vi.fn() }));
 
-vi.mock("@/lib/server/photos", () => ({
-  finalizeVehiclePhoto: uploadMocks.finalizeVehiclePhoto,
+vi.mock("@/lib/server/photos", () => uploadMocks);
+
+vi.mock("@sanity/client", () => ({
+  ClientError: class ClientError extends Error {},
+  createClient: vi.fn(() => ({ getDocument: sanityMocks.getDocument })),
 }));
 
 import { emptyAuthState, type AuthState } from "@/lib/domain/auth";
-import {
-  emptyInventoryState,
-  type InventoryState,
-  type VehiclePhoto,
-  type VehicleRecord,
-} from "@/lib/domain/vehicle";
-import {
-  createSession,
-  setSessionCookie,
-} from "@/lib/server/auth/session";
+import type { VehiclePhoto } from "@/lib/domain/vehicle";
+import { createSession, setSessionCookie } from "@/lib/server/auth/session";
 import { issueCsrf } from "@/lib/server/csrf";
 
 const vehicleId = "41903f0d-54f6-4ad7-b85d-2b07cb458a15";
 let testDirectory = "";
 let statePath = "";
 let authState: AuthState;
-let inventoryState: InventoryState;
-let authorizeUpload: (request: NextRequest) => Promise<Response>;
-let finalizeUpload: (request: NextRequest) => Promise<Response>;
+let upload: (request: NextRequest) => Promise<Response>;
 
-function photograph(index: number): VehiclePhoto {
-  return {
-    url: `https://fixture.public.blob.vercel-storage.com/vehicles/${vehicleId}/${index}.webp`,
-    pathname: `vehicles/${vehicleId}/${index}.webp`,
-    width: 800,
-    height: 600,
-    bytes: 40_000,
-    alt: `Vehicle photograph ${index}`,
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function vehicle(photographs: VehiclePhoto[] = []): VehicleRecord {
-  const timestamp = new Date().toISOString();
-  return {
-    id: vehicleId,
-    version: 1,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    stockNumber: "SZ-UPLOAD",
-    vin: "1HGCM82633A004352",
-    year: 2022,
-    make: "Honda",
-    model: "Accord",
-    trim: "EX",
-    price: 18_900,
-    mileage: 42_000,
-    exteriorColor: "Black",
-    interiorColor: "Gray",
-    bodyStyle: "Sedan",
-    transmission: "Automatic",
-    drivetrain: "FWD",
-    fuelType: "Gasoline",
-    engine: "1.5L",
-    description: "Upload route fixture",
-    features: ["Bluetooth"],
-    status: "draft",
-    slug: "upload-route-fixture",
-    photographs,
-  };
+function vehicleDocument(photographCount = 0): { _type: string; photographs: unknown[] } {
+  return { _type: "vehicle", photographs: Array.from({ length: photographCount }) };
 }
 
 async function writeState(): Promise<void> {
-  await writeFile(
-    statePath,
-    `${JSON.stringify({ auth: authState, inventory: inventoryState }, null, 2)}\n`,
-    "utf8",
-  );
+  await writeFile(statePath, `${JSON.stringify({ auth: authState }, null, 2)}\n`, "utf8");
 }
 
 function cookieHeader(response: NextResponse): string {
@@ -105,56 +53,47 @@ function authenticatedHeaders(): { cookie: string; csrfToken: string } {
   return { cookie: cookieHeader(response), csrfToken };
 }
 
-function uploadRequest(
-  body: unknown,
-  authorization?: { cookie: string; csrfToken: string },
-): NextRequest {
+function uploadRequest(input: {
+  body?: Buffer;
+  vehicleId?: string;
+  alt?: string;
+  contentType?: string;
+  authorization?: { cookie: string; csrfToken: string };
+}): NextRequest {
+  const query = new URLSearchParams({
+    vehicleId: input.vehicleId ?? vehicleId,
+    alt: input.alt ?? "Front of vehicle",
+  });
   const headers: Record<string, string> = {
     origin: "http://localhost:4173",
-    "content-type": "application/json",
+    "content-type": input.contentType ?? "image/webp",
     "x-forwarded-for": `198.51.100.${Math.floor(Math.random() * 200) + 1}`,
   };
-  if (authorization) {
-    headers.cookie = authorization.cookie;
-    headers["x-csrf-token"] = authorization.csrfToken;
+  if (input.authorization) {
+    headers.cookie = input.authorization.cookie;
+    headers["x-csrf-token"] = input.authorization.csrfToken;
   }
-  return new NextRequest("http://localhost:4173/api/admin/uploads", {
+  return new NextRequest(`http://localhost:4173/api/admin/uploads?${query.toString()}`, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    // Buffer is a valid Fetch BodyInit at runtime; the DOM lib's stricter
+    // Uint8Array<ArrayBuffer> generic just doesn't structurally admit it here.
+    body: input.body as BodyInit | undefined,
   });
 }
 
-function uploadBody(overrides: Record<string, unknown> = {}) {
-  return {
-    type: "blob.generate-client-token",
-    payload: {
-      pathname: `staging/vehicles/${vehicleId}/photo.webp`,
-      multipart: false,
-      clientPayload: JSON.stringify({ vehicleId }),
-      ...overrides,
-    },
-  };
-}
-
 beforeAll(async () => {
-  // Other test files exercise the real Blob decoder. Refresh the module graph
-  // here so these route tests always receive their explicit Blob boundary mocks.
   vi.resetModules();
-  const [authorizationRoute, finalizeRoute] = await Promise.all([
-    import("@/app/api/admin/uploads/route"),
-    import("@/app/api/admin/uploads/finalize/route"),
-  ]);
-  authorizeUpload = authorizationRoute.POST;
-  finalizeUpload = finalizeRoute.POST;
+  ({ POST: upload } = await import("@/app/api/admin/uploads/route"));
 });
 
 beforeEach(async () => {
   testDirectory = await mkdtemp(join(tmpdir(), "speedzone-upload-route-"));
   statePath = join(testDirectory, "state.json");
   process.env.LOCAL_STATE_PATH = statePath;
-  process.env.BLOB_PRIVATE_READ_WRITE_TOKEN = "test-private-blob-token";
-  process.env.BLOB_PHOTO_READ_WRITE_TOKEN = "test-public-photo-token";
+  vi.stubEnv("SANITY_PROJECT_ID", "fixture");
+  vi.stubEnv("SANITY_DATASET", "test");
+  vi.stubEnv("SANITY_API_TOKEN", "fixture-token");
 
   authState = {
     ...emptyAuthState(),
@@ -172,169 +111,129 @@ beforeEach(async () => {
     ],
     recoveryCodeHashes: ["a".repeat(64)],
   };
-  inventoryState = { ...emptyInventoryState(), vehicles: [vehicle()] };
   await writeState();
 
-  uploadMocks.handleUpload.mockReset();
-  uploadMocks.finalizeVehiclePhoto.mockReset();
-  uploadMocks.handleUpload.mockImplementation(async (input: {
-    body: {
-      payload: { pathname: string; clientPayload: string | null; multipart: boolean };
-    };
-    onBeforeGenerateToken: (
-      pathname: string,
-      clientPayload: string | null,
-      multipart: boolean,
-    ) => Promise<unknown>;
-  }) => {
-    const policy = await input.onBeforeGenerateToken(
-      input.body.payload.pathname,
-      input.body.payload.clientPayload,
-      input.body.payload.multipart,
-    );
-    return { type: "blob.generate-client-token", clientToken: "test-only-token", policy };
+  sanityMocks.getDocument.mockReset();
+  uploadMocks.verifyAndNormalizeWebP.mockReset();
+  uploadMocks.uploadVehiclePhoto.mockReset();
+  sanityMocks.getDocument.mockResolvedValue(vehicleDocument());
+  uploadMocks.verifyAndNormalizeWebP.mockResolvedValue({
+    buffer: Buffer.from("verified-webp"),
+    width: 1200,
+    height: 800,
   });
 });
 
 afterEach(async () => {
   delete process.env.LOCAL_STATE_PATH;
-  delete process.env.BLOB_PRIVATE_READ_WRITE_TOKEN;
-  delete process.env.BLOB_PHOTO_READ_WRITE_TOKEN;
+  vi.unstubAllEnvs();
   await rm(testDirectory, { recursive: true, force: true });
 });
 
 describe("authenticated photograph uploads", () => {
-  it("rejects upload authorization and finalization before Blob access without a session", async () => {
-    const authorizationResponse = await authorizeUpload(uploadRequest(uploadBody()));
-    expect(authorizationResponse.status).toBe(401);
-    expect(uploadMocks.handleUpload).not.toHaveBeenCalled();
-
-    const finalizeResponse = await finalizeUpload(
-      uploadRequest({
-        vehicleId,
-        stagingUrl: `https://fixture.private.blob.vercel-storage.com/staging/vehicles/${vehicleId}/photo-ABC.webp`,
-        alt: "Vehicle",
-      }),
-    );
-    expect(finalizeResponse.status).toBe(401);
-    expect(uploadMocks.finalizeVehiclePhoto).not.toHaveBeenCalled();
+  it("rejects an upload with no session before touching storage", async () => {
+    const response = await upload(uploadRequest({ body: Buffer.from([1, 2, 3]) }));
+    expect(response.status).toBe(401);
+    expect(sanityMocks.getDocument).not.toHaveBeenCalled();
+    expect(uploadMocks.uploadVehiclePhoto).not.toHaveBeenCalled();
   });
 
-  it("binds a short-lived WebP-only authorization to an existing vehicle path", async () => {
-    const response = await authorizeUpload(uploadRequest(uploadBody(), authenticatedHeaders()));
-    expect(response.status).toBe(200);
-    const body = await response.json() as {
-      policy: {
-        allowedContentTypes: string[];
-        maximumSizeInBytes: number;
-        validUntil: number;
-        addRandomSuffix: boolean;
-        allowOverwrite: boolean;
-        tokenPayload: string;
-      };
+  it("verifies, uploads, and returns the finalized photograph", async () => {
+    const expectedPhoto: VehiclePhoto = {
+      url: "https://cdn.sanity.io/images/fixture/production/abc-1200x800.webp",
+      pathname: "image-abc123-1200x800-webp",
+      width: 1200,
+      height: 800,
+      bytes: 13,
+      alt: "Front of vehicle",
+      createdAt: new Date().toISOString(),
     };
-    expect(body.policy).toMatchObject({
-      allowedContentTypes: ["image/webp"],
-      maximumSizeInBytes: 4 * 1024 * 1024,
-      addRandomSuffix: true,
-      allowOverwrite: false,
-    });
-    expect(body.policy.validUntil).toBeGreaterThan(Date.now());
-    expect(JSON.parse(body.policy.tokenPayload)).toEqual({ vehicleId });
-  });
-
-  it("rejects cross-vehicle paths, missing records, multipart uploads, and the thirteenth photo", async () => {
-    const otherId = randomUUID();
+    uploadMocks.uploadVehiclePhoto.mockResolvedValue(expectedPhoto);
     const authorization = authenticatedHeaders();
 
-    const crossVehicle = await authorizeUpload(
-      uploadRequest(
-        uploadBody({ pathname: `staging/vehicles/${otherId}/photo.webp` }),
-        authorization,
-      ),
-    );
-    expect(crossVehicle.status).toBe(422);
-    await expect(crossVehicle.json()).resolves.toMatchObject({
-      error: { code: "INVALID_UPLOAD_PATH" },
-    });
-
-    const missingVehicle = await authorizeUpload(
-      uploadRequest(
-        uploadBody({
-          pathname: `staging/vehicles/${otherId}/photo.webp`,
-          clientPayload: JSON.stringify({ vehicleId: otherId }),
-        }),
-        authorization,
-      ),
-    );
-    expect(missingVehicle.status).toBe(404);
-    await expect(missingVehicle.json()).resolves.toMatchObject({ error: { code: "NOT_FOUND" } });
-
-    const multipart = await authorizeUpload(
-      uploadRequest(uploadBody({ multipart: true }), authorization),
-    );
-    expect(multipart.status).toBe(422);
-    await expect(multipart.json()).resolves.toMatchObject({ error: { code: "INVALID_UPLOAD" } });
-
-    inventoryState = {
-      ...inventoryState,
-      vehicles: [vehicle(Array.from({ length: 12 }, (_, index) => photograph(index)))],
-    };
-    await writeState();
-    const overCount = await authorizeUpload(
-      uploadRequest(uploadBody(), authenticatedHeaders()),
-    );
-    expect(overCount.status).toBe(422);
-    await expect(overCount.json()).resolves.toMatchObject({
-      error: { code: "PHOTO_LIMIT_REACHED" },
-    });
-  });
-
-  it("finalizes only a canonical staging path owned by the requested vehicle", async () => {
-    const expectedPhoto = photograph(99);
-    uploadMocks.finalizeVehiclePhoto.mockResolvedValue(expectedPhoto);
-    const authorization = authenticatedHeaders();
-    const stagingUrl =
-      `https://fixture.private.blob.vercel-storage.com/staging/vehicles/${vehicleId}/photo-ABC123.webp`;
-
-    const response = await finalizeUpload(
-      uploadRequest({ vehicleId, stagingUrl, alt: "Front of vehicle" }, authorization),
+    const response = await upload(
+      uploadRequest({ body: Buffer.from([1, 2, 3]), authorization }),
     );
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({ ok: true, photograph: expectedPhoto });
-    expect(uploadMocks.finalizeVehiclePhoto).toHaveBeenCalledWith({
-      vehicleId,
-      stagingUrl: `staging/vehicles/${vehicleId}/photo-ABC123.webp`,
+    expect(uploadMocks.uploadVehiclePhoto).toHaveBeenCalledWith({
+      buffer: Buffer.from("verified-webp"),
+      width: 1200,
+      height: 800,
       alt: "Front of vehicle",
     });
+  });
 
-    uploadMocks.finalizeVehiclePhoto.mockClear();
-    const otherId = randomUUID();
-    const crossVehicle = await finalizeUpload(
-      uploadRequest(
-        {
-          vehicleId,
-          stagingUrl:
-            `https://fixture.private.blob.vercel-storage.com/staging/vehicles/${otherId}/photo-ABC123.webp`,
-          alt: "Vehicle",
-        },
-        authorization,
-      ),
-    );
-    expect(crossVehicle.status).toBe(422);
-    expect(uploadMocks.finalizeVehiclePhoto).not.toHaveBeenCalled();
+  it("rejects a vehicle that does not exist before reading the body", async () => {
+    sanityMocks.getDocument.mockResolvedValue(undefined);
+    const authorization = authenticatedHeaders();
 
-    const untrustedHost = await finalizeUpload(
-      uploadRequest(
-        {
-          vehicleId,
-          stagingUrl: `https://evil.example/staging/vehicles/${vehicleId}/photo-ABC123.webp`,
-          alt: "Vehicle",
-        },
-        authorization,
-      ),
+    const response = await upload(
+      uploadRequest({ body: Buffer.from([1, 2, 3]), authorization }),
     );
-    expect(untrustedHost.status).toBe(422);
-    expect(uploadMocks.finalizeVehiclePhoto).not.toHaveBeenCalled();
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "NOT_FOUND" } });
+    expect(uploadMocks.verifyAndNormalizeWebP).not.toHaveBeenCalled();
+    expect(uploadMocks.uploadVehiclePhoto).not.toHaveBeenCalled();
+  });
+
+  it("rejects a thirteenth photograph before reading the body", async () => {
+    sanityMocks.getDocument.mockResolvedValue(vehicleDocument(12));
+    const authorization = authenticatedHeaders();
+
+    const response = await upload(
+      uploadRequest({ body: Buffer.from([1, 2, 3]), authorization }),
+    );
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "PHOTO_LIMIT_REACHED" } });
+    expect(uploadMocks.uploadVehiclePhoto).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-WebP content type before checking the vehicle", async () => {
+    const authorization = authenticatedHeaders();
+
+    const response = await upload(
+      uploadRequest({
+        body: Buffer.from([1, 2, 3]),
+        authorization,
+        contentType: "image/jpeg",
+      }),
+    );
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "INVALID_UPLOAD" } });
+    expect(sanityMocks.getDocument).not.toHaveBeenCalled();
+  });
+
+  it("rejects a body larger than the configured limit", async () => {
+    const authorization = authenticatedHeaders();
+    const oversized = Buffer.alloc(5 * 1024 * 1024);
+
+    const response = await upload(uploadRequest({ body: oversized, authorization }));
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "BODY_TOO_LARGE" } });
+    expect(uploadMocks.uploadVehiclePhoto).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid vehicleId before checking the vehicle", async () => {
+    const authorization = authenticatedHeaders();
+
+    const response = await upload(
+      uploadRequest({ body: Buffer.from([1, 2, 3]), vehicleId: "not-a-uuid", authorization }),
+    );
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "INVALID_UPLOAD_CONTEXT" } });
+    expect(sanityMocks.getDocument).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a validation failure from a malformed WebP payload", async () => {
+    uploadMocks.verifyAndNormalizeWebP.mockRejectedValue(new Error("not a valid WebP image"));
+    const authorization = authenticatedHeaders();
+
+    const response = await upload(
+      uploadRequest({ body: Buffer.from([1, 2, 3]), authorization }),
+    );
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "INVALID_UPLOAD" } });
+    expect(uploadMocks.uploadVehiclePhoto).not.toHaveBeenCalled();
   });
 });

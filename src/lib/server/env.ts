@@ -220,17 +220,14 @@ export function bootstrapEnrollmentRuntimePermitted(): boolean {
   }
 }
 
-export type GlobalConfigKind = "auth" | "inventory";
-
 /**
- * Read-only migration sources. Authentication now lives in SEcure_Auth and
- * inventory in private Blob, so the application never writes Global Config and
- * needs no management API token for it.
+ * Read-only migration source for the auth-state Global Config mirror that
+ * predates the SEcure_Auth database. The application never writes Global
+ * Config and needs no management API token for it.
  */
-export function globalConfigSettings(kind: GlobalConfigKind) {
-  const prefix = kind === "auth" ? "AUTH" : "INVENTORY";
+export function authGlobalConfigSettings() {
   return {
-    connectionString: optional(`${prefix}_GLOBAL_CONFIG`),
+    connectionString: optional("AUTH_GLOBAL_CONFIG"),
   };
 }
 
@@ -283,6 +280,38 @@ export function authDatabaseSettings(): AuthDatabaseSettings | undefined {
   return { connectionString: raw, host: parsed.hostname, database };
 }
 
+export type SanityConfig = Readonly<{
+  projectId: string;
+  dataset: string;
+  token: string;
+  apiVersion: string;
+}>;
+
+const sanityProjectIdPattern = /^[a-z0-9]+$/;
+const sanityDatasetPattern = /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/;
+
+/**
+ * Vehicle inventory lives in Sanity (project/dataset/token configured below),
+ * never in Blob. The three variables must be set together: a partial set is an
+ * operator mistake, not an "unconfigured, degrade gracefully" state.
+ */
+export function sanityConfig(): SanityConfig | undefined {
+  const projectId = optional("SANITY_PROJECT_ID");
+  const dataset = optional("SANITY_DATASET");
+  const token = optional("SANITY_API_TOKEN");
+  if (!projectId && !dataset && !token) return undefined;
+  if (!projectId || !dataset || !token) {
+    throw new Error("SANITY_PROJECT_ID, SANITY_DATASET, and SANITY_API_TOKEN must all be set together");
+  }
+  if (!sanityProjectIdPattern.test(projectId)) {
+    throw new Error("SANITY_PROJECT_ID must be a lowercase Sanity project id");
+  }
+  if (!sanityDatasetPattern.test(dataset)) {
+    throw new Error("SANITY_DATASET must be a valid Sanity dataset name");
+  }
+  return { projectId, dataset, token, apiVersion: optional("SANITY_API_VERSION") ?? "2024-01-01" };
+}
+
 // Shared by every public lead form (test drive, sell/trade-in) that emails a
 // notification through Resend rather than writing to inventory storage.
 export function leadNotificationConfig() {
@@ -303,39 +332,6 @@ export function localSecurityPath(): string {
 
 export function privateBlobToken(): string | undefined {
   return optional("BLOB_PRIVATE_READ_WRITE_TOKEN");
-}
-
-export function photoBlobToken(): string | undefined {
-  return optional("BLOB_PHOTO_READ_WRITE_TOKEN");
-}
-
-export type InventoryBlobCredentials = Readonly<{
-  token?: string;
-  oidcToken?: string;
-  storeId?: string;
-}>;
-
-/**
- * The inventory store can use a dedicated Vercel connection prefix
- * (`BLOB_INVENTORY`) or Vercel Blob's default `BLOB` prefix. Prefer OIDC
- * whenever a store ID and runtime OIDC token are both available; the static
- * read-write token remains supported for existing Blob connections.
- */
-export function inventoryBlobCredentials(): InventoryBlobCredentials | undefined {
-  const oidcToken = optional("VERCEL_OIDC_TOKEN");
-  const dedicatedStoreId = optional("BLOB_INVENTORY_STORE_ID");
-  const dedicatedToken = optional("BLOB_INVENTORY_READ_WRITE_TOKEN");
-
-  if (dedicatedStoreId && oidcToken) return { storeId: dedicatedStoreId, oidcToken };
-  if (dedicatedToken) return { token: dedicatedToken };
-  if (dedicatedStoreId) return { storeId: dedicatedStoreId };
-
-  const storeId = optional("BLOB_STORE_ID");
-  const token = optional("BLOB_READ_WRITE_TOKEN");
-  if (storeId && oidcToken) return { storeId, oidcToken };
-  if (token) return { token };
-  if (storeId) return { storeId };
-  return undefined;
 }
 
 export function encryptedDraftsEnabled(): boolean {

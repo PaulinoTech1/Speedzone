@@ -1,11 +1,10 @@
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { refreshSession } from "@/lib/server/auth/session";
-import { imageLimits, privateBlobToken } from "@/lib/server/env";
-import { InventoryValidationError, listAllVehicles } from "@/lib/server/inventory";
-import { noStoreJson, parseJsonBody, RequestValidationError } from "@/lib/server/request";
+import { imageLimits } from "@/lib/server/env";
+import { uploadVehiclePhoto, verifyAndNormalizeWebP } from "@/lib/server/photos";
+import { noStoreJson, readBoundedBinaryBody, RequestValidationError } from "@/lib/server/request";
 import {
   assertAdminMutation,
   enforceRateLimit,
@@ -17,44 +16,36 @@ import {
   clientSecurityHash,
   logSecurityEvent,
 } from "@/lib/server/security-log";
+import { sanity, translateSanityError } from "@/lib/server/storage/sanity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const uploadRequestSchema = z
-  .object({
-    type: z.literal("blob.generate-client-token"),
-    payload: z
-      .object({
-        pathname: z.string().min(1).max(256),
-        multipart: z.boolean(),
-        clientPayload: z.string().max(1024).nullable(),
-      })
-      .strict(),
-  })
-  .strict();
+const querySchema = z.object({
+  vehicleId: z.uuid(),
+  alt: z.string().trim().max(180),
+});
 
-const uploadClientPayloadSchema = z
-  .object({
-    vehicleId: z.uuid(),
-  })
-  .strict();
+type VehicleExistenceCheck = { _type?: unknown; photographs?: unknown };
 
-function parseClientPayload(clientPayload: string | null): { vehicleId: string } {
-  if (!clientPayload) {
-    throw new RequestValidationError("Upload context is invalid", 422, "INVALID_UPLOAD_CONTEXT");
-  }
-  let candidate: unknown;
+/**
+ * A targeted single-document read, replacing the previous full-inventory
+ * fetch-then-`.find()` this route used to do against Blob.
+ */
+async function assertVehicleAcceptsAnotherPhoto(vehicleId: string): Promise<void> {
+  let doc: VehicleExistenceCheck | undefined;
   try {
-    candidate = JSON.parse(clientPayload);
-  } catch {
-    throw new RequestValidationError("Upload context is invalid", 422, "INVALID_UPLOAD_CONTEXT");
+    doc = await sanity().getDocument<VehicleExistenceCheck>(vehicleId);
+  } catch (error) {
+    throw translateSanityError(error);
   }
-  const result = uploadClientPayloadSchema.safeParse(candidate);
-  if (!result.success) {
-    throw new RequestValidationError("Upload context is invalid", 422, "INVALID_UPLOAD_CONTEXT");
+  if (!doc || doc._type !== "vehicle") {
+    throw new RequestValidationError("Vehicle was not found", 404, "NOT_FOUND");
   }
-  return result.data;
+  const photographCount = Array.isArray(doc.photographs) ? doc.photographs.length : 0;
+  if (photographCount >= 12) {
+    throw new RequestValidationError("Photograph limit reached", 422, "PHOTO_LIMIT_REACHED");
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -62,57 +53,47 @@ export async function POST(request: NextRequest) {
     const authorized = await requireAdmin(request);
     assertAdminMutation(request, authorized.claims);
     enforceRateLimit(request, "inventory", authorized.claims.administrator);
-    const body = await parseJsonBody(request, uploadRequestSchema, 8 * 1024);
-    const token = privateBlobToken();
-    if (!token) {
-      throw new RequestValidationError(
-        "Photo upload storage is unavailable",
-        503,
-        "SERVICE_NOT_CONFIGURED",
-      );
+
+    const query = querySchema.safeParse({
+      vehicleId: request.nextUrl.searchParams.get("vehicleId"),
+      alt: request.nextUrl.searchParams.get("alt") ?? "",
+    });
+    if (!query.success) {
+      throw new RequestValidationError("Upload context is invalid", 422, "INVALID_UPLOAD_CONTEXT");
+    }
+    const contentType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+    if (contentType !== "image/webp") {
+      throw new RequestValidationError("Photograph must be WebP", 422, "INVALID_UPLOAD");
     }
 
-    const result = await handleUpload({
-      request,
-      body: body as HandleUploadBody,
-      token,
-      onBeforeGenerateToken: async (pathname, clientPayload, multipart) => {
-        const callbackAuthorization = await requireAdmin(request);
-        assertAdminMutation(request, callbackAuthorization.claims);
+    // Confirm the vehicle can accept another photo before spending any time on
+    // the body: a bad vehicleId fails fast without decoding anything.
+    await assertVehicleAcceptsAnotherPhoto(query.data.vehicleId);
 
-        if (multipart) {
-          throw new RequestValidationError("Multipart uploads are not permitted", 422, "INVALID_UPLOAD");
-        }
-        const { vehicleId } = parseClientPayload(clientPayload);
-        const expectedPathname = `staging/vehicles/${vehicleId}/photo.webp`;
-        if (pathname !== expectedPathname) {
-          throw new RequestValidationError("Upload path is invalid", 422, "INVALID_UPLOAD_PATH");
-        }
-        const inventory = await listAllVehicles();
-        const vehicle = inventory.vehicles.find((candidate) => candidate.id === vehicleId);
-        if (!vehicle) throw new InventoryValidationError("Vehicle was not found", "NOT_FOUND");
-        if (vehicle.photographs.length >= 12) {
-          throw new RequestValidationError("Photograph limit reached", 422, "PHOTO_LIMIT_REACHED");
-        }
+    const { maximumBytes, maximumDimension } = imageLimits();
+    const raw = await readBoundedBinaryBody(request, maximumBytes);
+    let verified;
+    try {
+      verified = await verifyAndNormalizeWebP(raw, maximumDimension, maximumBytes);
+    } catch {
+      throw new RequestValidationError("Photograph is not a valid WebP image", 422, "INVALID_UPLOAD");
+    }
 
-        logSecurityEvent({
-          event: "upload.authorized",
-          outcome: "success",
-          actorHash: actorSecurityHash(authorized.claims.administrator),
-          clientHash: clientSecurityHash(request),
-          recordId: vehicleId,
-        });
-        return {
-          allowedContentTypes: ["image/webp"],
-          maximumSizeInBytes: imageLimits().maximumBytes,
-          validUntil: Date.now() + 2 * 60_000,
-          addRandomSuffix: true,
-          allowOverwrite: false,
-          tokenPayload: JSON.stringify({ vehicleId }),
-        };
-      },
+    const photograph = await uploadVehiclePhoto({
+      buffer: verified.buffer,
+      width: verified.width,
+      height: verified.height,
+      alt: query.data.alt,
     });
-    const response = noStoreJson(result);
+
+    logSecurityEvent({
+      event: "upload.authorized",
+      outcome: "success",
+      actorHash: actorSecurityHash(authorized.claims.administrator),
+      clientHash: clientSecurityHash(request),
+      recordId: query.data.vehicleId,
+    });
+    const response = noStoreJson({ ok: true, photograph }, { status: 201 });
     refreshSession(response, authorized.claims);
     return response;
   } catch (error) {

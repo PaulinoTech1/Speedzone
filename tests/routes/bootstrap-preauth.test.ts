@@ -10,7 +10,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { POST as verifyBootstrapCredentials } from "@/app/api/admin/auth/bootstrap/preauth/route";
 import { POST as createInventory } from "@/app/api/admin/inventory/route";
 import type { AuthState, BootstrapPreAuthClaims } from "@/lib/domain/auth";
-import { emptyInventoryState } from "@/lib/domain/vehicle";
 import { cookieNames } from "@/lib/server/cookies";
 import { sha256 } from "@/lib/server/crypto";
 import { issueCsrf } from "@/lib/server/csrf";
@@ -49,7 +48,7 @@ function bootstrapReadyState(): AuthState {
 async function writeState(state = bootstrapReadyState()): Promise<void> {
   await writeFile(
     statePath,
-    `${JSON.stringify({ auth: state, inventory: emptyInventoryState() }, null, 2)}\n`,
+    `${JSON.stringify({ auth: state }, null, 2)}\n`,
     "utf8",
   );
 }

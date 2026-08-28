@@ -30,7 +30,6 @@ import type {
   PasskeyRecord,
   SessionClaims,
 } from "@/lib/domain/auth";
-import { emptyInventoryState } from "@/lib/domain/vehicle";
 import {
   createPreAuthentication,
   setPreAuthenticationCookie,
@@ -62,7 +61,7 @@ function passkey(label: string): PasskeyRecord {
 async function writeState(auth: AuthState): Promise<void> {
   await writeFile(
     statePath,
-    `${JSON.stringify({ auth, inventory: emptyInventoryState() }, null, 2)}\n`,
+    `${JSON.stringify({ auth }, null, 2)}\n`,
     "utf8",
   );
 }

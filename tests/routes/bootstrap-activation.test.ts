@@ -33,7 +33,7 @@ import { POST as beginStepUp } from "@/app/api/admin/auth/step-up/options/route"
 import { POST as verifyStepUp } from "@/app/api/admin/auth/step-up/verify/route";
 import { POST as beginLoginPasskey } from "@/app/api/admin/auth/webauthn/options/route";
 import { POST as verifyLoginPasskey } from "@/app/api/admin/auth/webauthn/verify/route";
-import { GET as listInventory } from "@/app/api/admin/inventory/route";
+import { GET as getSession } from "@/app/api/admin/auth/session/route";
 import type {
   AuthState,
   BootstrapPreAuthClaims,
@@ -45,7 +45,6 @@ import {
   readRecoveryProof,
   setRecoveryProof,
 } from "@/app/api/admin/auth/_shared";
-import { emptyInventoryState } from "@/lib/domain/vehicle";
 import {
   createBootstrapPreAuthentication,
   setBootstrapPreAuthenticationCookie,
@@ -86,7 +85,7 @@ function bootstrapReadyState(): AuthState {
 async function writeState(state = bootstrapReadyState()): Promise<void> {
   await writeFile(
     statePath,
-    `${JSON.stringify({ auth: state, inventory: emptyInventoryState() }, null, 2)}\n`,
+    `${JSON.stringify({ auth: state }, null, 2)}\n`,
     "utf8",
   );
 }
@@ -453,12 +452,16 @@ describe("interrupted bootstrap response recovery", () => {
     const sessionClaims = openToken<SessionClaims>(sessionJar.get(cookieNames.session));
     expect(sessionClaims).toMatchObject({ typ: "session-v1", epoch: activated.sessionEpoch });
 
-    const inventoryResponse = await listInventory(
-      new NextRequest("http://localhost:4173/api/admin/inventory", {
+    // Inventory now lives in Sanity (a separately configured subsystem), so an
+    // inventory route is no longer a valid "is this session authenticated"
+    // probe; the session-status route proves the same thing without that
+    // incidental coupling.
+    const sessionCheckResponse = await getSession(
+      new NextRequest("http://localhost:4173/api/admin/auth/session", {
         headers: { cookie: cookieHeader(sessionJar) },
       }),
     );
-    expect(inventoryResponse.status).toBe(200);
+    expect(sessionCheckResponse.status).toBe(200);
 
     const passwordStepUpResponse = await verifyStepUpPassword(
       postRequest(

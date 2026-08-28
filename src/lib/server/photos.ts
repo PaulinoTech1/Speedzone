@@ -2,11 +2,10 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { del, get, put } from "@vercel/blob";
 import sharp from "sharp";
 
 import type { VehiclePhoto } from "@/lib/domain/vehicle";
-import { imageLimits, photoBlobToken, privateBlobToken } from "@/lib/server/env";
+import { sanity, translateSanityError } from "@/lib/server/storage/sanity";
 
 export type ImageDimensions = { width: number; height: number };
 type VerifiedWebP = ImageDimensions & { buffer: Buffer };
@@ -92,50 +91,35 @@ export async function verifyAndNormalizeWebP(
   };
 }
 
-export async function finalizeVehiclePhoto(input: {
-  stagingUrl: string;
-  vehicleId: string;
+/**
+ * Uploads an already-verified WebP buffer to Sanity's asset store and returns
+ * a `VehiclePhoto`. The caller must have already run the buffer through
+ * `verifyAndNormalizeWebP` — this function trusts `width`/`height`/the
+ * buffer's own length rather than re-deriving them from Sanity's response,
+ * the same defensive posture the previous Blob-backed pipeline used.
+ */
+export async function uploadVehiclePhoto(input: {
+  buffer: Buffer;
+  width: number;
+  height: number;
   alt: string;
 }): Promise<VehiclePhoto> {
-  const privateToken = privateBlobToken();
-  const publicToken = photoBlobToken();
-  if (!privateToken || !publicToken) throw new Error("Photo Blob stores are not configured");
-  const staging = await get(input.stagingUrl, {
-    access: "private",
-    token: privateToken,
-    useCache: false,
-  });
-  if (!staging) throw new Error("Staged photograph was not found");
-  const expectedPrefix = `staging/vehicles/${input.vehicleId}/`;
-  const { maximumBytes, maximumDimension } = imageLimits();
-  if (
-    !staging.blob.pathname.startsWith(expectedPrefix) ||
-    staging.blob.contentType !== "image/webp" ||
-    staging.blob.size === null ||
-    staging.blob.size > maximumBytes
-  ) {
-    throw new Error("Staged photograph failed metadata validation");
+  let asset;
+  try {
+    asset = await sanity().assets.upload("image", input.buffer, {
+      filename: `${randomUUID()}.webp`,
+      contentType: "image/webp",
+    });
+  } catch (error) {
+    throw translateSanityError(error);
   }
-  const arrayBuffer = await new Response(staging.stream).arrayBuffer();
-  if (arrayBuffer.byteLength > maximumBytes) throw new Error("Photograph is too large");
-  const buffer = Buffer.from(arrayBuffer);
-  const verified = await verifyAndNormalizeWebP(buffer, maximumDimension, maximumBytes);
-  const destination = `vehicles/${input.vehicleId}/${randomUUID()}.webp`;
-  const stored = await put(destination, verified.buffer, {
-    access: "public",
-    token: publicToken,
-    addRandomSuffix: false,
-    allowOverwrite: false,
-    contentType: "image/webp",
-    cacheControlMaxAge: 31_536_000,
-  });
-  await del(input.stagingUrl, { token: privateToken });
   return {
-    url: stored.url,
-    pathname: stored.pathname,
-    width: verified.width,
-    height: verified.height,
-    bytes: verified.buffer.byteLength,
+    url: asset.url,
+    // Repurposed to hold the Sanity asset document ID, not a Blob path.
+    pathname: asset._id,
+    width: input.width,
+    height: input.height,
+    bytes: input.buffer.byteLength,
     alt: input.alt.trim().slice(0, 180),
     createdAt: new Date().toISOString(),
   };

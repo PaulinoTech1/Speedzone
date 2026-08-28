@@ -10,7 +10,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import * as passwordRoute from "@/app/api/admin/auth/password/route";
 import { GET as readSession } from "@/app/api/admin/auth/session/route";
 import type { AuthState, PreAuthClaims } from "@/lib/domain/auth";
-import { emptyInventoryState } from "@/lib/domain/vehicle";
 import { cookieNames } from "@/lib/server/cookies";
 import { issueCsrf } from "@/lib/server/csrf";
 import { base64url } from "@/lib/server/crypto";
@@ -52,7 +51,7 @@ function authState(): AuthState {
 async function writeState(state = authState()): Promise<void> {
   await writeFile(
     statePath,
-    `${JSON.stringify({ auth: state, inventory: emptyInventoryState() }, null, 2)}\n`,
+    `${JSON.stringify({ auth: state }, null, 2)}\n`,
     "utf8",
   );
 }
