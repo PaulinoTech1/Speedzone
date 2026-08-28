@@ -12,6 +12,17 @@ if (Buffer.from(expectedToken, "base64url").length !== 32) {
   throw new Error("E2E_SHUTDOWN_TOKEN must be a 32-byte base64url test fixture");
 }
 
+// Playwright injects the deterministic E2E fixtures below via webServer.env
+// before this process starts. Next's own startup loads .env* and expands any
+// $identifier it finds there, including in variables this script never read
+// from a file, whenever a developer's untracked local .env happens to define
+// the same key. A stored Argon2 hash is mostly $-delimited segments, so on a
+// machine with a real .env that expansion silently corrupts it. Snapshot the
+// injected values now, before Next touches process.env, and restore them
+// after prepare() so the fixtures stay byte-for-byte what Playwright set
+// regardless of what an untracked .env contains.
+const injectedEnv = { ...process.env };
+
 const app = next({ dev: true, hostname, port });
 const handle = app.getRequestHandler();
 const sockets = new Set();
@@ -28,6 +39,7 @@ function isLoopback(address) {
 }
 
 await app.prepare();
+Object.assign(process.env, injectedEnv);
 
 const server = createServer((request, response) => {
   const requestUrl = new URL(request.url ?? "/", `http://${hostname}:${port}`);
