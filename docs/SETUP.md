@@ -62,47 +62,32 @@ A deployment that already authenticated against the private Blob object `securit
 2. Keep `BLOB_PRIVATE_READ_WRITE_TOKEN` (or `AUTH_GLOBAL_CONFIG`) connected during the cutover window and do not alter the legacy record.
 3. Deploy. On the first authenticated request, an empty `auth_state` table is seeded once from the legacy Blob object, or from the legacy Global Config mirror, or from a fresh `BOOTSTRAP_READY` record when neither exists. The insert is `ON CONFLICT DO NOTHING`, so competing first requests cannot both seed it.
 4. Run `npm.cmd run migrate:auth-db -- --check` and verify the reported lifecycle state, revision, and passkey count against step 1. Then confirm a real password-plus-passkey login.
-5. Only after that login succeeds, remove `AUTH_GLOBAL_CONFIG` and redeploy. Keep `BLOB_PRIVATE_READ_WRITE_TOKEN`: audit snapshots and upload staging still use that store.
+5. Only after that login succeeds, remove `AUTH_GLOBAL_CONFIG` and `BLOB_PRIVATE_READ_WRITE_TOKEN` and redeploy. Neither has any ongoing role: inventory and photos live in Sanity, never in Blob.
 
 Once the `auth_state` row exists it is authoritative and both legacy sources are ignored. Never delete the row to force a reseed: a later absence can pull back stale legacy state or an empty record, and must be handled as a security incident with a reviewed point-in-time restore.
 
-`INVENTORY_GLOBAL_CONFIG` remains migration-only for inventory. Keep the legacy inventory connection temporarily if Production already contains `inventory_state_v1`; do not create a Global Config store for a fresh installation. The application never writes Global Config, so no management API token is needed.
+## 3. Vehicle inventory and photos (Sanity)
 
-## 3. Blob
+Vehicles and their photographs are stored in Sanity, not Blob. Editing still only happens through the passkey-gated `/admin` portal — Sanity Studio is never deployed or exposed, and no browser code talks to Sanity directly.
 
-Connect these Production Blob stores:
-
-1. The existing `speedzone-blbob` store for authoritative inventory state. Confirm in Vercel that its access mode is **Private** before deploying. A public store cannot protect drafts, VINs, sold/archived records, or other unpublished inventory data.
-2. A private store for upload staging and audit snapshots. Authentication no longer uses Blob; it lives in `SEcure_Auth`.
-3. A public store for immutable published vehicle photographs.
-
-Connect `speedzone-blbob` with the dedicated environment-variable prefix `BLOB_INVENTORY`. Prefer Vercel's short-lived OIDC authentication: the application uses `BLOB_INVENTORY_STORE_ID` with the runtime-provided `VERCEL_OIDC_TOKEN` when both are available. A legacy/static connection may instead provide `BLOB_INVENTORY_READ_WRITE_TOKEN`.
-
-If the existing store is connected with Vercel Blob's default `BLOB` prefix, the application accepts `BLOB_STORE_ID`/runtime OIDC or `BLOB_READ_WRITE_TOKEN` as a fallback. Dedicated `BLOB_INVENTORY_*` credentials take precedence, so do not configure the dedicated and default prefixes to different inventory stores. Keep the other store credentials separate:
+1. Create a Sanity project (the free tier covers this data volume).
+2. Create one dataset per environment — `production` for the live site, a separate `development` dataset for local work, and optionally a `preview` dataset for Vercel Preview deployments (otherwise Preview can share `development`). Set every dataset's visibility to **private**: reads always go through this app's server, so there is no reason to expose one unauthenticated.
+3. Create an API token scoped to the **Editor** role — read, write content, and upload assets, but not project administration. One token covers both inventory CRUD and photo upload.
+4. Set these server-only Production variables (and the matching Preview/local values):
 
 ```text
-BLOB_PRIVATE_READ_WRITE_TOKEN
-BLOB_PHOTO_READ_WRITE_TOKEN
+SANITY_PROJECT_ID
+SANITY_DATASET
+SANITY_API_TOKEN
 ```
 
-Never prefix a Blob store ID, read-write token, or `VERCEL_OIDC_TOKEN` with `NEXT_PUBLIC_`; none belongs in browser code. Prefer OIDC over a long-lived inventory token where the connected Vercel project supports it. Use static tokens only as a compatibility fallback, store them as Sensitive Environment Variables, and rotate them after suspected exposure.
+All three must be set together; a partial set fails closed as a configuration error rather than silently degrading. `SANITY_API_VERSION` is optional and defaults to a pinned, stable dated version.
 
-The authoritative inventory record is the deterministic private object `inventory/state-v1.json`. Reads use `useCache: false`. Mutations validate its schema revision, read its ETag, and replace the complete object with `ifMatch`; a competing writer is re-read and retried within a fixed bound, while a stale expected revision fails. Never manually expose, make public, or delete this object.
+No CORS configuration is needed in Sanity's dashboard — CORS origin allowlisting only governs browser-originated calls, and every Sanity call here is server-to-server with a bearer token, the same trust boundary as the Neon connection in section 2.
 
-The authoritative administrator record is the `auth_state` row in `SEcure_Auth`, not a Blob object. `security/auth/state-v1.json` is read once during the cutover described in section 2 and never written again; leave it in place as evidence until the cutover is verified, then archive it offline.
+Vehicle documents (`_type: "vehicle"`) use the vehicle's own UUID as `_id`. Uniqueness of stock number, VIN, and slug is enforced with a `vehicleLock` document per unique key, created in the same transaction as the vehicle write — a deliberate application-level constraint, since Sanity has no native cross-document uniqueness. Photographs are Sanity image assets, uploaded through `/api/admin/uploads` after the same server-side WebP verification and re-encoding the app has always done; there is no Studio media browser and no orphaned-asset cleanup tool in this version.
 
-### Legacy inventory migration
-
-For a deployment that already stores inventory in Global Config:
-
-1. Before deploying this version, record the legacy `inventory_state_v1` schema version, revision, total vehicle count, and counts by status. Keep `INVENTORY_GLOBAL_CONFIG` connected and do not alter the legacy record during the migration window.
-2. Connect `speedzone-blbob` to Production under the `BLOB_INVENTORY` prefix (or the supported default `BLOB` fallback) and confirm that the store is Private.
-3. Confirm that `inventory/state-v1.json` does not already contain unrelated or stale data, then deploy. When that object is absent, the first inventory read automatically reads `inventory_state_v1` from the legacy connection and creates the private Blob object once with overwrite disabled. Competing first reads cannot replace the winner.
-4. Inspect the new private object through Vercel's authenticated control plane. Verify its schema version, revision, total vehicle count, status counts, and representative records against the values recorded in step 1. Do not expose the object through a public URL or copy its contents into logs or tickets.
-5. Perform one controlled inventory edit, confirm the Blob revision increments, and verify the public published count and administrator count remain correct.
-6. Only after those checks pass, remove `INVENTORY_GLOBAL_CONFIG` from the Production environment, redeploy, and repeat the count/revision checks.
-
-If `inventory/state-v1.json` already exists, it is authoritative and the legacy Global Config value is ignored. Never delete the Blob object to force migration to run again: a later absence can reseed stale legacy data or an empty state and must be handled as a data-loss incident with a reviewed restore.
+The authoritative administrator record is the `auth_state` row in `SEcure_Auth`, not a Blob object. `security/auth/state-v1.json` is read once during the cutover described in section 2 and never written again; leave it in place as evidence until the cutover is verified, then archive it offline. `BLOB_PRIVATE_READ_WRITE_TOKEN` is needed only for that one-time legacy read — it has no role in inventory or photo storage.
 
 ## 4. Provision the administrator offline
 
@@ -182,7 +167,7 @@ The persisted `ACTIVE` state is authoritative. Once active, the server ignores t
 
 ### Interrupted enrollment response
 
-If the browser loses the response after the passkey was accepted, first try a fresh password-plus-passkey login. A successful login proves the private auth record committed; reauthenticate in Security and rotate the recovery codes because the original plaintext set was lost. If login fails, do not blindly retry or reset state. Set `ADMIN_DISABLED=true`, inspect the authoritative private object and its ETag, and determine whether it is `BOOTSTRAP_READY` or `ACTIVE`. A mirror failure does not undo a committed private-Blob activation.
+If the browser loses the response after the passkey was accepted, first try a fresh password-plus-passkey login. A successful login proves the `auth_state` row committed; reauthenticate in Security and rotate the recovery codes because the original plaintext set was lost. If login fails, do not blindly retry or reset state. Set `ADMIN_DISABLED=true` and run `npm.cmd run migrate:auth-db -- --check` to inspect the `auth_state` row directly and determine whether it is `BOOTSTRAP_READY` or `ACTIVE`.
 
 ## 7. Deployed Argon2 benchmark
 
@@ -214,4 +199,4 @@ Both routes are public and unauthenticated by design; they are protected only by
 
 The trade-in form's "Decode VIN" button calls `GET /api/vin-decode`, which the server proxies to the free, public [NHTSA vPIC API](https://vpic.nhtsa.dot.gov/api/) (no API key, no environment variable, no cost). The browser never calls NHTSA directly, so the site's Content-Security-Policy `connect-src` does not need to allow a third-party host. If NHTSA is unreachable or a VIN can't be decoded, the form degrades to manual entry rather than blocking submission.
 
-Official references: [Vercel environment variables](https://vercel.com/docs/environment-variables), [deployment environments](https://vercel.com/docs/deployments/environments), [Neon serverless driver](https://neon.com/docs/serverless/serverless-driver), [Neon connection strings](https://neon.com/docs/connect/connect-from-any-app), [Neon branching](https://neon.com/docs/introduction/branching), [Neon point-in-time restore](https://neon.com/docs/introduction/point-in-time-restore), [private Blob storage](https://vercel.com/docs/vercel-blob/private-storage), [Blob SDK and conditional writes](https://vercel.com/docs/vercel-blob/using-blob-sdk), and [consistent private reads](https://vercel.com/changelog/vercel-blob-now-supports-consistent-reads-on-private-storage).
+Official references: [Vercel environment variables](https://vercel.com/docs/environment-variables), [deployment environments](https://vercel.com/docs/deployments/environments), [Neon serverless driver](https://neon.com/docs/serverless/serverless-driver), [Neon connection strings](https://neon.com/docs/connect/connect-from-any-app), [Neon branching](https://neon.com/docs/introduction/branching), [Neon point-in-time restore](https://neon.com/docs/introduction/point-in-time-restore), [private Blob storage](https://vercel.com/docs/vercel-blob/private-storage) (legacy auth cutover only), [Sanity mutations and transactions](https://www.sanity.io/docs/apis-and-sdks/js-client-mutations), [Sanity transaction atomicity](https://www.sanity.io/docs/content-lake/transactions), and [Sanity asset uploads](https://www.sanity.io/docs/apis-and-sdks/js-client-assets).

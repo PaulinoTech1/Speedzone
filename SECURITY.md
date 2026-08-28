@@ -20,11 +20,11 @@ Later passkey registration and deletion require a complete session, the password
 
 ## Inventory state
 
-The complete inventory is authoritative in the deterministic private-Blob object `inventory/state-v1.json`. The intended store is `speedzone-blbob`, connected with the dedicated `BLOB_INVENTORY` prefix; its access mode must be independently confirmed as Private before production use. The application prefers a project-scoped OIDC credential with `BLOB_INVENTORY_STORE_ID` and accepts `BLOB_INVENTORY_READ_WRITE_TOKEN` for a legacy/static connection. The default `BLOB_STORE_ID`/`BLOB_READ_WRITE_TOKEN` connection is a fallback. None of these values is public or exposed through a `NEXT_PUBLIC_` variable.
+Each vehicle is its own document in a private Sanity dataset (`SANITY_PROJECT_ID`/`SANITY_DATASET`/`SANITY_API_TOKEN`, an Editor-scoped token — never a project-administration credential, never exposed through a `NEXT_PUBLIC_` variable). Reads use `useCdn: false` and `perspective: "raw"`, so they always see the true, uncached, non-draft state.
 
-Every inventory read bypasses the Blob CDN cache and validates the complete versioned schema. A mutation reads the current object and ETag, validates the expected inventory and vehicle revisions, enforces stock/VIN/slug uniqueness and status transitions, and writes the complete next state with `ifMatch`. A stale writer cannot silently replace a newer object; bounded conflicts require a reload or retry. This is object-level optimistic concurrency, not a relational transaction or a substitute for an external database at larger scale.
+Stock number, VIN, and slug uniqueness has no native cross-document guarantee in Sanity, so the application enforces it itself: a `vehicleLock` document per unique key, with a deterministic ID derived from the field and value, is created in the *same transaction* as the vehicle write. Sanity transactions are all-or-nothing — if a lock collides, the whole transaction fails and nothing is written, so a duplicate can never partially land. A mutation additionally gates on the document's own Sanity revision (`ifRevisionId`); a stale writer's patch fails outright rather than silently overwriting a newer edit, and the route re-reads on conflict to tell a genuine concurrent edit apart from a lock collision before reporting which one occurred. Status transitions are validated against the same fixed state machine as before. This is real per-document transactional atomicity, not object-level optimistic concurrency, and does not degrade as inventory grows the way a single shared JSON object would.
 
-When the authoritative object is absent, an existing legacy `INVENTORY_GLOBAL_CONFIG` connection is read once and its `inventory_state_v1` value is used to create the Blob object with overwrite disabled. After creation, every inventory read and mutation uses Blob. Operators must compare schema version, revision, vehicle count, and status counts before removing the legacy connection. Deleting the authoritative object can cause stale or empty reseeding and is a data-loss incident, not a supported reset procedure.
+This is a fresh Sanity-backed installation; there is no legacy migration path into it.
 
 ## Passwords and local drafts
 
@@ -40,25 +40,25 @@ Optional autosaved drafts are the only client-encrypted business data. They use 
 - Every admin data endpoint performs server-side session authorization; proxy routing is not trusted for authorization.
 - The password endpoint accepts only a strict JSON object containing `adminId` and `password`, streams at most 4 KiB before parsing, rejects duplicate or prototype-pollution keys, and applies Zod bounds before Argon2 work.
 - Vehicle descriptions and features are plain text. React escapes them; JSON-LD replaces `<` before insertion.
-- A per-request nonce CSP protects page scripts. Admin-only CSP permits WebAssembly for local Argon2id and Blob workers; it does not allow general inline scripts.
+- A per-request nonce CSP protects page scripts. Admin-only CSP permits WebAssembly and `blob:` worker scripts, both needed only for the client-side Argon2id draft-vault key derivation; it does not allow general inline scripts.
 - `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, a restrictive Permissions Policy, admin `no-store`, and production-only HSTS are configured.
 - Security logs contain event type, result, HMAC-truncated actor/client correlation, and safe record identifiers. They exclude passwords, challenges, cookies, recovery codes, complete credentials, and tokens.
 
-## Photographs and audit
+## Photographs
 
-The browser decodes accepted JPEG/PNG/WebP input, applies decoded orientation, resizes to the configured bound, draws pixels onto a new canvas (dropping EXIF/GPS metadata), and encodes WebP. An authenticated server endpoint creates a short-lived private staging authorization without revealing the Blob token. Finalization reads through the server-owned private token, validates pathname ownership, declared content type, byte limit, and WebP structure, then fully decodes and freshly re-encodes the pixels server-side before writing a new immutable randomized public object.
+The browser decodes accepted JPEG/PNG/WebP input, applies decoded orientation, resizes to the configured bound, draws pixels onto a new canvas (dropping EXIF/GPS metadata), and encodes WebP. That WebP is posted directly to the authenticated upload endpoint (a request body, not a JSON envelope), which confirms the target vehicle exists and has fewer than twelve photographs before reading any bytes, streams the body with an early-abort size cap, then independently re-validates it server-side: WebP structure, dimensions, and a full decode-and-fresh-re-encode pass that strips any metadata a bypassed client left behind and rejects truncated or polyglot payloads. Only that server-verified buffer — never the caller-supplied bytes — is uploaded to Sanity's asset store. There is no client-authorized direct-to-storage upload token and no staging step: the server is in the path for every byte.
 
-Before a vehicle mutation, an append-only timestamped private-Blob JSON snapshot records actor, action, time, ID, before/after hashes, and the records. Blob credentials are never included.
+There is no separate audit trail in this version. Sanity's own per-document revision history (`_rev`) is the change record for every vehicle write.
 
 ## Operational requirements
 
 1. Enable the proposed WAF rules only after the logging review in [docs/WAF.md](docs/WAF.md).
 2. Register at least two passkeys and store recovery codes offline.
 3. Remove `ADMIN_BOOTSTRAP_TOKEN_HASH` and the plaintext token immediately after confirming fresh login.
-4. Keep Production and Preview on separate `SEcure_Auth` branches and separate Blob resources, each with its own credentials. Confirm that Production `speedzone-blbob` is Private and connected under the intended `BLOB_INVENTORY` prefix before migrating inventory. Initial enrollment is never permitted on Preview or random `*.vercel.app` URLs.
+4. Keep Production and Preview on separate `SEcure_Auth` branches and separate Sanity datasets, each with its own credentials. Initial enrollment is never permitted on Preview or random `*.vercel.app` URLs.
 5. Run the protected deployed Argon2 benchmark and replace the password hash if parameters change.
-6. Rotate `AUTH_COOKIE_SECRET`, any password pepper, the `SEcure_Auth` role password, static Blob tokens, and Vercel API credentials after suspected exposure. Prefer Vercel's short-lived OIDC credential for inventory. Cookie-secret rotation invalidates existing sealed cookies and changes recovery-code hashes, so it requires a reviewed recovery migration rather than an uncoordinated environment edit.
-7. Review function/security logs, the `auth_state` row and its `updated_at`, `SEcure_Auth` connection and role activity, the authoritative inventory Blob object, Blob audit objects, WAF matches, and unexpected inventory changes. Keep Neon point-in-time restore enabled: it is the only rollback for the authentication record.
+6. Rotate `AUTH_COOKIE_SECRET`, any password pepper, the `SEcure_Auth` role password, the Sanity API token, and Vercel API credentials after suspected exposure. Cookie-secret rotation invalidates existing sealed cookies and changes recovery-code hashes, so it requires a reviewed recovery migration rather than an uncoordinated environment edit.
+7. Review function/security logs, the `auth_state` row and its `updated_at`, `SEcure_Auth` connection and role activity, Sanity's own document-revision history, WAF matches, and unexpected inventory changes. Keep Neon point-in-time restore enabled: it is the only rollback for the authentication record.
 
 ## Reporting
 
@@ -66,4 +66,4 @@ Do not include secrets, complete passkey responses, recovery codes, cookies, or 
 
 ## Validation boundary
 
-Automated tests cover the behaviors named in the repository's test output; passing helper tests must not be treated as proof of every external-service integration. The browser suite uses a virtual authenticator and an explicit non-Vercel loopback test gate. Secure-cookie behavior on the final domain, a physical platform/external authenticator, `speedzone-blbob` private access, OIDC or token scoping, live inventory ETag behavior, the deployed `SEcure_Auth` connection, schema, and compare-and-swap behavior, the one-time authentication cutover, legacy inventory migration, deployment-environment gating, and production WAF enforcement must also be verified after deployment. The repository cannot prove a WAF rule, Vercel permission, storage connection, DNS setting, or deployed Argon2 timing.
+Automated tests cover the behaviors named in the repository's test output; passing helper tests must not be treated as proof of every external-service integration. The tests mock the Sanity client at the module boundary, including a hand-simulated transaction that rejects a lock collision or a stale revision — this proves the application's own logic, not the deployed Sanity API's actual behavior. The browser suite uses a virtual authenticator and an explicit non-Vercel loopback test gate. Secure-cookie behavior on the final domain, a physical platform/external authenticator, the live Sanity dataset's actual transaction/uniqueness/revision behavior, the deployed `SEcure_Auth` connection, schema, and compare-and-swap behavior, the one-time authentication cutover, deployment-environment gating, and production WAF enforcement must also be verified after deployment. The repository cannot prove a WAF rule, Vercel permission, storage connection, DNS setting, or deployed Argon2 timing.

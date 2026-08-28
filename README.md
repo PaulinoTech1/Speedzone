@@ -1,6 +1,6 @@
 # SpeedZone Motorsports
 
-Mobile-first public dealership site plus a security-focused vehicle inventory portal for Vercel Pro. The application uses Next.js App Router, TypeScript, Vercel Functions, the `SEcure_Auth` Neon Postgres database for all server-side authentication state, and private and public Blob storage for inventory, audit, and photographs. It uses no third-party authentication provider.
+Mobile-first public dealership site plus a security-focused vehicle inventory portal for Vercel Pro. The application uses Next.js App Router, TypeScript, Vercel Functions, the `SEcure_Auth` Neon Postgres database for all server-side authentication state, and Sanity for vehicle inventory and photographs. It uses no third-party authentication provider, and Sanity Studio is never deployed — all editing goes through the passkey-gated `/admin` portal.
 
 ## Included
 
@@ -9,9 +9,9 @@ Mobile-first public dealership site plus a security-focused vehicle inventory po
 - Mobile admin portal at `/admin` with password plus WebAuthn passkey authentication
 - Production-domain-only first-passkey bootstrap, password-plus-passkey management reauthentication, and offline recovery codes
 - Draft, published, pending, sold, and archived inventory states
-- Browser-side photo resize/orientation handling, metadata-stripping WebP conversion, private staging, and server byte validation
+- Browser-side photo resize/orientation handling, metadata-stripping WebP conversion, and server byte validation before every Sanity asset upload
 - Optional encrypted IndexedDB drafts using a separate local vault passphrase
-- ETag-protected authoritative authentication and inventory state, append-only vehicle audit snapshots, and one-time security markers in private Blob
+- Revision-gated authentication state and one-time security markers in `SEcure_Auth`; inventory uniqueness (stock number, VIN, slug) enforced by atomic Sanity transactions
 - Strict Origin/CSRF controls, host-only cookies, nonce CSP, structured security events, and layered rate limiting
 
 ## Local preview
@@ -42,11 +42,11 @@ keeps its state under `.data/e2e`.
 
 ## Production setup
 
-Run `npm.cmd run provision-admin` on a trusted interactive workstation, apply the authentication schema with `npm.cmd run migrate:auth-db`, then follow [docs/SETUP.md](docs/SETUP.md) for exact `SEcure_Auth`, Blob, Vercel environment, legacy-inventory migration, bootstrap, deployment, and Argon2 benchmark steps. Recovery procedures are in [docs/RECOVERY.md](docs/RECOVERY.md), and the proposed logging-first WAF rollout is in [docs/WAF.md](docs/WAF.md).
+Run `npm.cmd run provision-admin` on a trusted interactive workstation, apply the authentication schema with `npm.cmd run migrate:auth-db`, then follow [docs/SETUP.md](docs/SETUP.md) for exact `SEcure_Auth`, Sanity, Vercel environment, bootstrap, deployment, and Argon2 benchmark steps. Recovery procedures are in [docs/RECOVERY.md](docs/RECOVERY.md), and the proposed logging-first WAF rollout is in [docs/WAF.md](docs/WAF.md).
 
-Read [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md) before production use. Authentication reads the single `auth_state` row in `SEcure_Auth` uncached and commits with a `revision` compare-and-swap. Inventory uses uncached reads from a deterministic private-Blob object and conditional ETag writes. Inventory mutations replace one versioned JSON object, so competing writers cannot silently overwrite a newer revision, but each read and write processes the complete inventory and callers must handle bounded conflict retries.
+Read [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md) before production use. Authentication reads the single `auth_state` row in `SEcure_Auth` uncached and commits with a `revision` compare-and-swap. Each vehicle is its own Sanity document; stock number, VIN, and slug uniqueness is enforced by a dedicated lock document created in the same all-or-nothing transaction as the vehicle write, and per-document edits are gated on Sanity's own revision (`ifRevisionId`), so a stale writer cannot silently overwrite a newer one.
 
-The intended inventory store is the existing Vercel Blob store named `speedzone-blbob`. Its access mode must be confirmed as **Private** before deployment; public Blob is appropriate only for the published vehicle photographs.
+Vehicle inventory and photographs live in a private Sanity dataset, read and written only from the server with an Editor-scoped API token. No browser code talks to Sanity directly, and no Studio is deployed.
 
 ## Deployment status
 

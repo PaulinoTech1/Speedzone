@@ -49,10 +49,9 @@ Use operator-controlled restoration only after independently verifying authority
 
 1. Set `ADMIN_DISABLED=true` and deploy.
 2. Export the `auth_state` row with its `revision` and `updated_at`, the relevant `auth_consume_markers` rows, and the related audit evidence. Note the Neon point-in-time restore timestamp that precedes the incident.
-3. Restore a verified pre-incident authoritative object or construct a separately reviewed recovery change through Vercel's control plane. Use an ETag precondition so a concurrent change cannot be overwritten.
-4. If the record must be rolled back, use Neon point-in-time restore to that exact committed revision rather than a manual `UPDATE`.
-5. Rotate the password hash, `AUTH_COOKIE_SECRET`, optional password pepper, the `SEcure_Auth` role password in `AUTH_DATABASE_URL`, and affected Blob tokens. Cookie-secret rotation also changes recovery-code hashes and therefore requires a coordinated record migration.
-6. Have a second operator review the change, restore two-factor access, register two passkeys, store new codes, and re-enable the account.
+3. If the record must be rolled back, use Neon point-in-time restore to that exact committed revision rather than a manual `UPDATE` — a hand edit bypasses the application's revision-progression checks entirely.
+4. Rotate the password hash, `AUTH_COOKIE_SECRET`, optional password pepper, the `SEcure_Auth` role password in `AUTH_DATABASE_URL`, and the Sanity API token if inventory access is in scope of the incident. Cookie-secret rotation also changes recovery-code hashes and therefore requires a coordinated record migration.
+5. Have a second operator review the change, restore two-factor access, register two passkeys, store new codes, and re-enable the account.
 
 Resetting the lifecycle to `BOOTSTRAP_READY` is not an application recovery feature. If an incident review authorizes that destructive reset, create a completely new offline provisioning set and verify that no credential remains. This manual process is outside the application's transactional guarantees.
 
