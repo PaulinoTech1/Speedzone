@@ -156,6 +156,16 @@ describe("administrator authentication state machine", () => {
 });
 
 describe("final-domain enrollment gate", () => {
+  it("permits the explicit non-Vercel loopback E2E origin", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("VERCEL_ENV", "");
+    vi.stubEnv("WEBAUTHN_EXPECTED_ORIGIN", "http://localhost:4183");
+
+    expect(bootstrapEnrollmentRuntimePermitted()).toBe(true);
+    await expect(resolveAdministratorAuthState()).resolves.toEqual({ state: "BOOTSTRAP_READY" });
+  });
+
   it("permits only the explicit production HTTPS origin and never derives it from Host", () => {
     productionEnrollmentEnvironment();
     const request = new NextRequest("https://untrusted-host.invalid/api/admin/auth/bootstrap/preauth", {

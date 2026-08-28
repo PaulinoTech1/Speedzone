@@ -27,7 +27,7 @@ describe("listPublishedVehiclesOrEmpty", () => {
   it("degrades to an empty list when storage is not configured", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     inventory.listPublishedVehicles.mockRejectedValueOnce(
-      new StateConfigurationError("Inventory Global Config is not configured"),
+      new StateConfigurationError("Private Blob storage is not configured"),
     );
     await expect(listPublishedVehiclesOrEmpty()).resolves.toEqual([]);
     error.mockRestore();
@@ -49,7 +49,7 @@ describe("findPublishedVehicleBySlugOrNull", () => {
   it("degrades to null when storage is not configured", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     inventory.findPublishedVehicleBySlug.mockRejectedValueOnce(
-      new StateConfigurationError("Inventory Global Config is not configured"),
+      new StateConfigurationError("Private Blob storage is not configured"),
     );
     await expect(findPublishedVehicleBySlugOrNull("test")).resolves.toBeNull();
     error.mockRestore();

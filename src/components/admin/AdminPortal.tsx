@@ -272,7 +272,7 @@ function AdminPortalWorkspace({
             <div className="admin-inventory-page">
               <header className="admin-page-heading admin-page-heading-row">
                 <div>
-                  <p className="admin-eyebrow">Global Config revision {revision}</p>
+                  <p className="admin-eyebrow">Inventory revision {revision}</p>
                   <h1>Inventory</h1>
                   <p>Create, publish, and maintain every vehicle from one mobile-ready workspace.</p>
                 </div>

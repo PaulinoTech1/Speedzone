@@ -7,7 +7,7 @@ const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:4183";
 const e2eEnvironment: Record<string, string> = {
   ADMIN_ID: "administrator",
   ADMIN_PASSWORD_HASH:
-    "$argon2id$v=19$m=19456,p=1,t=2$MDEyMzQ1Njc4OWFiY2RlZg$oRAn0pI1W26JUVjargHWqo9AQzSfzRxvVXIAeZhoCuw",
+    "\\$argon2id\\$v=19\\$m=19456,p=1,t=2\\$MDEyMzQ1Njc4OWFiY2RlZg\\$oRAn0pI1W26JUVjargHWqo9AQzSfzRxvVXIAeZhoCuw",
   ADMIN_PASSWORD_PEPPER: "",
   ADMIN_BOOTSTRAP_TOKEN_HASH:
     "a5dc7e4d521860daf367fdf53cf4b603f17ea47d8ad144425c120dfe682c0556",
@@ -26,6 +26,11 @@ const e2eEnvironment: Record<string, string> = {
   INVENTORY_GLOBAL_CONFIG: "",
   BLOB_PRIVATE_READ_WRITE_TOKEN: "",
   BLOB_PHOTO_READ_WRITE_TOKEN: "",
+  BLOB_INVENTORY_READ_WRITE_TOKEN: "",
+  BLOB_INVENTORY_STORE_ID: "",
+  BLOB_READ_WRITE_TOKEN: "",
+  BLOB_STORE_ID: "",
+  VERCEL_OIDC_TOKEN: "",
   ENABLE_ENCRYPTED_LOCAL_DRAFTS: "true",
 };
 
@@ -54,7 +59,10 @@ export default defineConfig({
   ],
   webServer: {
     command: "node scripts/e2e-server.mjs",
-    url: `${baseURL}/api/admin/csrf`,
+    // Readiness must not depend on configured authentication state. The CSRF
+    // endpoint deliberately fails closed until the isolated auth fixture is
+    // available, while the public homepage is a valid server-health probe.
+    url: baseURL,
     env: e2eEnvironment,
     reuseExistingServer: false,
     timeout: 120_000,
