@@ -7,7 +7,7 @@ const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:4183";
 const e2eEnvironment: Record<string, string> = {
   ADMIN_ID: "administrator",
   ADMIN_PASSWORD_HASH:
-    "\\$argon2id\\$v=19\\$m=19456,p=1,t=2\\$MDEyMzQ1Njc4OWFiY2RlZg\\$oRAn0pI1W26JUVjargHWqo9AQzSfzRxvVXIAeZhoCuw",
+    "$argon2id$v=19$m=19456,p=1,t=2$MDEyMzQ1Njc4OWFiY2RlZg$oRAn0pI1W26JUVjargHWqo9AQzSfzRxvVXIAeZhoCuw",
   ADMIN_PASSWORD_PEPPER: "",
   ADMIN_BOOTSTRAP_TOKEN_HASH:
     "a5dc7e4d521860daf367fdf53cf4b603f17ea47d8ad144425c120dfe682c0556",
