@@ -61,7 +61,7 @@ export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
         <nav className="mobile-nav" aria-label="Primary navigation">
           <div className="shell nav-track">
             <a
-              href={onHome ? "#inventory" : "/inventory"}
+              href="/inventory"
               aria-current={currentPage === "inventory" ? "page" : undefined}
             >
               Inventory
