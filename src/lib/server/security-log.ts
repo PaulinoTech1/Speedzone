@@ -19,6 +19,7 @@ export type SecurityEventName =
   | "inventory.status"
   | "upload.authorized"
   | "upload.rejected"
+  | "photo.deleted"
   | "test_drive.submitted"
   | "trade_in.submitted"
   | "rate_limited";

@@ -152,3 +152,45 @@ export function formToVehicleInput(
   };
 }
 
+
+export type PhotoLibraryState = "linked" | "unlinked" | "staging";
+
+export type PhotoLibraryEntry = {
+  pathname: string;
+  url: string;
+  size: number;
+  uploadedAt: string;
+  state: PhotoLibraryState;
+  vehicleId: string | null;
+  vehicleTitle: string | null;
+  vehicleStatus: VehicleStatus | null;
+  width: number | null;
+  height: number | null;
+  alt: string | null;
+};
+
+export type MissingPhoto = {
+  pathname: string;
+  url: string;
+  vehicleId: string;
+  vehicleTitle: string;
+  vehicleStatus: VehicleStatus;
+};
+
+export type PhotoLibraryTotals = {
+  objects: number;
+  bytes: number;
+  linked: number;
+  unlinked: number;
+  unlinkedBytes: number;
+  staging: number;
+  stagingBytes: number;
+};
+
+export type PhotoLibraryResponse = {
+  ok: true;
+  entries: PhotoLibraryEntry[];
+  missing: MissingPhoto[];
+  totals: PhotoLibraryTotals;
+  truncated: boolean;
+};
