@@ -58,7 +58,10 @@ const dealerStructuredData = {
     opens: "10:00",
     closes: "16:00",
   },
-  sameAs: ["https://www.instagram.com/speedzone_motorsports/"],
+  sameAs: [
+    "https://www.instagram.com/speedzone_motorsports/",
+    "https://share.google/IObSwqXQNUBsJWF4J",
+  ],
 };
 
 const faqStructuredData = {
