@@ -56,7 +56,8 @@ beforeEach(() => {
   vi.stubEnv("RESEND_API_KEY", "test-resend-key");
   vi.stubEnv("RESEND_FROM_EMAIL", "SpeedZone Motorsports <test-drive@speedzonems.test>");
   vi.stubEnv("TEST_DRIVE_NOTIFICATION_EMAIL", "smpaulino.business@gmail.com");
-  vi.stubEnv("BLOB_READ_WRITE_TOKEN", "test-blob-token");
+  vi.stubEnv("Test_Drive", "test-blob-token");
+  vi.stubEnv("Test_Drive_STORE_ID", "test-store-id");
   vi.stubGlobal(
     "fetch",
     vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: "email_123" }), { status: 200 })),
@@ -86,7 +87,11 @@ describe("test drive request route", () => {
       type: "test-drive-request",
       fullName: "Jamie Rivera",
     });
-    expect(options).toMatchObject({ access: "private", token: "test-blob-token" });
+    expect(options).toMatchObject({
+      access: "private",
+      storeId: "test-store-id",
+      token: "test-blob-token",
+    });
 
     const mockedFetch = vi.mocked(fetch);
     expect(mockedFetch).toHaveBeenCalledTimes(1);

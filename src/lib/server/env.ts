@@ -346,7 +346,11 @@ export function privateBlobToken(): string | undefined {
 }
 
 export function leadBlobToken(): string {
-  return requiredEnv("BLOB_READ_WRITE_TOKEN");
+  return requiredEnv("Test_Drive");
+}
+
+export function leadBlobStoreId(): string {
+  return requiredEnv("Test_Drive_STORE_ID");
 }
 
 export function encryptedDraftsEnabled(): boolean {

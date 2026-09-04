@@ -7,7 +7,7 @@ import {
   type TestDriveRequest,
 } from "@/lib/domain/test-drive";
 import { renderLeadEmail, sendLeadNotification } from "@/lib/server/lead-email";
-import { leadBlobToken } from "@/lib/server/env";
+import { leadBlobStoreId, leadBlobToken } from "@/lib/server/env";
 import { noStoreJson, parseStrictJsonBody } from "@/lib/server/request";
 import { enforceClientRateLimit, routeError } from "@/lib/server/route-utils";
 import { clientSecurityHash, logSecurityEvent } from "@/lib/server/security-log";
@@ -42,6 +42,7 @@ async function storeRequest(request: TestDriveRequest): Promise<void> {
     {
       access: "private",
       contentType: "application/json",
+      storeId: leadBlobStoreId(),
       token: leadBlobToken(),
     },
   );
