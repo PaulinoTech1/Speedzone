@@ -126,6 +126,12 @@ export function routeError(error: unknown): NextResponse {
     );
   }
   if (error instanceof StateConfigurationError) {
+    // Configuration failures are intentionally generic to the browser, but
+    // operators still need a safe reason in protected platform logs. Every
+    // StateConfigurationError message is application-controlled and must never
+    // include credentials, connection strings, request bodies, or provider
+    // response payloads.
+    console.error(`Service configuration error: ${error.message}`);
     return noStoreJson(
       { ok: false, error: { code: "SERVICE_NOT_CONFIGURED", message: "Storage is not configured" } },
       { status: 503 },
