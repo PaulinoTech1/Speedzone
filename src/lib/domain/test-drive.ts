@@ -45,9 +45,22 @@ export const testDriveRequestSchema = z
     preferredDate: z
       .string()
       .trim()
-      .regex(isoDatePattern, "Enter a valid date")
-      .refine(isTodayOrLater, "Preferred date must be today or later"),
-    preferredTime: z.string().refine(isTestDriveTimeSlot, "Choose a preferred time"),
+      .refine(
+        (value) => value === "" || isoDatePattern.test(value),
+        "Enter a valid date",
+      )
+      .refine(
+        (value) => value === "" || isTodayOrLater(value),
+        "Preferred date must be today or later",
+      )
+      .default(""),
+    preferredTime: z
+      .string()
+      .refine(
+        (value) => value === "" || isTestDriveTimeSlot(value),
+        "Choose a preferred time",
+      )
+      .default(""),
     comments: trimmedText(1000).default(""),
     // Hidden from real visitors via CSS; any bot that fills it fails validation.
     website: trimmedText(0).default(""),

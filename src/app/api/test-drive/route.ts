@@ -23,9 +23,11 @@ function notificationEmail(request: TestDriveRequest): { text: string; html: str
     ["Email", request.email],
     ["Phone", request.phone],
     ["Vehicle of interest", request.vehicleOfInterest],
-    ["Preferred date", request.preferredDate],
-    ["Preferred time", testDriveTimeSlotLabels[request.preferredTime]],
   ];
+  if (request.preferredDate) rows.push(["Preferred date", request.preferredDate]);
+  if (request.preferredTime) {
+    rows.push(["Preferred time", testDriveTimeSlotLabels[request.preferredTime]]);
+  }
   return renderLeadEmail("New Test Drive Request", rows, request.comments);
 }
 

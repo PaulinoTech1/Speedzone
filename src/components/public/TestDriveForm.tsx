@@ -214,7 +214,7 @@ export function TestDriveForm() {
         <div className="lead-form-row">
           <div className="field">
             <label htmlFor={`${formId}-date`}>
-              Preferred date <b aria-hidden="true">*</b>
+              Preferred date <span>(optional)</span>
             </label>
             <input
               id={`${formId}-date`}
@@ -225,7 +225,6 @@ export function TestDriveForm() {
               onChange={(event) => update("preferredDate", event.target.value)}
               aria-invalid={Boolean(errors.preferredDate)}
               aria-describedby={errors.preferredDate ? `${formId}-date-error` : undefined}
-              required
             />
             {errors.preferredDate ? (
               <span className="field-error" id={`${formId}-date-error`} role="alert">
@@ -236,7 +235,7 @@ export function TestDriveForm() {
 
           <div className="field">
             <label htmlFor={`${formId}-time`}>
-              Preferred time <b aria-hidden="true">*</b>
+              Preferred time <span>(optional)</span>
             </label>
             <select
               id={`${formId}-time`}
@@ -245,7 +244,6 @@ export function TestDriveForm() {
               onChange={(event) => update("preferredTime", event.target.value as TestDriveTimeSlot)}
               aria-invalid={Boolean(errors.preferredTime)}
               aria-describedby={errors.preferredTime ? `${formId}-time-error` : undefined}
-              required
             >
               <option value="" disabled>
                 Choose a time

@@ -29,6 +29,14 @@ function submission(overrides: Record<string, unknown> = {}) {
 }
 
 describe("testDriveRequestSchema", () => {
+  it("accepts a request without scheduling preferences", () => {
+    const result = testDriveRequestSchema.safeParse(
+      submission({ preferredDate: "", preferredTime: "" }),
+    );
+
+    expect(result.success).toBe(true);
+  });
+
   it("accepts a complete, valid submission", () => {
     const result = testDriveRequestSchema.safeParse(submission());
     expect(result.success).toBe(true);
