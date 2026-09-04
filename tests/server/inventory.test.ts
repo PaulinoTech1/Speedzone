@@ -88,20 +88,48 @@ vi.mock("@sanity/client", () => {
 
   function fetchImpl(query: string, params: Record<string, unknown> = {}) {
     const normalized = query.replace(/\s+/g, " ").trim();
-    if (normalized.startsWith('*[_type == "vehicle" && status == "published" && slug == $slug][0]')) {
+    if (normalized.includes("lower(stockNumber)") && normalized.includes("$excludeVehicleId")) {
+      return Promise.resolve(
+        [...store.docs.values()]
+          .filter(
+            (doc) =>
+              doc._type === "vehicle" &&
+              doc._id !== params.excludeVehicleId &&
+              ["stockNumber", "vin", "slug"].some(
+                (field) =>
+                  String(doc[field]).toLowerCase() === String(params[field]).toLowerCase(),
+              ),
+          )
+          .map((doc) => ({
+            _id: doc._id,
+            stockNumber: doc.stockNumber,
+            vin: doc.vin,
+            slug: doc.slug,
+          })),
+      );
+    }
+    if (normalized.includes("_id == $id") && normalized.endsWith("}")) {
+      if (store.forcedGetDocument !== undefined) {
+        const forced = store.forcedGetDocument;
+        store.forcedGetDocument = undefined;
+        return Promise.resolve(forced ?? null);
+      }
+      return Promise.resolve(store.docs.get(String(params.id)) ?? null);
+    }
+    if (normalized.includes('status == "published" && slug == $slug][0]')) {
       const match = [...store.docs.values()].find(
         (doc) => doc._type === "vehicle" && doc.status === "published" && doc.slug === params.slug,
       );
       return Promise.resolve(match ?? null);
     }
-    if (normalized.startsWith('*[_type == "vehicle" && status == "published"]')) {
+    if (normalized.includes('status == "published"]') && normalized.includes("| order")) {
       return Promise.resolve(
         [...store.docs.values()]
           .filter((doc) => doc._type === "vehicle" && doc.status === "published")
           .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
       );
     }
-    if (normalized.startsWith('*[_type == "vehicle"]')) {
+    if (normalized.startsWith('*[_type == "vehicle"') && normalized.includes("| order")) {
       return Promise.resolve(
         [...store.docs.values()]
           .filter((doc) => doc._type === "vehicle")

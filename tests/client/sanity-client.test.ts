@@ -24,7 +24,7 @@ describe("public Sanity client", () => {
     expect(createClient).toHaveBeenCalledWith({
       projectId: "speedzone",
       dataset: "production",
-      apiVersion: "2024-01-01",
+      apiVersion: "2026-09-04",
       useCdn: true,
     });
     expect(createClient.mock.calls[0]?.[0]).not.toHaveProperty("token");

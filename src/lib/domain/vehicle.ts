@@ -20,6 +20,17 @@ export const vehiclePhotoSchema = z
 
 export type VehiclePhoto = z.infer<typeof vehiclePhotoSchema>;
 
+const publishedSanityDocumentIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/, "Invalid Sanity document ID")
+  .refine(
+    (value) => !value.startsWith("drafts.") && !value.startsWith("versions."),
+    "Expected a published Sanity document ID",
+  );
+
 const vehicleFieldsSchema = z
   .object({
     expectedVersion: z.number().int().nonnegative().optional(),
@@ -82,7 +93,7 @@ export type VehicleInput = z.infer<typeof vehicleInputSchema>;
 export const vehicleRecordSchema = vehicleFieldsSchema
   .omit({ expectedVersion: true })
   .extend({
-    id: z.uuid(),
+    id: publishedSanityDocumentIdSchema,
     version: z.number().int().positive(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),

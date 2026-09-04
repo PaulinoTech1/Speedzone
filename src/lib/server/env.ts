@@ -320,7 +320,7 @@ export function sanityConfig(): SanityConfig | undefined {
   if (!sanityDatasetPattern.test(dataset)) {
     throw new Error("SANITY_DATASET must be a valid Sanity dataset name");
   }
-  return { projectId, dataset, token, apiVersion: optional("SANITY_API_VERSION") ?? "2024-01-01" };
+  return { projectId, dataset, token, apiVersion: optional("SANITY_API_VERSION") ?? "2026-09-04" };
 }
 
 // Shared by every public lead form (test drive, sell/trade-in) that emails a

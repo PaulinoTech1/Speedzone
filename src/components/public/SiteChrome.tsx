@@ -202,6 +202,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
           <div>
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
+            <a href="/admin/login">Administrator sign in</a>
           </div>
         </div>
       </footer>
@@ -254,6 +255,7 @@ export function LegalFooter({ counterpart }: { counterpart: "privacy" | "terms" 
           <a href={`/${counterpart}`}>
             {counterpart === "privacy" ? "Privacy" : "Terms"}
           </a>
+          <a href="/admin/login">Administrator sign in</a>
         </div>
       </div>
     </footer>

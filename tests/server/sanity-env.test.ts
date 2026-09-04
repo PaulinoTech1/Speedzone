@@ -16,7 +16,7 @@ describe("Sanity environment configuration", () => {
       projectId: "speedzone",
       dataset: "production",
       token: "editor-token",
-      apiVersion: "2024-01-01",
+      apiVersion: "2026-09-04",
     });
   });
 
@@ -29,7 +29,7 @@ describe("Sanity environment configuration", () => {
       projectId: "speedzone",
       dataset: "production",
       token: "write-token",
-      apiVersion: "2024-01-01",
+      apiVersion: "2026-09-04",
     });
   });
 

@@ -2,6 +2,8 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
+import { defineQuery } from "groq";
+
 import {
   canTransitionVehicle,
   vehicleInputSchema,
@@ -56,20 +58,28 @@ function lockId(field: UniqueField, normalizedValue: string): string {
 type SanityPhoto = {
   _key: string;
   _type: "image";
-  asset: { _type: "reference"; _ref: string };
-  url: string;
-  pathname: string;
-  width: number;
-  height: number;
-  bytes: number;
-  alt: string;
-  createdAt: string;
+  asset?: {
+    _type?: "reference";
+    _ref?: string;
+    _id?: string;
+    _createdAt?: string;
+    url?: string;
+    size?: number;
+    metadata?: { dimensions?: { width?: number; height?: number } };
+  };
+  url?: string;
+  pathname?: string;
+  width?: number;
+  height?: number;
+  bytes?: number;
+  alt?: string;
+  createdAt?: string;
 };
 
 type VehicleFields = {
-  version: number;
-  createdAt: string;
-  updatedAt: string;
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
   stockNumber: string;
   vin: string;
   year: number;
@@ -92,18 +102,91 @@ type VehicleFields = {
   photographs: SanityPhoto[];
 };
 
-type VehicleDocument = VehicleFields & { _id: string; _rev: string };
+type VehicleDocument = VehicleFields & {
+  _id: string;
+  _rev: string;
+  _createdAt: string;
+  _updatedAt: string;
+};
 type LockDocument = { _id: string; vehicleId: string };
 
+const ALL_VEHICLES_QUERY = defineQuery(`
+  *[_type == "vehicle" && !(_id in path("drafts.**"))]
+  | order(coalesce(updatedAt, _updatedAt) desc) {
+    _id, _rev, _createdAt, _updatedAt,
+    version, createdAt, updatedAt,
+    stockNumber, vin, year, make, model, trim, price, mileage,
+    exteriorColor, interiorColor, bodyStyle, transmission, drivetrain,
+    fuelType, engine, description, features, status, slug,
+    photographs[]{
+      _key, _type, alt, url, pathname, width, height, bytes, createdAt,
+      asset->{_id, _createdAt, url, size, metadata{dimensions{width, height}}}
+    }
+  }
+`);
+
+const PUBLISHED_VEHICLES_QUERY = defineQuery(`
+  *[_type == "vehicle" && !(_id in path("drafts.**")) && status == "published"]
+  | order(coalesce(updatedAt, _updatedAt) desc) {
+    _id, _rev, _createdAt, _updatedAt,
+    version, createdAt, updatedAt,
+    stockNumber, vin, year, make, model, trim, price, mileage,
+    exteriorColor, interiorColor, bodyStyle, transmission, drivetrain,
+    fuelType, engine, description, features, status, slug,
+    photographs[]{
+      _key, _type, alt, url, pathname, width, height, bytes, createdAt,
+      asset->{_id, _createdAt, url, size, metadata{dimensions{width, height}}}
+    }
+  }
+`);
+
+const PUBLISHED_VEHICLE_BY_SLUG_QUERY = defineQuery(`
+  *[_type == "vehicle" && !(_id in path("drafts.**")) && status == "published" && slug == $slug][0] {
+    _id, _rev, _createdAt, _updatedAt,
+    version, createdAt, updatedAt,
+    stockNumber, vin, year, make, model, trim, price, mileage,
+    exteriorColor, interiorColor, bodyStyle, transmission, drivetrain,
+    fuelType, engine, description, features, status, slug,
+    photographs[]{
+      _key, _type, alt, url, pathname, width, height, bytes, createdAt,
+      asset->{_id, _createdAt, url, size, metadata{dimensions{width, height}}}
+    }
+  }
+`);
+
+const VEHICLE_BY_ID_QUERY = defineQuery(`
+  *[_type == "vehicle" && !(_id in path("drafts.**")) && _id == $id][0] {
+    _id, _rev, _createdAt, _updatedAt,
+    version, createdAt, updatedAt,
+    stockNumber, vin, year, make, model, trim, price, mileage,
+    exteriorColor, interiorColor, bodyStyle, transmission, drivetrain,
+    fuelType, engine, description, features, status, slug,
+    photographs[]{
+      _key, _type, alt, url, pathname, width, height, bytes, createdAt,
+      asset->{_id, _createdAt, url, size, metadata{dimensions{width, height}}}
+    }
+  }
+`);
+
+const VEHICLE_UNIQUENESS_QUERY = defineQuery(`
+  *[
+    _type == "vehicle" &&
+    !(_id in path("drafts.**")) &&
+    _id != $excludeVehicleId &&
+    (lower(stockNumber) == lower($stockNumber) || lower(vin) == lower($vin) || lower(slug) == lower($slug))
+  ]{_id, stockNumber, vin, slug}
+`);
+
 function toVehiclePhoto(photo: SanityPhoto): VehiclePhoto {
+  const asset = photo.asset;
   return {
-    url: photo.url,
-    pathname: photo.pathname,
-    width: photo.width,
-    height: photo.height,
-    bytes: photo.bytes,
-    alt: photo.alt,
-    createdAt: photo.createdAt,
+    url: photo.url ?? asset?.url ?? "",
+    pathname: photo.pathname ?? asset?._id ?? asset?._ref ?? "",
+    width: photo.width ?? asset?.metadata?.dimensions?.width ?? 0,
+    height: photo.height ?? asset?.metadata?.dimensions?.height ?? 0,
+    bytes: photo.bytes ?? asset?.size ?? 0,
+    alt: photo.alt ?? "",
+    createdAt: photo.createdAt ?? asset?._createdAt ?? "",
   };
 }
 
@@ -127,26 +210,26 @@ function toSanityPhoto(photo: VehiclePhoto): SanityPhoto {
 function toVehicleRecord(doc: VehicleDocument): VehicleRecord {
   return vehicleRecordSchema.parse({
     id: doc._id,
-    version: doc.version,
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
+    version: doc.version ?? 1,
+    createdAt: doc.createdAt ?? doc._createdAt,
+    updatedAt: doc.updatedAt ?? doc._updatedAt,
     stockNumber: doc.stockNumber,
     vin: doc.vin,
     year: doc.year,
     make: doc.make,
     model: doc.model,
-    trim: doc.trim,
+    trim: doc.trim ?? "",
     price: doc.price,
     mileage: doc.mileage,
-    exteriorColor: doc.exteriorColor,
-    interiorColor: doc.interiorColor,
-    bodyStyle: doc.bodyStyle,
-    transmission: doc.transmission,
-    drivetrain: doc.drivetrain,
-    fuelType: doc.fuelType,
-    engine: doc.engine,
-    description: doc.description,
-    features: doc.features,
+    exteriorColor: doc.exteriorColor ?? "",
+    interiorColor: doc.interiorColor ?? "",
+    bodyStyle: doc.bodyStyle ?? "",
+    transmission: doc.transmission ?? "",
+    drivetrain: doc.drivetrain ?? "",
+    fuelType: doc.fuelType ?? "",
+    engine: doc.engine ?? "",
+    description: doc.description ?? "",
+    features: doc.features ?? [],
     status: doc.status,
     slug: doc.slug,
     photographs: (doc.photographs ?? []).map(toVehiclePhoto),
@@ -187,6 +270,22 @@ async function assertUniquePrecheck(
   input: Pick<VehicleInput, UniqueField>,
   excludeVehicleId?: string,
 ): Promise<void> {
+  let vehicles: Array<Pick<VehicleDocument, "_id" | UniqueField>>;
+  try {
+    vehicles = await sanity().fetch(VEHICLE_UNIQUENESS_QUERY, {
+      ...input,
+      excludeVehicleId: excludeVehicleId ?? "",
+    });
+  } catch (error) {
+    throw translateSanityError(error);
+  }
+  for (const field of uniqueFields) {
+    const expected = input[field].toUpperCase();
+    if (vehicles.some((vehicle) => vehicle[field]?.toUpperCase() === expected)) {
+      throw new InventoryValidationError(duplicateMessage[field], duplicateCode[field]);
+    }
+  }
+
   const ids: Record<UniqueField, string> = {
     stockNumber: lockId("stockNumber", input.stockNumber),
     vin: lockId("vin", input.vin),
@@ -211,7 +310,7 @@ async function assertUniquePrecheck(
 export async function listAllVehicles(): Promise<InventoryState> {
   let docs: VehicleDocument[];
   try {
-    docs = await sanity().fetch<VehicleDocument[]>(`*[_type == "vehicle"] | order(updatedAt desc)`);
+    docs = await sanity().fetch<VehicleDocument[]>(ALL_VEHICLES_QUERY);
   } catch (error) {
     throw translateSanityError(error);
   }
@@ -228,9 +327,7 @@ export async function listAllVehicles(): Promise<InventoryState> {
 export async function listPublishedVehicles(): Promise<VehicleRecord[]> {
   let docs: VehicleDocument[];
   try {
-    docs = await sanity().fetch<VehicleDocument[]>(
-      `*[_type == "vehicle" && status == "published"] | order(updatedAt desc)`,
-    );
+    docs = await sanity().fetch<VehicleDocument[]>(PUBLISHED_VEHICLES_QUERY);
   } catch (error) {
     throw translateSanityError(error);
   }
@@ -240,10 +337,7 @@ export async function listPublishedVehicles(): Promise<VehicleRecord[]> {
 export async function findPublishedVehicleBySlug(slug: string): Promise<VehicleRecord | null> {
   let doc: VehicleDocument | null;
   try {
-    doc = await sanity().fetch<VehicleDocument | null>(
-      `*[_type == "vehicle" && status == "published" && slug == $slug][0]`,
-      { slug },
-    );
+    doc = await sanity().fetch<VehicleDocument | null>(PUBLISHED_VEHICLE_BY_SLUG_QUERY, { slug });
   } catch (error) {
     throw translateSanityError(error);
   }
@@ -308,7 +402,7 @@ export async function updateVehicle(id: string, rawInput: unknown): Promise<Vehi
   const client = sanity();
   let doc: VehicleDocument | undefined;
   try {
-    doc = await client.getDocument<VehicleFields>(id);
+    doc = (await client.fetch<VehicleDocument | null>(VEHICLE_BY_ID_QUERY, { id })) ?? undefined;
   } catch (error) {
     throw translateSanityError(error);
   }
@@ -357,7 +451,7 @@ export async function updateVehicle(id: string, rawInput: unknown): Promise<Vehi
       // the transaction is all-or-nothing, so exactly one of these happened.
       let latest: VehicleDocument | undefined;
       try {
-        latest = await client.getDocument<VehicleFields>(id);
+        latest = (await client.fetch<VehicleDocument | null>(VEHICLE_BY_ID_QUERY, { id })) ?? undefined;
       } catch (readError) {
         throw translateSanityError(readError);
       }

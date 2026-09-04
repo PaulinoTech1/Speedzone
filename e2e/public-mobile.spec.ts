@@ -35,6 +35,12 @@ test.describe("mobile public site", () => {
       page.getByText(/A quick response can keep a developing problem from causing more damage/i),
     ).toBeVisible();
     await expectNoHorizontalOverflow(page);
+
+    const administratorLink = page.getByRole("link", { name: "Administrator sign in" });
+    await expect(administratorLink).toHaveAttribute("href", "/admin/login");
+    await administratorLink.click();
+    await expect(page).toHaveURL(/\/admin\/login$/);
+    await expect(page.getByRole("heading", { name: "Administrator sign in" })).toBeVisible();
   });
 
   test("Road Trip exposes 16 low-cost stops and expandable planning details", async ({ page }) => {

@@ -10,6 +10,7 @@ export default defineConfig([
     "coverage/**",
     "legacy-static/**",
     "playwright-report/**",
+    "sanity.types.ts",
     "test-results/**",
   ]),
 ]);

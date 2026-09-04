@@ -68,7 +68,7 @@ Once the `auth_state` row exists it is authoritative and both legacy sources are
 
 ## 3. Vehicle inventory and photos (Sanity)
 
-Vehicles and their photographs are stored in Sanity, not Blob. Editing still only happens through the passkey-gated `/admin` portal — Sanity Studio is never deployed or exposed, and no browser code talks to Sanity directly.
+Vehicles and their photographs are stored in Sanity, not Blob. The passkey-gated `/admin` portal remains the hardened application editor. The standalone sibling `../studio-project-coffee-tree` is a second editing surface for authorized Sanity project members and must be deployed separately from this Next.js app.
 
 1. Create a Sanity project (the free tier covers this data volume).
 2. Create one dataset per environment — `production` for the live site, a separate `development` dataset for local work, and optionally a `preview` dataset for Vercel Preview deployments (otherwise Preview can share `development`). Set every dataset's visibility to **private**: reads always go through this app's server, so there is no reason to expose one unauthenticated.
@@ -91,9 +91,11 @@ SANITY_API_WRITE_TOKEN
 
 The application accepts either complete set. If both forms of a value are present, they must match. Project IDs and dataset names are public identifiers; `SANITY_API_TOKEN` and `SANITY_API_WRITE_TOKEN` are secrets and must never use the `NEXT_PUBLIC_` prefix. A partial set fails closed as a configuration error rather than silently degrading. `SANITY_API_VERSION` is optional and defaults to a pinned, stable dated version.
 
-No CORS configuration is needed in Sanity's dashboard — CORS origin allowlisting only governs browser-originated calls, and every Sanity call here is server-to-server with a bearer token, the same trust boundary as the Neon connection in section 2.
+The Next.js application does not need a Sanity CORS origin because its calls are server-to-server. A deployed standalone Studio does make authenticated browser-originated calls, so add only its exact HTTPS origin with credentials in Sanity Manage (plus `http://localhost:3333` for local Studio development). Do not wildcard origins.
 
-Vehicle documents (`_type: "vehicle"`) use the vehicle's own UUID as `_id`. Uniqueness of stock number, VIN, and slug is enforced with a `vehicleLock` document per unique key, created in the same transaction as the vehicle write — a deliberate application-level constraint, since Sanity has no native cross-document uniqueness. Photographs are Sanity image assets, uploaded through `/api/admin/uploads` after the same server-side WebP verification and re-encoding the app has always done; there is no Studio media browser and no orphaned-asset cleanup tool in this version.
+Vehicle documents use `_type: "vehicle"`. The application creates UUID IDs; Studio-created documents use Sanity-generated IDs, and the reader accepts both. Application writes retain atomic `vehicleLock` documents and also query actual vehicle documents before writing. Studio performs matching asynchronous uniqueness and status validation, but schema validation is client-side and is not a database uniqueness constraint.
+
+The `/admin` photo path remains the strongest upload path: it redraws pixels in the browser and independently decodes and re-encodes WebP on the server before uploading. Studio's native image field limits published references to 12 images, 4 MiB, and 1600 pixels per side; it disables original-filename storage and requests only LQIP/palette metadata, excluding EXIF/location extraction. Studio does not perform the application's independent server-side re-encode, so use `/admin` for photos whose source metadata must be removed from the original bytes.
 
 The authoritative administrator record is the `auth_state` row in `SEcure_Auth`, not a Blob object. `security/auth/state-v1.json` is read once during the cutover described in section 2 and never written again; leave it in place as evidence until the cutover is verified, then archive it offline. `BLOB_PRIVATE_READ_WRITE_TOKEN` is needed only for that one-time legacy read — it has no role in inventory or photo storage.
 
