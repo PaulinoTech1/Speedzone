@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { put } from "@vercel/blob";
 
 import {
   testDriveRequestSchema,
@@ -6,6 +7,7 @@ import {
   type TestDriveRequest,
 } from "@/lib/domain/test-drive";
 import { renderLeadEmail, sendLeadNotification } from "@/lib/server/lead-email";
+import { leadBlobToken } from "@/lib/server/env";
 import { noStoreJson, parseStrictJsonBody } from "@/lib/server/request";
 import { enforceClientRateLimit, routeError } from "@/lib/server/route-utils";
 import { clientSecurityHash, logSecurityEvent } from "@/lib/server/security-log";
@@ -27,10 +29,27 @@ function notificationEmail(request: TestDriveRequest): { text: string; html: str
   return renderLeadEmail("New Test Drive Request", rows, request.comments);
 }
 
+async function storeRequest(request: TestDriveRequest): Promise<void> {
+  await put(
+    `leads/test-drive/${crypto.randomUUID()}.json`,
+    JSON.stringify({
+      type: "test-drive-request",
+      submittedAt: new Date().toISOString(),
+      ...request,
+    }),
+    {
+      access: "private",
+      contentType: "application/json",
+      token: leadBlobToken(),
+    },
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     enforceClientRateLimit(request, "testDrive");
     const input = await parseStrictJsonBody(request, testDriveRequestSchema, maximumBodyBytes);
+    await storeRequest(input);
     const { text, html } = notificationEmail(input);
     await sendLeadNotification({
       subject: `New Test Drive Request - ${input.fullName}`,

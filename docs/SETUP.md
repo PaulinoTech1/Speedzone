@@ -62,7 +62,7 @@ A deployment that already authenticated against the private Blob object `securit
 2. Keep `BLOB_PRIVATE_READ_WRITE_TOKEN` (or `AUTH_GLOBAL_CONFIG`) connected during the cutover window and do not alter the legacy record.
 3. Deploy. On the first authenticated request, an empty `auth_state` table is seeded once from the legacy Blob object, or from the legacy Global Config mirror, or from a fresh `BOOTSTRAP_READY` record when neither exists. The insert is `ON CONFLICT DO NOTHING`, so competing first requests cannot both seed it.
 4. Run `npm.cmd run migrate:auth-db -- --check` and verify the reported lifecycle state, revision, and passkey count against step 1. Then confirm a real password-plus-passkey login.
-5. Only after that login succeeds, remove `AUTH_GLOBAL_CONFIG` and `BLOB_PRIVATE_READ_WRITE_TOKEN` and redeploy. Neither has any ongoing role: inventory and photos live in Sanity, never in Blob.
+5. Only after that login succeeds, remove `AUTH_GLOBAL_CONFIG` and `BLOB_PRIVATE_READ_WRITE_TOKEN` and redeploy. `BLOB_READ_WRITE_TOKEN` is separate and remains required for private test-drive lead records.
 
 Once the `auth_state` row exists it is authoritative and both legacy sources are ignored. Never delete the row to force a reseed: a later absence can pull back stale legacy state or an empty record, and must be handled as a security incident with a reviewed point-in-time restore.
 

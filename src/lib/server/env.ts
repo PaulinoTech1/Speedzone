@@ -345,6 +345,10 @@ export function privateBlobToken(): string | undefined {
   return optional("BLOB_PRIVATE_READ_WRITE_TOKEN");
 }
 
+export function leadBlobToken(): string {
+  return requiredEnv("BLOB_READ_WRITE_TOKEN");
+}
+
 export function encryptedDraftsEnabled(): boolean {
   return booleanEnv("ENABLE_ENCRYPTED_LOCAL_DRAFTS");
 }

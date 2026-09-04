@@ -1,5 +1,10 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { put } from "@vercel/blob";
+
+vi.mock("@vercel/blob", () => ({
+  put: vi.fn(async () => ({ url: "https://blob.test/private-lead.json" })),
+}));
 
 import * as testDriveRoute from "@/app/api/test-drive/route";
 import { resetRateLimitsForTests } from "@/lib/server/rate-limit";
@@ -51,6 +56,7 @@ beforeEach(() => {
   vi.stubEnv("RESEND_API_KEY", "test-resend-key");
   vi.stubEnv("RESEND_FROM_EMAIL", "SpeedZone Motorsports <test-drive@speedzonems.test>");
   vi.stubEnv("TEST_DRIVE_NOTIFICATION_EMAIL", "smpaulino.business@gmail.com");
+  vi.stubEnv("BLOB_READ_WRITE_TOKEN", "test-blob-token");
   vi.stubGlobal(
     "fetch",
     vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: "email_123" }), { status: 200 })),
@@ -72,6 +78,15 @@ describe("test drive request route", () => {
     const response = await testDriveRoute.POST(testDriveRequest(validBody()));
     expect(response.status).toBe(201);
     await expect(responseBody(response)).resolves.toEqual({ ok: true });
+
+    expect(put).toHaveBeenCalledTimes(1);
+    const [path, body, options] = vi.mocked(put).mock.calls[0]!;
+    expect(path).toMatch(/^leads\/test-drive\/.+\.json$/);
+    expect(JSON.parse(String(body))).toMatchObject({
+      type: "test-drive-request",
+      fullName: "Jamie Rivera",
+    });
+    expect(options).toMatchObject({ access: "private", token: "test-blob-token" });
 
     const mockedFetch = vi.mocked(fetch);
     expect(mockedFetch).toHaveBeenCalledTimes(1);
