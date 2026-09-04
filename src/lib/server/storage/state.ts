@@ -245,8 +245,10 @@ export async function readAuthState(): Promise<AuthState> {
     adminConfig();
     tokenConfig();
     webAuthnConfig();
-  } catch {
-    throw new StateConfigurationError("Authentication environment is not configured");
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "Authentication environment validation failed";
+    throw new StateConfigurationError(`Authentication environment is not configured: ${reason}`);
   }
   const state = authDatabaseIsAuthoritative() ? await readAuthoritativeAuthState() : (await readLocal()).auth;
   if (state.state === "UNCONFIGURED") {
