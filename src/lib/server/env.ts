@@ -290,18 +290,29 @@ export type SanityConfig = Readonly<{
 const sanityProjectIdPattern = /^[a-z0-9]+$/;
 const sanityDatasetPattern = /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/;
 
+function sanityVariable(primary: string, integrationAlias: string): string | undefined {
+  const configured = optional(primary);
+  const integrated = optional(integrationAlias);
+  if (configured && integrated && configured !== integrated) {
+    throw new Error(`${primary} and ${integrationAlias} must match when both are set`);
+  }
+  return configured ?? integrated;
+}
+
 /**
  * Vehicle inventory lives in Sanity (project/dataset/token configured below),
  * never in Blob. The three variables must be set together: a partial set is an
  * operator mistake, not an "unconfigured, degrade gracefully" state.
  */
 export function sanityConfig(): SanityConfig | undefined {
-  const projectId = optional("SANITY_PROJECT_ID");
-  const dataset = optional("SANITY_DATASET");
-  const token = optional("SANITY_API_TOKEN");
+  const projectId = sanityVariable("SANITY_PROJECT_ID", "NEXT_PUBLIC_SANITY_PROJECT_ID");
+  const dataset = sanityVariable("SANITY_DATASET", "NEXT_PUBLIC_SANITY_DATASET");
+  const token = sanityVariable("SANITY_API_TOKEN", "SANITY_API_WRITE_TOKEN");
   if (!projectId && !dataset && !token) return undefined;
   if (!projectId || !dataset || !token) {
-    throw new Error("SANITY_PROJECT_ID, SANITY_DATASET, and SANITY_API_TOKEN must all be set together");
+    throw new Error(
+      "Sanity project ID, dataset, and API write token must all be set together",
+    );
   }
   if (!sanityProjectIdPattern.test(projectId)) {
     throw new Error("SANITY_PROJECT_ID must be a lowercase Sanity project id");

@@ -73,7 +73,7 @@ Vehicles and their photographs are stored in Sanity, not Blob. Editing still onl
 1. Create a Sanity project (the free tier covers this data volume).
 2. Create one dataset per environment — `production` for the live site, a separate `development` dataset for local work, and optionally a `preview` dataset for Vercel Preview deployments (otherwise Preview can share `development`). Set every dataset's visibility to **private**: reads always go through this app's server, so there is no reason to expose one unauthenticated.
 3. Create an API token scoped to the **Editor** role — read, write content, and upload assets, but not project administration. One token covers both inventory CRUD and photo upload.
-4. Set these server-only Production variables (and the matching Preview/local values):
+4. Set these Production variables (and the matching Preview/local values):
 
 ```text
 SANITY_PROJECT_ID
@@ -81,7 +81,15 @@ SANITY_DATASET
 SANITY_API_TOKEN
 ```
 
-All three must be set together; a partial set fails closed as a configuration error rather than silently degrading. `SANITY_API_VERSION` is optional and defaults to a pinned, stable dated version.
+When Sanity is installed through Vercel's integration, its equivalent names are already provided:
+
+```text
+NEXT_PUBLIC_SANITY_PROJECT_ID
+NEXT_PUBLIC_SANITY_DATASET
+SANITY_API_WRITE_TOKEN
+```
+
+The application accepts either complete set. If both forms of a value are present, they must match. Project IDs and dataset names are public identifiers; `SANITY_API_TOKEN` and `SANITY_API_WRITE_TOKEN` are secrets and must never use the `NEXT_PUBLIC_` prefix. A partial set fails closed as a configuration error rather than silently degrading. `SANITY_API_VERSION` is optional and defaults to a pinned, stable dated version.
 
 No CORS configuration is needed in Sanity's dashboard — CORS origin allowlisting only governs browser-originated calls, and every Sanity call here is server-to-server with a bearer token, the same trust boundary as the Neon connection in section 2.
 

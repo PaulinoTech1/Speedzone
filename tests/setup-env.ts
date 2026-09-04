@@ -22,3 +22,6 @@ delete process.env.AUTH_GLOBAL_CONFIG;
 delete process.env.SANITY_PROJECT_ID;
 delete process.env.SANITY_DATASET;
 delete process.env.SANITY_API_TOKEN;
+delete process.env.NEXT_PUBLIC_SANITY_PROJECT_ID;
+delete process.env.NEXT_PUBLIC_SANITY_DATASET;
+delete process.env.SANITY_API_WRITE_TOKEN;
