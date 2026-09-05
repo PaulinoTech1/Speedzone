@@ -52,10 +52,11 @@ async function responseBody(response: Response): Promise<unknown> {
 }
 
 beforeEach(() => {
+  vi.mocked(put).mockClear();
   resetRateLimitsForTests();
   vi.stubEnv("RESEND_API_KEY", "test-resend-key");
   vi.stubEnv("RESEND_FROM_EMAIL", "SpeedZone Motorsports <test-drive@speedzonems.test>");
-  vi.stubEnv("TEST_DRIVE_NOTIFICATION_EMAIL", "smpaulino.business@gmail.com");
+  vi.stubEnv("LEAD_NOTIFICATION_EMAIL", "smpaulino.business@gmail.com");
   vi.stubEnv("Test_Drive", "test-blob-token");
   vi.stubEnv("Test_Drive_STORE_ID", "test-store-id");
   vi.stubGlobal(
@@ -133,14 +134,20 @@ describe("test drive request route", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("returns 503 when the email service is not configured", async () => {
-    vi.stubEnv("RESEND_API_KEY", "");
+  it.each(["RESEND_API_KEY", "RESEND_FROM_EMAIL"])("stores the request without email when %s is missing", async (variable) => {
+    vi.stubEnv(variable, "");
     const response = await testDriveRoute.POST(testDriveRequest(validBody()));
-    expect(response.status).toBe(503);
-    await expect(responseBody(response)).resolves.toEqual({
-      ok: false,
-      error: { code: "SERVICE_NOT_CONFIGURED", message: "Email service is not configured" },
-    });
+    expect(response.status).toBe(201);
+    await expect(responseBody(response)).resolves.toEqual({ ok: true });
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not report success or send email when storage fails", async () => {
+    vi.mocked(put).mockRejectedValueOnce(new Error("Storage unavailable"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await testDriveRoute.POST(testDriveRequest(validBody()));
+    expect(response.status).toBe(500);
     expect(fetch).not.toHaveBeenCalled();
   });
 

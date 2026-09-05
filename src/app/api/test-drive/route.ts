@@ -7,7 +7,7 @@ import {
   type TestDriveRequest,
 } from "@/lib/domain/test-drive";
 import { renderLeadEmail, sendLeadNotification } from "@/lib/server/lead-email";
-import { leadBlobStoreId, leadBlobToken } from "@/lib/server/env";
+import { leadBlobStoreId, leadBlobToken, leadNotificationConfig } from "@/lib/server/env";
 import { noStoreJson, parseStrictJsonBody } from "@/lib/server/request";
 import { enforceClientRateLimit, routeError } from "@/lib/server/route-utils";
 import { clientSecurityHash, logSecurityEvent } from "@/lib/server/security-log";
@@ -53,13 +53,16 @@ export async function POST(request: NextRequest) {
     enforceClientRateLimit(request, "testDrive");
     const input = await parseStrictJsonBody(request, testDriveRequestSchema, maximumBodyBytes);
     await storeRequest(input);
-    const { text, html } = notificationEmail(input);
-    await sendLeadNotification({
-      subject: `New Test Drive Request - ${input.fullName}`,
-      replyTo: input.email,
-      text,
-      html,
-    });
+    const { resendApiKey, fromEmail } = leadNotificationConfig();
+    if (resendApiKey && fromEmail) {
+      const { text, html } = notificationEmail(input);
+      await sendLeadNotification({
+        subject: `New Test Drive Request - ${input.fullName}`,
+        replyTo: input.email,
+        text,
+        html,
+      });
+    }
     logSecurityEvent({
       event: "test_drive.submitted",
       outcome: "success",

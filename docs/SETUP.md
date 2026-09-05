@@ -189,7 +189,11 @@ Follow [WAF.md](WAF.md). Start in Log mode, verify legitimate complete setup/log
 
 ## 9. Lead form email notifications
 
-Two public pages email a notification through [Resend](https://resend.com) whenever a visitor submits them: `/test-drive` (`POST /api/test-drive`) and `/sell-your-car` (`POST /api/trade-in`). Neither affects authentication or inventory storage.
+The `/test-drive` form (`POST /api/test-drive`) saves each request to private Vercel Blob storage at `leads/test-drive/<uuid>.json`. Connect the private store to the Vercel project and set `Test_Drive` to its read-write token and `Test_Drive_STORE_ID` to `store_8wyMMbqPZkpgwRwg` in the deployment environment. Redeploy after configuring these variables. The store ID is an identifier; keep the token server-only.
+
+Test-drive requests succeed without email when `RESEND_API_KEY` or `RESEND_FROM_EMAIL` is unset. Leave these unset until notifications are ready. Once both are set, the form also emails a notification through [Resend](https://resend.com). A configured email provider failure can still return an error after the Blob was saved; check storage before retrying.
+
+The `/sell-your-car` form (`POST /api/trade-in`) requires email configuration. Neither form affects authentication or inventory storage.
 
 1. Create a Resend account and verify a sending domain (a `From` address on an unverified domain will be rejected by Resend).
 2. Create an API key and set these Production variables:
@@ -199,7 +203,7 @@ RESEND_API_KEY
 RESEND_FROM_EMAIL
 ```
 
-`RESEND_FROM_EMAIL` must be an address on the verified domain, for example `SpeedZone Motorsports <leads@speedzonems.com>`. Until both variables are set, submissions fail closed with a 503 rather than silently dropping the request.
+`RESEND_FROM_EMAIL` must be an address on the verified domain, for example `SpeedZone Motorsports <leads@speedzonems.com>`. Until both variables are set, trade-in submissions fail closed with a 503; test-drive submissions are saved to Blob without sending email.
 
 3. Optionally set `LEAD_NOTIFICATION_EMAIL` to override the default recipient (`smpaulino.business@gmail.com`) for both forms.
 
