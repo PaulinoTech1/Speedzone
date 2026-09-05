@@ -209,6 +209,20 @@ RESEND_FROM_EMAIL
 
 Both routes are public and unauthenticated by design; they are protected only by per-client rate limiting and Zod input validation, not by CSRF or origin checks used elsewhere in this codebase for authenticated admin mutations.
 
+### Test-drive troubleshooting without platform logs
+
+Failed test-drive submissions display a fixed reference code alongside the form error:
+
+| Code | Check in the active deployment's Production environment |
+| --- | --- |
+| `TD_COOKIE_CONFIG` | `AUTH_COOKIE_SECRET` must be present and canonical unpadded base64url encoding of at least 32 bytes. Preserve an existing valid secret. |
+| `TD_PEPPER_CONFIG` | If set, `ADMIN_PASSWORD_PEPPER` must meet the same encoding requirement and differ from `AUTH_COOKIE_SECRET`. |
+| `TD_SECURITY_CONFIG` | Other security key configuration failed validation. |
+| `TD_STORAGE_CONFIG` | Both `Test_Drive` and `Test_Drive_STORE_ID` must be nonempty. |
+| `TD_STORAGE_WRITE` | Credentials were present, but the Blob write failed. Check the token's store, private access, project connection, and provider availability. |
+
+These codes do not reveal secret values, submitted data, or raw provider errors. Redeploy after environment changes. An empty JSON POST should return 422 once security configuration is valid; it does not test Blob access.
+
 ## 10. VIN decoder
 
 The trade-in form's "Decode VIN" button calls `GET /api/vin-decode`, which the server proxies to the free, public [NHTSA vPIC API](https://vpic.nhtsa.dot.gov/api/) (no API key, no environment variable, no cost). The browser never calls NHTSA directly, so the site's Content-Security-Policy `connect-src` does not need to allow a third-party host. If NHTSA is unreachable or a VIN can't be decoded, the form degrades to manual entry rather than blocking submission.

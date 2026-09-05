@@ -144,10 +144,41 @@ describe("test drive request route", () => {
   });
 
   it("does not report success or send email when storage fails", async () => {
-    vi.mocked(put).mockRejectedValueOnce(new Error("Storage unavailable"));
+    vi.mocked(put).mockRejectedValueOnce(new Error("sensitive-provider-token-and-lead"));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await testDriveRoute.POST(testDriveRequest(validBody()));
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(503);
+    await expect(responseBody(response)).resolves.toEqual({
+      ok: false,
+      error: { code: "TD_STORAGE_WRITE", message: "Request storage is unavailable" },
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["Test_Drive", "Test_Drive_STORE_ID"])("identifies missing %s without writing or emailing", async (variable) => {
+    vi.stubEnv(variable, "");
+    const response = await testDriveRoute.POST(testDriveRequest(validBody()));
+    expect(response.status).toBe(503);
+    await expect(responseBody(response)).resolves.toEqual({
+      ok: false,
+      error: { code: "TD_STORAGE_CONFIG", message: "Request storage is unavailable" },
+    });
+    expect(put).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["AUTH_COOKIE_SECRET", "TD_COOKIE_CONFIG"],
+    ["ADMIN_PASSWORD_PEPPER", "TD_PEPPER_CONFIG"],
+  ])("identifies invalid %s before validation without disclosing its value", async (variable, code) => {
+    vi.stubEnv(variable, "sensitive-invalid-value!");
+    const response = await testDriveRoute.POST(testDriveRequest("{}"));
+    expect(response.status).toBe(503);
+    await expect(responseBody(response)).resolves.toEqual({
+      ok: false,
+      error: { code, message: "Request service is unavailable" },
+    });
+    expect(put).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
 

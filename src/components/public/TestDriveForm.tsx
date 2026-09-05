@@ -106,9 +106,19 @@ export function TestDriveForm() {
         return;
       }
 
+      const payload: unknown = await response.json().catch(() => null);
+      const code = payload && typeof payload === "object" && "error" in payload
+        && payload.error && typeof payload.error === "object" && "code" in payload.error
+        ? payload.error.code : undefined;
+      const diagnosticCodes = [
+        "TD_COOKIE_CONFIG", "TD_PEPPER_CONFIG", "TD_SECURITY_CONFIG",
+        "TD_STORAGE_CONFIG", "TD_STORAGE_WRITE",
+      ];
+      const reference = typeof code === "string" && diagnosticCodes.includes(code)
+        ? ` Reference: ${code}.` : "";
       showToast(
         "error",
-        "We couldn't send your request. Please try again, or call us at (508) 826-9405.",
+        `We couldn't send your request. Please try again, or call us at (508) 826-9405.${reference}`,
       );
     } catch {
       showToast(
