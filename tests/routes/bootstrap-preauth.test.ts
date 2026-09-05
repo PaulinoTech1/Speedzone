@@ -252,26 +252,26 @@ describe("bootstrap credential verification", () => {
 });
 
 describe("bootstrap verification rate limit", () => {
-  it("allows three attempts per 30 minutes and keys independently by IP and JA4", () => {
+  it("limits a stable IP to three attempts without locking out browsers sharing a JA4", async () => {
     expect(ratePolicies.bootstrap).toEqual({ limit: 3, windowMs: 30 * 60_000 });
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      expect(() =>
+      await expect(
         enforceBootstrapRateLimit(rateLimitRequest("203.0.113.10", `unique-ja4-${attempt}`)),
-      ).not.toThrow();
+      ).resolves.toBeUndefined();
     }
-    expect(() =>
+    await expect(
       enforceBootstrapRateLimit(rateLimitRequest("203.0.113.10", "unique-ja4-4")),
-    ).toThrow(RateLimitError);
+    ).rejects.toThrow(RateLimitError);
 
     resetRateLimitsForTests();
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      expect(() =>
+      await expect(
         enforceBootstrapRateLimit(rateLimitRequest(`203.0.113.${attempt + 20}`, "shared-ja4")),
-      ).not.toThrow();
+      ).resolves.toBeUndefined();
     }
-    expect(() =>
+    await expect(
       enforceBootstrapRateLimit(rateLimitRequest("203.0.113.30", "shared-ja4")),
-    ).toThrow(RateLimitError);
+    ).resolves.toBeUndefined();
   });
 });

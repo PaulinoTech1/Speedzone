@@ -37,7 +37,7 @@ function notificationEmail(request: TradeInRequest): { text: string; html: strin
 
 export async function POST(request: NextRequest) {
   try {
-    enforceClientRateLimit(request, "tradeIn");
+    await enforceClientRateLimit(request, "tradeIn");
     const input = await parseStrictJsonBody(request, tradeInRequestSchema, maximumBodyBytes);
     const { text, html } = notificationEmail(input);
     await sendLeadNotification({

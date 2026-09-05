@@ -329,7 +329,7 @@ export function leadNotificationConfig() {
   return {
     resendApiKey: optional("RESEND_API_KEY"),
     fromEmail: optional("RESEND_FROM_EMAIL"),
-    notifyEmail: optional("LEAD_NOTIFICATION_EMAIL") ?? "smpaulino.business@gmail.com",
+    notifyEmail: optional("LEAD_NOTIFICATION_EMAIL"),
   };
 }
 

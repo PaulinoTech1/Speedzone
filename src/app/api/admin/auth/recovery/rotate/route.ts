@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     const { claims, state } = await requireEnabledAdministrator(request);
     assertAdminMutation(request, claims);
     requireFreshStepUp(request, claims);
-    enforceRateLimit(request, "recovery", `rotate:${sessionDigest(claims.sid)}`);
+    await enforceRateLimit(request, "recovery", `rotate:${sessionDigest(claims.sid)}`);
     if (!(await consumeFreshStepUp(request, claims))) {
       throw new RequestValidationError(
         "Fresh password and passkey verification required",

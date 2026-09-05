@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   try {
     const authorized = await requireAdmin(request);
     assertAdminMutation(request, authorized.claims);
-    enforceRateLimit(request, "inventory", authorized.claims.administrator);
+    await enforceRateLimit(request, "inventory", authorized.claims.administrator);
 
     const query = querySchema.safeParse({
       vehicleId: request.nextUrl.searchParams.get("vehicleId"),

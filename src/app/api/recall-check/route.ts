@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    enforceClientRateLimit(request, "recallCheck");
+    await enforceClientRateLimit(request, "recallCheck");
 
     const rawVin = request.nextUrl.searchParams.get("vin")?.trim().toUpperCase() ?? "";
     if (!vinPattern.test(rawVin)) {

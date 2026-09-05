@@ -79,12 +79,12 @@ describe("CSRF and rate limiting", () => {
     expect(() => assertCsrf(request, "different-session", 1_001)).toThrow();
   });
 
-  it("blocks after the configured password-attempt limit", () => {
+  it("blocks after the configured password-attempt limit", async () => {
     const key = `vitest-${crypto.randomUUID()}`;
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      expect(checkRateLimit("password", key, 10_000).allowed).toBe(true);
+      expect((await checkRateLimit("password", key, 10_000)).allowed).toBe(true);
     }
-    const denied = checkRateLimit("password", key, 10_000);
+    const denied = await checkRateLimit("password", key, 10_000);
     expect(denied.allowed).toBe(false);
     if (!denied.allowed) expect(denied.retryAfter).toBeGreaterThan(0);
   });

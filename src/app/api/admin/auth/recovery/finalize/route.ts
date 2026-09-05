@@ -15,7 +15,7 @@ import { nextSessionEpoch } from "@/lib/server/crypto";
 import { assertCsrf } from "@/lib/server/csrf";
 import { adminConfig } from "@/lib/server/env";
 import { assertAllowedOrigin, noStoreJson } from "@/lib/server/request";
-import { enforceRateLimit, routeError } from "@/lib/server/route-utils";
+import { enforceClientRateLimit, routeError } from "@/lib/server/route-utils";
 import {
   StateConflictError,
   mutateAuthState,
@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     assertAllowedOrigin(request);
-    enforceRateLimit(request, "recovery", "administrator-recovery");
+    await enforceClientRateLimit(request, "recovery");
     const state = await readAuthState();
     const pending = readPendingRecovery(request, state);
     if (!pending || adminConfig().disabled || state.state !== "RECOVERY") {

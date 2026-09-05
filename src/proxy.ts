@@ -4,13 +4,18 @@ export function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const isDevelopment = process.env.NODE_ENV === "development";
   const isAdmin = request.nextUrl.pathname.startsWith("/admin");
+  const imageProject = process.env.SANITY_PROJECT_ID?.trim() || process.env.NEXT_PUBLIC_SANITY_PROJECT_ID?.trim();
+  const imageDataset = process.env.SANITY_DATASET?.trim() || process.env.NEXT_PUBLIC_SANITY_DATASET?.trim();
+  const imageSource = imageProject && /^[a-z0-9]+$/.test(imageProject)
+    && imageDataset && /^[a-z0-9_-]+$/.test(imageDataset)
+    ? ` https://cdn.sanity.io/images/${imageProject}/${imageDataset}/` : "";
   const csp = [
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    "img-src 'self' data: blob:",
+    `img-src 'self' data: blob:${imageSource}`,
     "font-src 'self'",
     isDevelopment
       ? "style-src 'self' 'unsafe-inline'"

@@ -75,18 +75,24 @@ export async function POST(request: NextRequest) {
           : "TD_SECURITY_CONFIG";
       throw new RequestValidationError("Request service is unavailable", 503, code);
     }
-    enforceClientRateLimit(request, "testDrive");
+    await enforceClientRateLimit(request, "testDrive");
     const input = await parseStrictJsonBody(request, testDriveRequestSchema, maximumBodyBytes);
     await storeRequest(input);
-    const { resendApiKey, fromEmail } = leadNotificationConfig();
-    if (resendApiKey && fromEmail) {
+    const { resendApiKey, fromEmail, notifyEmail } = leadNotificationConfig();
+    if (resendApiKey && fromEmail && notifyEmail) {
       const { text, html } = notificationEmail(input);
-      await sendLeadNotification({
-        subject: `New Test Drive Request - ${input.fullName}`,
-        replyTo: input.email,
-        text,
-        html,
-      });
+      try {
+        await sendLeadNotification({
+          subject: `New Test Drive Request - ${input.fullName}`,
+          replyTo: input.email,
+          text,
+          html,
+        });
+      } catch {
+        // Storage is the acceptance boundary. Do not invite duplicate customer
+        // submissions when an optional notification fails after a durable write.
+        console.error("Test-drive notification failed; the request remains saved in private storage");
+      }
     }
     logSecurityEvent({
       event: "test_drive.submitted",

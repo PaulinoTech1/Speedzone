@@ -15,7 +15,7 @@ import {
   noStoreJson,
   parseStrictJsonBody,
 } from "@/lib/server/request";
-import { enforceRateLimit, routeError } from "@/lib/server/route-utils";
+import { enforceClientRateLimit, routeError } from "@/lib/server/route-utils";
 import { StateConfigurationError, readAuthState } from "@/lib/server/storage/state";
 
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ const bodySchema = z.object({ label: labelSchema }).strict();
 export async function POST(request: NextRequest) {
   try {
     assertBootstrapEnrollmentRequest(request);
-    enforceRateLimit(request, "passkeyManagement", "bootstrap-enrollment");
+    await enforceClientRateLimit(request, "passkeyManagement");
     const state = await readAuthState();
     if (state.state !== "BOOTSTRAP_READY") throw new AuthenticationFlowError();
     if (!adminConfig().bootstrapTokenHash) {

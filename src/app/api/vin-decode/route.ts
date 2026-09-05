@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // and lets us validate the VIN and normalize NHTSA's ~150-field response.
 export async function GET(request: NextRequest) {
   try {
-    enforceClientRateLimit(request, "vinDecode");
+    await enforceClientRateLimit(request, "vinDecode");
 
     const rawVin = request.nextUrl.searchParams.get("vin")?.trim().toUpperCase() ?? "";
     if (!vinPattern.test(rawVin)) {

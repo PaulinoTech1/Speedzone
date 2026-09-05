@@ -34,7 +34,7 @@ function revalidatePublishedVehicle(vehicle: VehicleRecord): void {
 export async function GET(request: NextRequest) {
   try {
     const authorized = await requireAdmin(request);
-    enforceRateLimit(request, "inventory", authorized.claims.administrator);
+    await enforceRateLimit(request, "inventory", authorized.claims.administrator);
     const state = await listAllVehicles();
     const response = noStoreJson({
       ok: true,
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   try {
     const authorized = await requireAdmin(request);
     assertAdminMutation(request, authorized.claims);
-    enforceRateLimit(request, "inventory", authorized.claims.administrator);
+    await enforceRateLimit(request, "inventory", authorized.claims.administrator);
     const input = await parseJsonBody(request, vehicleInputSchema, maximumVehicleBodyBytes);
     const vehicle = await createVehicle(input);
     revalidatePublishedVehicle(vehicle);

@@ -1,6 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:4183";
+if (baseURL !== "http://localhost:4183") {
+  throw new Error("Authentication E2E fixtures may only run against http://localhost:4183");
+}
 
 // These values are deterministic E2E-only fixtures. They are not production
 // credentials, and the server state they protect is removed before every run.
@@ -23,6 +26,20 @@ const e2eEnvironment: Record<string, string> = {
   LOCAL_SECURITY_PATH: ".data/e2e/security-consume",
   E2E_SHUTDOWN_TOKEN: "ISorISorISorISorISorISorISorISorISorISorISo",
   AUTH_GLOBAL_CONFIG: "",
+  AUTH_DATABASE_URL: "",
+  DATABASE_URL: "",
+  AUTH_DATABASE_NAME: "SEcure_Auth",
+  SANITY_PROJECT_ID: "",
+  SANITY_DATASET: "",
+  SANITY_API_TOKEN: "",
+  SANITY_API_WRITE_TOKEN: "",
+  NEXT_PUBLIC_SANITY_PROJECT_ID: "",
+  NEXT_PUBLIC_SANITY_DATASET: "",
+  Test_Drive: "",
+  Test_Drive_STORE_ID: "",
+  RESEND_API_KEY: "",
+  RESEND_FROM_EMAIL: "",
+  LEAD_NOTIFICATION_EMAIL: "",
   INVENTORY_GLOBAL_CONFIG: "",
   BLOB_PRIVATE_READ_WRITE_TOKEN: "",
   BLOB_PHOTO_READ_WRITE_TOKEN: "",

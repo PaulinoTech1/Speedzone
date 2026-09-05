@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const { claims } = await requireEnabledAdministrator(request);
     assertAdminMutation(request, claims);
     requireFreshStepUp(request, claims);
-    enforceRateLimit(request, "benchmark", claims.administrator);
+    await enforceRateLimit(request, "benchmark", claims.administrator);
     if (!booleanEnv("ENABLE_ARGON2_BENCHMARK")) {
       throw new RequestValidationError("Benchmark endpoint is disabled", 404, "NOT_FOUND");
     }

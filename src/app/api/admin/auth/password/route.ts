@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   try {
     assertAllowedOrigin(request);
     assertCsrf(request, "anonymous");
-    enforceClientRateLimit(request, "password");
+    await enforceClientRateLimit(request, "password");
     const body = await parseStrictJsonBody(
       request,
       passwordAuthenticationBodySchema,

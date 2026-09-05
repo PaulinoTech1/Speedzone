@@ -272,23 +272,7 @@ export async function parseJsonBody<T>(
   schema: ZodType<T>,
   maximumBytes = 32_768,
 ): Promise<T> {
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > maximumBytes) {
-    throw new RequestValidationError("Request body is too large", 413, "BODY_TOO_LARGE");
-  }
-  const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > maximumBytes) {
-    throw new RequestValidationError("Request body is too large", 413, "BODY_TOO_LARGE");
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new RequestValidationError("Request body must be valid JSON");
-  }
-  const result = schema.safeParse(parsed);
-  if (!result.success) throw new RequestValidationError("Request validation failed", 422, "VALIDATION_FAILED");
-  return result.data;
+  return parseStrictJsonBody(request, schema, maximumBytes);
 }
 
 export async function parseStrictJsonBody<T>(

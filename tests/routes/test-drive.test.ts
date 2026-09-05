@@ -134,7 +134,7 @@ describe("test drive request route", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it.each(["RESEND_API_KEY", "RESEND_FROM_EMAIL"])("stores the request without email when %s is missing", async (variable) => {
+  it.each(["RESEND_API_KEY", "RESEND_FROM_EMAIL", "LEAD_NOTIFICATION_EMAIL"])("stores the request without email when %s is missing", async (variable) => {
     vi.stubEnv(variable, "");
     const response = await testDriveRoute.POST(testDriveRequest(validBody()));
     expect(response.status).toBe(201);
@@ -182,15 +182,18 @@ describe("test drive request route", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("surfaces an upstream email failure as a generic server error", async () => {
-    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(null, { status: 500 })));
+  it.each(["http", "timeout"])("keeps a durable submission successful after an email %s failure", async (failure) => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => {
+      if (failure === "timeout") throw new Error("sensitive-provider-token-and-lead");
+      return new Response(null, { status: 500 });
+    }));
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await testDriveRoute.POST(testDriveRequest(validBody()));
-    expect(response.status).toBe(500);
-    await expect(responseBody(response)).resolves.toEqual({
-      ok: false,
-      error: { code: "SERVER_ERROR", message: "The request could not be completed" },
-    });
+    expect(response.status).toBe(201);
+    await expect(responseBody(response)).resolves.toEqual({ ok: true });
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith("Test-drive notification failed; the request remains saved in private storage");
+    expect(JSON.stringify(error.mock.calls)).not.toContain("sensitive-provider-token-and-lead");
     error.mockRestore();
   });
 

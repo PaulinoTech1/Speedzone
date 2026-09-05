@@ -143,6 +143,14 @@ test("administrator can bootstrap and then sign in with a virtual passkey", asyn
   context,
   page,
 }) => {
+  // Keep Sanity outside this authentication test. Verify the real authenticated
+  // session before returning a local inventory fixture; auth endpoints stay real.
+  await page.route("**/api/admin/inventory", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const session = await page.request.get("/api/admin/auth/session");
+    expect(session.status()).toBe(200);
+    await route.fulfill({ json: { ok: true, revision: 0, vehicles: [] } });
+  });
   await context.credentials.install();
   await page.goto("/admin/setup");
 

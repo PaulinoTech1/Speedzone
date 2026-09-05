@@ -13,7 +13,7 @@ import type { AuthState, PreAuthClaims } from "@/lib/domain/auth";
 import { cookieNames } from "@/lib/server/cookies";
 import { issueCsrf } from "@/lib/server/csrf";
 import { base64url } from "@/lib/server/crypto";
-import { clientSecurityHash } from "@/lib/server/security-log";
+import { ipSecurityHash } from "@/lib/server/security-log";
 import { checkRateLimit, resetRateLimitsForTests } from "@/lib/server/rate-limit";
 import { openToken } from "@/lib/server/token";
 
@@ -294,10 +294,10 @@ describe("administrator password route input boundary", () => {
     const request = loginRequest(jsonLoginBody("administrator", specialPassword), {
       clientId: "rate-limited-login-client",
     });
-    const client = clientSecurityHash(request);
+    const client = ipSecurityHash(request);
     const now = Date.now();
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      expect(checkRateLimit("password", `client:${client}`, now).allowed).toBe(true);
+      expect((await checkRateLimit("password", `client:${client}`, now)).allowed).toBe(true);
     }
     vi.stubEnv("ADMIN_PASSWORD_HASH", "ARGON-MUST-NOT-RUN");
     const response = await passwordRoute.POST(request);

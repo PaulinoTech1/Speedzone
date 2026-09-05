@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const isProduction = process.env.NODE_ENV === "production";
+const imageProject = process.env.SANITY_PROJECT_ID?.trim() || process.env.NEXT_PUBLIC_SANITY_PROJECT_ID?.trim();
+const imageDataset = process.env.SANITY_DATASET?.trim() || process.env.NEXT_PUBLIC_SANITY_DATASET?.trim();
+const imagePath = imageProject && /^[a-z0-9]+$/.test(imageProject)
+  && imageDataset && /^[a-z0-9_-]+$/.test(imageDataset)
+  ? `/images/${imageProject}/${imageDataset}/**` : undefined;
 
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -31,17 +36,11 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   serverExternalPackages: ["argon2"],
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "*.public.blob.vercel-storage.com",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.sanity.io",
-        pathname: "/images/**",
-      },
-    ],
+    // Images are already normalized WebP. Disabling the public decoder closes
+    // the vulnerable AVIF path while the dependency upgrade is pending.
+    unoptimized: true,
+    maximumRedirects: 0,
+    remotePatterns: imagePath ? [{ protocol: "https", hostname: "cdn.sanity.io", pathname: imagePath }] : [],
   },
   async redirects() {
     return [

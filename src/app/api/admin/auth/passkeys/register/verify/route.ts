@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const { claims, state } = await requireEnabledAdministrator(request);
     assertAdminMutation(request, claims);
     requireFreshStepUp(request, claims);
-    enforceRateLimit(request, "passkeyManagement", `register:${sessionDigest(claims.sid)}`);
+    await enforceRateLimit(request, "passkeyManagement", `register:${sessionDigest(claims.sid)}`);
     const body = await parseJsonBody(request, registrationBodySchema, 128 * 1024);
     const ceremony = readCeremony(request, "add-passkey", claims.sid, state);
     if (!ceremony || !(await burnCeremony(ceremony))) throw new AuthenticationFlowError();

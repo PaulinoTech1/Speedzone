@@ -17,7 +17,7 @@ import { clearAuthenticationCookies } from "@/lib/server/cookies";
 import { nextSessionEpoch } from "@/lib/server/crypto";
 import { assertCsrf, issueCsrf } from "@/lib/server/csrf";
 import { assertAllowedOrigin, noStoreJson, parseJsonBody } from "@/lib/server/request";
-import { enforceRateLimit, routeError } from "@/lib/server/route-utils";
+import { enforceClientRateLimit, routeError } from "@/lib/server/route-utils";
 import {
   StateConflictError,
   mutateAuthState,
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     const state = await readAuthState();
     const preAuthentication = readPreAuthentication(request, state);
     assertCsrf(request, preAuthentication?.sid ?? "anonymous");
-    enforceRateLimit(request, "recovery", "administrator-recovery");
+    await enforceClientRateLimit(request, "recovery");
     const body = await parseJsonBody(request, bodySchema, 8_192);
     const passwordValid = await verifyAdministrator(body.identifier, body.password);
     const matchedHash = findRecoveryCodeHash(body.recoveryCode, state.recoveryCodeHashes);

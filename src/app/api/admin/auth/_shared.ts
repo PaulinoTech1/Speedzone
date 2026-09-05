@@ -32,7 +32,7 @@ import { base64url, hmacSha256, randomToken } from "@/lib/server/crypto";
 import { adminConfig, tokenConfig } from "@/lib/server/env";
 import { progressiveFailureDelay } from "@/lib/server/rate-limit";
 import { genericAuthFailure, noStoreJson, RequestValidationError } from "@/lib/server/request";
-import { actorSecurityHash, clientSecurityHash, logSecurityEvent, type SecurityEventName } from "@/lib/server/security-log";
+import { actorSecurityHash, clientSecurityHash, ipSecurityHash, logSecurityEvent, type SecurityEventName } from "@/lib/server/security-log";
 import { openToken, sealToken } from "@/lib/server/token";
 
 export const administratorSchema = administratorIdentifierSchema;
@@ -112,7 +112,7 @@ const failures = (failureGlobal.__speedzoneAuthFailures ??= new Map());
 const failureWindowMs = 15 * 60_000;
 
 function failureKey(request: NextRequest): string {
-  return `${clientSecurityHash(request)}:${actorSecurityHash("administrator")}`;
+  return `${ipSecurityHash(request)}:${actorSecurityHash("administrator")}`;
 }
 
 export async function authenticationFailureResponse(
@@ -124,10 +124,10 @@ export async function authenticationFailureResponse(
   const key = failureKey(request);
   const previous = failures.get(key);
   const count = previous && now - previous.lastFailureAt <= failureWindowMs ? previous.count + 1 : 1;
-  failures.set(key, { count, lastFailureAt: now });
   for (const [candidate, record] of failures) {
     if (now - record.lastFailureAt > failureWindowMs) failures.delete(candidate);
   }
+  if (failures.has(key) || failures.size < 10_000) failures.set(key, { count, lastFailureAt: now });
   logSecurityEvent({
     event,
     outcome: "failure",

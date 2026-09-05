@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     const { claims, state } = await requireEnabledAdministrator(request);
     assertAdminMutation(request, claims);
     requireFreshStepUp(request, claims);
-    enforceRateLimit(request, "passkeyManagement", `register:${sessionDigest(claims.sid)}`);
+    await enforceRateLimit(request, "passkeyManagement", `register:${sessionDigest(claims.sid)}`);
     const body = await parseJsonBody(request, bodySchema, 4_096);
     const { options, ceremony } = await registrationOptions(
       state,

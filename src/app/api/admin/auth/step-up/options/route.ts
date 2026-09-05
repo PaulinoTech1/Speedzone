@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const { claims, state } = await requireEnabledAdministrator(request);
     assertAdminMutation(request, claims);
     if (!hasValidPasswordStepUp(request, claims)) throw new AuthenticationFlowError();
-    enforceRateLimit(request, "webauthn", `step-up:${sessionDigest(claims.sid)}`);
+    await enforceRateLimit(request, "webauthn", `step-up:${sessionDigest(claims.sid)}`);
     if (!state.passkeys.length) throw new AuthenticationFlowError();
     const { options, ceremony } = await authenticationOptions(state, "step-up", claims.sid);
     const response = noStoreJson({ ok: true, options });

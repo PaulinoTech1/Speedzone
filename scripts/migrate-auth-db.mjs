@@ -114,6 +114,7 @@ async function main() {
     console.log("Running in --check mode: no schema, grant, or sweep changes will be made.");
   } else {
     await apply(sql, "db/001-auth-schema.sql", statementsFrom("001-auth-schema.sql"));
+    await apply(sql, "db/003-rate-limits.sql", statementsFrom("003-rate-limits.sql"));
     if (role) {
       await apply(
         sql,
@@ -148,6 +149,7 @@ async function main() {
   if (!checkOnly) {
     const swept = await sql`DELETE FROM auth_consume_markers WHERE expires_at < now() RETURNING 1`;
     if (swept.length) console.log(`Swept ${swept.length} expired one-time markers`);
+    await sql`DELETE FROM security_rate_buckets WHERE expires_at <= now()`;
   }
 
   const [markers] = await sql`
@@ -156,6 +158,12 @@ async function main() {
       FROM auth_consume_markers
   `;
   console.log(`auth_consume_markers: ${markers.total} rows (${markers.expired} expired)`);
+  const [rates] = await sql`
+    SELECT count(*)::int AS total,
+           count(*) FILTER (WHERE expires_at <= now())::int AS expired
+      FROM security_rate_buckets
+  `;
+  console.log(`security_rate_buckets: ${rates.total} rows (${rates.expired} expired)`);
 
   // Who can reach the administrator's credentials. Anything beyond the owner
   // and the single runtime role is a finding, not a detail.
@@ -164,7 +172,7 @@ async function main() {
            string_agg(DISTINCT privilege_type, ', ' ORDER BY privilege_type) AS privileges
       FROM information_schema.role_table_grants
      WHERE table_schema = 'public'
-       AND table_name IN ('auth_state', 'auth_consume_markers')
+       AND table_name IN ('auth_state', 'auth_consume_markers', 'security_rate_buckets')
      GROUP BY grantee
      ORDER BY grantee
   `;

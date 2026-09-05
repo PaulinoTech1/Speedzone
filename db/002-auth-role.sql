@@ -4,7 +4,7 @@
 -- file or a shell history, then apply these grants with:
 --   npm run migrate:auth-db -- --grant-role speedzone_auth_app
 --
--- The runtime role may read and write the two authentication tables and nothing
+-- The runtime role may read and write the authentication tables and shared rate counters and nothing
 -- else. It holds no CREATE right, so a leaked AUTH_DATABASE_URL cannot reshape
 -- the schema, drop the constraints that enforce a single administrator, or add
 -- a table of its own. Keep a separate, more privileged role for migrations.
@@ -18,3 +18,4 @@ REVOKE CREATE ON SCHEMA public FROM :app_role;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth_state TO :app_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth_consume_markers TO :app_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON security_rate_buckets TO :app_role;

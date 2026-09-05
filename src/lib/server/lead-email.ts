@@ -59,7 +59,7 @@ export async function sendLeadNotification(options: {
   html: string;
 }): Promise<void> {
   const { resendApiKey, fromEmail, notifyEmail } = leadNotificationConfig();
-  if (!resendApiKey || !fromEmail) {
+  if (!resendApiKey || !fromEmail || !notifyEmail) {
     throw new RequestValidationError(
       "Email service is not configured",
       503,
@@ -68,6 +68,7 @@ export async function sendLeadNotification(options: {
   }
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
+    signal: AbortSignal.timeout(5_000),
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${resendApiKey}`,

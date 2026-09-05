@@ -10,7 +10,7 @@ All authentication cookies use the `__Host-` prefix with `HttpOnly`, `Secure`, `
 
 Authentication metadata is authoritative in the `SEcure_Auth` Neon database (project `shy-sunset-14721124`) as a single `auth_state` row. Authorization reads that row directly over TLS; nothing is cached and no mirror is consulted. Mutations read the current row, validate the expected revision, and commit with `UPDATE ... WHERE revision = <expected>`, a single statement that is its own transaction and therefore atomic across every Function instance; bounded retries re-read and re-run the mutation, while stale expected revisions fail. Session epochs and nonzero authenticator counters cannot move backwards. One-time markers for ceremonies, step-up assertions, recovery, and bootstrap live in `auth_consume_markers`, where the composite primary key makes a replayed digest unable to insert a second row. The application issues no DDL and creates no tables from a request path: a missing schema fails closed as a configuration error.
 
-Offline provisioning generates the Argon2id password hash, `AUTH_COOKIE_SECRET`, and a random 32-byte bootstrap token. Only the token's SHA-256 digest is configured. Setup verification hashes the submitted token, compares fixed-length digests in constant time, runs the Argon2id verification path, returns a generic authentication failure, and permits three attempts per rolling 30 minutes per pseudonymized Vercel IP and JA4 bucket in each Function instance.
+Offline provisioning generates the Argon2id password hash, `AUTH_COOKIE_SECRET`, and a random 32-byte bootstrap token. Only the token's SHA-256 digest is configured. Setup verification hashes the submitted token, compares fixed-length digests in constant time, runs the Argon2id verification path, returns a generic authentication failure, and permits three attempts per fixed 30-minute window per pseudonymized Vercel IP across Function instances. Production counters use atomic Neon updates with expiration; missing shared storage fails closed. User-Agent and JA4 are telemetry only. Local development counters expire and are capped at 10,000 keys.
 
 Initial enrollment is exposed only in `BOOTSTRAP_READY` on the explicitly configured final HTTPS Production origin and RP ID. It is rejected on Preview and does not trust request host headers. Successful three-credential verification issues a separate five-minute encrypted bootstrap cookie with a random ID. That cookie authorizes only registration options/verification and cannot authorize inventory or account settings. Registration requires user presence and verification, binds a fresh challenge to that cookie and administrator, and conditionally changes the single record to `ACTIVE` with one credential, ten recovery-code hashes, a new epoch, and a new revision. Enrollment clears all auth cookies and creates no session. Remove `ADMIN_BOOTSTRAP_TOKEN_HASH` after activation; `ACTIVE` ignores it.
 
@@ -36,7 +36,7 @@ Optional autosaved drafts are the only client-encrypted business data. They use 
 
 ## Request and browser controls
 
-- Every state-changing endpoint checks an explicit allowed `Origin` and a sealed, flow-bound CSRF cookie/header token. Setup additionally requires the final configured Production HTTPS origin.
+- Every authenticated admin mutation checks an explicit allowed `Origin` and a sealed, flow-bound CSRF cookie/header token. Setup additionally requires the final configured Production HTTPS origin.
 - Every admin data endpoint performs server-side session authorization; proxy routing is not trusted for authorization.
 - The password endpoint accepts only a strict JSON object containing `adminId` and `password`, streams at most 4 KiB before parsing, rejects duplicate or prototype-pollution keys, and applies Zod bounds before Argon2 work.
 - Vehicle descriptions and features are plain text. React escapes them; JSON-LD replaces `<` before insertion.
@@ -51,6 +51,8 @@ In the application `/admin` path, the browser decodes accepted JPEG/PNG/WebP inp
 The standalone Studio uses Sanity's authenticated native asset upload instead. Its schema suppresses original filenames, requests LQIP/palette metadata without EXIF/location extraction, and blocks publishing references over 4 MiB or 1600 pixels per side. Those checks do not rewrite the original asset bytes and schema validation can be bypassed by direct API clients; use the application uploader when byte-level metadata removal is required.
 
 There is no separate audit trail in this version. Sanity's own per-document revision history (`_rev`) is the change record for every vehicle write.
+
+The public Next.js image optimizer is temporarily disabled, and the image CSP permits only the configured Sanity project/dataset. Dependency patching and deployment-native library verification remain required; see [the remediation record](docs/SECURITY-REMEDIATION-2026-09-05.md). Sanity asset URLs are public even for private datasets: upload only photographs intended for public availability. Dataset visibility does not protect asset bytes.
 
 ## Operational requirements
 

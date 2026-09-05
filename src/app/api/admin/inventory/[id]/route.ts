@@ -56,7 +56,7 @@ function revalidatePublishedChanges(before: VehicleRecord, after: VehicleRecord)
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const authorized = await requireAdmin(request);
-    enforceRateLimit(request, "inventory", authorized.claims.administrator);
+    await enforceRateLimit(request, "inventory", authorized.claims.administrator);
     const id = await vehicleIdFrom(context);
     const state = await listAllVehicles();
     const vehicle = state.vehicles.find((candidate) => candidate.id === id);
@@ -73,7 +73,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const authorized = await requireAdmin(request);
     assertAdminMutation(request, authorized.claims);
-    enforceRateLimit(request, "inventory", authorized.claims.administrator);
+    await enforceRateLimit(request, "inventory", authorized.claims.administrator);
     const id = await vehicleIdFrom(context);
     const input = await parseJsonBody(request, vehicleInputSchema, maximumVehicleBodyBytes);
     const current = await listAllVehicles();

@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     const existingBootstrap = readBootstrapPreAuthentication(request, state);
     const existingLogin = readPreAuthentication(request, state);
     assertCsrf(request, existingBootstrap?.sid ?? existingLogin?.sid ?? "anonymous");
-    enforceBootstrapRateLimit(request);
+    await enforceBootstrapRateLimit(request);
 
     if (state.state !== "BOOTSTRAP_READY") {
       return noStoreJson(

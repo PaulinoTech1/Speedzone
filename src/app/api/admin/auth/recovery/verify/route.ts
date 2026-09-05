@@ -14,7 +14,7 @@ import { assertCsrf } from "@/lib/server/csrf";
 import { constantTimeTextEqual } from "@/lib/server/crypto";
 import { adminConfig } from "@/lib/server/env";
 import { assertAllowedOrigin, noStoreJson, parseJsonBody } from "@/lib/server/request";
-import { enforceRateLimit, routeError } from "@/lib/server/route-utils";
+import { enforceClientRateLimit, routeError } from "@/lib/server/route-utils";
 import { readAuthState } from "@/lib/server/storage/state";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     assertAllowedOrigin(request);
-    enforceRateLimit(request, "recovery", "administrator-recovery");
+    await enforceClientRateLimit(request, "recovery");
     const state = await readAuthState();
     const proof = readRecoveryProof(request, state);
     if (!proof || adminConfig().disabled || state.state !== "RECOVERY") {

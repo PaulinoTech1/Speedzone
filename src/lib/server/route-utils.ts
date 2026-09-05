@@ -12,9 +12,7 @@ import {
   RequestValidationError,
 } from "@/lib/server/request";
 import {
-  clientSecurityHash,
   ipSecurityHash,
-  ja4SecurityHash,
   logSecurityEvent,
 } from "@/lib/server/security-log";
 import { authorizeSession } from "@/lib/server/auth/session";
@@ -38,27 +36,28 @@ export function assertAdminMutation(request: NextRequest, session: SessionClaims
   assertCsrf(request, session.sid);
 }
 
-export function enforceRateLimit(
+export async function enforceRateLimit(
   request: NextRequest,
   policy: RatePolicyName,
   subject: string,
-): void {
-  const client = clientSecurityHash(request);
-  const byClient = checkRateLimit(policy, `client:${client}`);
-  const bySubject = checkRateLimit(policy, `subject:${subject}`);
-  const denied = !byClient.allowed ? byClient : !bySubject.allowed ? bySubject : null;
+): Promise<void> {
+  // The subject must come from validated authentication, never a global login label.
+  await enforceClientRateLimit(request, policy);
+  const client = ipSecurityHash(request);
+  const bySubject = await checkRateLimit(policy, `subject:${subject}`);
+  const denied = !bySubject.allowed ? bySubject : null;
   if (denied && !denied.allowed) {
     logSecurityEvent({ event: "rate_limited", outcome: "blocked", clientHash: client, reason: policy });
     throw new RateLimitError(denied.retryAfter);
   }
 }
 
-export function enforceClientRateLimit(
+export async function enforceClientRateLimit(
   request: NextRequest,
   policy: RatePolicyName,
-): void {
-  const client = clientSecurityHash(request);
-  const result = checkRateLimit(policy, `client:${client}`);
+): Promise<void> {
+  const client = ipSecurityHash(request);
+  const result = await checkRateLimit(policy, `client:${client}`);
   if (!result.allowed) {
     logSecurityEvent({
       event: "rate_limited",
@@ -70,25 +69,9 @@ export function enforceClientRateLimit(
   }
 }
 
-export function enforceBootstrapRateLimit(request: NextRequest): void {
-  const client = clientSecurityHash(request);
-  const keys = [`ip:${ipSecurityHash(request)}`];
-  const ja4 = ja4SecurityHash(request);
-  if (ja4) keys.push(`ja4:${ja4}`);
-  let denied: { allowed: false; retryAfter: number } | null = null;
-  for (const key of keys) {
-    const result = checkRateLimit("bootstrap", key);
-    if (!result.allowed && !denied) denied = result;
-  }
-  if (denied) {
-    logSecurityEvent({
-      event: "rate_limited",
-      outcome: "blocked",
-      clientHash: client,
-      reason: "bootstrap",
-    });
-    throw new RateLimitError(denied.retryAfter);
-  }
+export async function enforceBootstrapRateLimit(request: NextRequest): Promise<void> {
+  // JA4 is shared by unrelated browsers; it is telemetry, not a lockout key.
+  await enforceClientRateLimit(request, "bootstrap");
 }
 
 export function routeError(error: unknown): NextResponse {

@@ -21,7 +21,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     const { claims, state } = await requireEnabledAdministrator(request);
     assertAdminMutation(request, claims);
     requireFreshStepUp(request, claims);
-    enforceRateLimit(request, "passkeyManagement", `delete:${sessionDigest(claims.sid)}`);
+    await enforceRateLimit(request, "passkeyManagement", `delete:${sessionDigest(claims.sid)}`);
     const { credentialId } = await context.params;
     if (!credentialId || credentialId.length > 4096) {
       throw new RequestValidationError("Passkey not found", 404, "NOT_FOUND");

@@ -14,17 +14,18 @@ Initial passkey enrollment is deliberately unavailable on Preview deployments, r
 
 ## 2. Authentication database
 
-All server-side authentication state lives in the **`SEcure_Auth`** database in Neon project **`shy-sunset-14721124`**. It holds two tables:
+All server-side authentication state and deployment-wide rate counters live in the **`SEcure_Auth`** database in Neon project **`shy-sunset-14721124`**. It holds three tables:
 
 | Table | Contents |
 | --- | --- |
 | `auth_state` | One row: lifecycle state, administrator user ID, session epoch, FIDO2 passkey metadata, recovery-code hashes, revoked session hashes, and the `revision` used for compare-and-swap. |
 | `auth_consume_markers` | One row per burned ceremony, step-up assertion, recovery code, or bootstrap token. The composite primary key is what makes a replay impossible. |
+| `security_rate_buckets` | Atomic fixed-window counters keyed by hashed policy/client or authenticated subject, with indexed expiration. No raw IPs or user agents. |
 
 This database serves exactly one person. Two layers enforce that:
 
 - **In the schema.** `auth_state` has a `CHECK (id = 1)` primary key, so a second administrator record cannot exist. `auth_state_single_administrator` additionally refuses any `ACTIVE` or `RECOVERY` record that does not name an administrator and hold at least one passkey and one recovery code, and caps the record at 20 passkeys and 10 recovery codes. Those are the same invariants the application validates, restated where direct SQL access cannot bypass them.
-- **In the grants.** Create a runtime role in the Neon console that owns nothing, then apply least-privilege grants with the command below. It receives `SELECT, INSERT, UPDATE, DELETE` on those two tables and no `CREATE` right anywhere, so a leaked `AUTH_DATABASE_URL` cannot reshape the schema, drop the constraints above, or add a table of its own. Keep a **separate**, more privileged role for migrations.
+- **In the grants.** Create a runtime role in the Neon console that owns nothing, then apply least-privilege grants with the command below. It receives `SELECT, INSERT, UPDATE, DELETE` on those three tables and no `CREATE` right anywhere, so a leaked `AUTH_DATABASE_URL` cannot reshape the schema, drop the constraints above, or add a table of its own. Keep a **separate**, more privileged role for migrations.
 
 The identity anchor is `ADMIN_ID`, a Vercel environment variable, not a database column: every session is validated against it, so database write access alone cannot introduce a second administrator identity. The runtime never issues DDL — if the schema is missing, every administrator request fails closed with `SERVICE_NOT_CONFIGURED` rather than creating tables from a request path.
 
@@ -50,7 +51,7 @@ Apply the least-privilege grants once the runtime role exists:
 npm.cmd run migrate:auth-db -- --grant-role speedzone_auth_app
 ```
 
-The script is idempotent, so re-running it is always safe. It applies [db/001-auth-schema.sql](../db/001-auth-schema.sql) (and [db/002-auth-role.sql](../db/002-auth-role.sql) with `--grant-role`), sweeps expired one-time markers, and prints the lifecycle state, revision, and passkey count of the authentication record followed by **every role that can reach the authentication tables**. Anything in that list beyond the owner and the single runtime role is a finding. `npm.cmd run migrate:auth-db -- --check` reports the same summary without issuing DDL, grants, or deletes. Re-run it after any schema change and as a periodic maintenance sweep.
+The schema and grant statements are idempotent. The script applies [db/001-auth-schema.sql](../db/001-auth-schema.sql), [db/003-rate-limits.sql](../db/003-rate-limits.sql), and [db/002-auth-role.sql](../db/002-auth-role.sql) with `--grant-role`. It sweeps expired one-time markers and rate counters, then reports lifecycle counts and roles with table access. Review any role beyond the owner and designated runtime role. `npm.cmd run migrate:auth-db -- --check` reports without DDL, grants, or deletes. **Existing deployments must also apply 003 and refresh runtime grants before deploying the security fixes.** Public forms and lookups now use these shared counters; missing configuration/schema fails closed. Preserve the existing `auth_state` row and all legacy migration sources.
 
 Enable Neon point-in-time restore on this project. It is the only rollback available for the authentication record; there is no mirror and no second copy.
 
@@ -191,9 +192,9 @@ Follow [WAF.md](WAF.md). Start in Log mode, verify legitimate complete setup/log
 
 The `/test-drive` form (`POST /api/test-drive`) saves each request to private Vercel Blob storage at `leads/test-drive/<uuid>.json`. Connect the private store to the Vercel project and set `Test_Drive` to its read-write token and `Test_Drive_STORE_ID` to `store_8wyMMbqPZkpgwRwg` in the deployment environment. Redeploy after configuring these variables. The store ID is an identifier; keep the token server-only.
 
-Test-drive requests succeed without email when `RESEND_API_KEY` or `RESEND_FROM_EMAIL` is unset. Leave these unset until notifications are ready. Once both are set, the form also emails a notification through [Resend](https://resend.com). A configured email provider failure can still return an error after the Blob was saved; check storage before retrying.
+Test-drive requests succeed without email when any of `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, or `LEAD_NOTIFICATION_EMAIL` is unset. Leave these unset until notifications are ready. With all three configured, the form also attempts a notification through [Resend](https://resend.com), with a five-second timeout. A successfully stored record still returns 201 if notification fails; a fixed message is logged without customer or provider details. Blob is the source of record; email is best effort, with no automatic retry or durable outbox in this version.
 
-The `/sell-your-car` form (`POST /api/trade-in`) requires email configuration. Neither form affects authentication or inventory storage.
+The `/sell-your-car` form (`POST /api/trade-in`) requires email configuration. Both forms use shared rate counters in `SEcure_Auth`; they do not change administrator credentials or inventory.
 
 1. Create a Resend account and verify a sending domain (a `From` address on an unverified domain will be rejected by Resend).
 2. Create an API key and set these Production variables:
@@ -201,11 +202,12 @@ The `/sell-your-car` form (`POST /api/trade-in`) requires email configuration. N
 ```text
 RESEND_API_KEY
 RESEND_FROM_EMAIL
+LEAD_NOTIFICATION_EMAIL
 ```
 
-`RESEND_FROM_EMAIL` must be an address on the verified domain, for example `SpeedZone Motorsports <leads@speedzonems.com>`. Until both variables are set, trade-in submissions fail closed with a 503; test-drive submissions are saved to Blob without sending email.
+`RESEND_FROM_EMAIL` must be an address on the verified domain, for example `SpeedZone Motorsports <leads@speedzonems.com>`. Until all three variables are set, trade-in submissions fail closed with a 503; test-drive submissions are saved to Blob without sending email.
 
-3. Optionally set `LEAD_NOTIFICATION_EMAIL` to override the default recipient (`smpaulino.business@gmail.com`) for both forms.
+3. Set `LEAD_NOTIFICATION_EMAIL` to the authorized recipient for both forms. There is no default recipient.
 
 Both routes are public and unauthenticated by design; they are protected only by per-client rate limiting and Zod input validation, not by CSRF or origin checks used elsewhere in this codebase for authenticated admin mutations.
 
@@ -222,6 +224,21 @@ Failed test-drive submissions display a fixed reference code alongside the form 
 | `TD_STORAGE_WRITE` | Credentials were present, but the Blob write failed. Check the token's store, private access, project connection, and provider availability. |
 
 These codes do not reveal secret values, submitted data, or raw provider errors. Redeploy after environment changes. An empty JSON POST should return 422 once security configuration is valid; it does not test Blob access.
+
+`SERVICE_NOT_CONFIGURED` can also indicate missing Neon rate-limit configuration, schema, or grants. Apply the migration above before retrying. A store ID and successful Blob list operation do not prove the request has reached the write step.
+
+### Lead retention
+
+Choose a retention period before scheduling deletion. `scripts/lead-retention.mjs` requires an explicit `--days` value and defaults to a dry run. Provide `Test_Drive` and `Test_Drive_STORE_ID` securely through the process environment. It does not load `.env` files, fetch lead contents, or print customer data. It selects only expired UUID-named records below `leads/test-drive/`, leaving authentication and inventory objects outside its scope.
+
+```powershell
+# Example only: use the owner's selected period instead of 90.
+node scripts/lead-retention.mjs --days 90
+# After reviewing the store, cutoff and count, explicitly apply the cleanup:
+node scripts/lead-retention.mjs --days 90 --apply
+```
+
+The second command re-lists eligible records and deletes them; it is irreversible through this tool. Use a trusted workstation or scheduled job after the period and schedule are approved. No retention period, scheduled job, or production deletion was activated as part of this code change.
 
 ## 10. VIN decoder
 

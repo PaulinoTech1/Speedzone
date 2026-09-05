@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   try {
     const { claims, state } = await requireEnabledAdministrator(request);
     assertAdminMutation(request, claims);
-    enforceRateLimit(request, "password", `step-up:${sessionDigest(claims.sid)}`);
+    await enforceRateLimit(request, "password", `step-up:${sessionDigest(claims.sid)}`);
     const body = await parseStrictJsonBody(request, passwordAuthenticationBodySchema, 4 * 1024);
     if (state.state !== "ACTIVE" || !(await verifyAdministrator(body.adminId, body.password))) {
       const failure = await authenticationFailureResponse(request, "auth.password");

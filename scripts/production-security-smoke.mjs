@@ -85,8 +85,16 @@ try {
   );
   assertionCount += 1;
 
+  const imageProbe = await fetch(`${baseUrl}/_next/image?url=%2Fassets%2Fprobe.avif&w=640&q=75`, {
+    redirect: "manual",
+    signal: AbortSignal.timeout(5_000),
+  });
+  assert.equal(imageProbe.status, 404, "Public image decoding must remain disabled until the dependency stack is patched");
+  assertionCount += 1;
+  console.log("PASS public image optimizer: 404 (decoding disabled)");
+
   console.log(
-    `Production security smoke passed: ${requestCases.length} responses, ${assertionCount} assertions, ${nonces.size} unique nonces.`,
+    `Production security smoke passed: ${requestCases.length + 1} responses, ${assertionCount} assertions, ${nonces.size} unique nonces.`,
   );
 } catch (error) {
   testFailure = error;
