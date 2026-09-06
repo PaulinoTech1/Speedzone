@@ -45,7 +45,11 @@ const vehicleFieldsSchema = z
       .string()
       .trim()
       .toUpperCase()
-      .regex(/^[A-HJ-NPR-Z0-9]{17}$/, "VIN must contain 17 valid characters"),
+      .max(17)
+      .refine(
+        (value) => value === "" || /^[A-HJ-NPR-Z0-9]{17}$/.test(value),
+        "VIN must contain 17 valid characters when provided",
+      ),
     year: z.number().int().min(1886).max(new Date().getUTCFullYear() + 1),
     make: shortText(80).pipe(z.string().min(1)),
     model: shortText(80).pipe(z.string().min(1)),

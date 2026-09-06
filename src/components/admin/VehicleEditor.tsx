@@ -377,7 +377,7 @@ export function VehicleEditor({
             </div>
             <div className="admin-field-grid">
               <TextField label="Stock number" value={form.stockNumber} onChange={(value) => update("stockNumber", value)} required maxLength={40} autoCapitalize="characters" />
-              <TextField label="VIN" value={form.vin} onChange={(value) => update("vin", value)} required maxLength={17} autoCapitalize="characters" help="Exactly 17 characters; I, O, and Q are not valid." />
+              <TextField label="VIN" value={form.vin} onChange={(value) => update("vin", value)} maxLength={17} autoCapitalize="characters" help="Optional. If provided, use exactly 17 characters; I, O, and Q are not valid." />
               <TextField label="Year" value={form.year} onChange={(value) => update("year", value.replace(/\D/g, ""))} required maxLength={4} inputMode="numeric" />
               <div className="admin-field admin-field-wide">
                 <span>URL slug <b aria-hidden="true">*</b></span>

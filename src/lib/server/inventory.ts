@@ -214,7 +214,7 @@ function toVehicleRecord(doc: VehicleDocument): VehicleRecord {
     createdAt: doc.createdAt ?? doc._createdAt,
     updatedAt: doc.updatedAt ?? doc._updatedAt,
     stockNumber: doc.stockNumber,
-    vin: doc.vin,
+    vin: doc.vin ?? "",
     year: doc.year,
     make: doc.make,
     model: doc.model,
@@ -270,6 +270,7 @@ async function assertUniquePrecheck(
   input: Pick<VehicleInput, UniqueField>,
   excludeVehicleId?: string,
 ): Promise<void> {
+  const fields = uniqueFields.filter((field) => field !== "vin" || input.vin !== "");
   let vehicles: Array<Pick<VehicleDocument, "_id" | UniqueField>>;
   try {
     vehicles = await sanity().fetch(VEHICLE_UNIQUENESS_QUERY, {
@@ -279,18 +280,14 @@ async function assertUniquePrecheck(
   } catch (error) {
     throw translateSanityError(error);
   }
-  for (const field of uniqueFields) {
+  for (const field of fields) {
     const expected = input[field].toUpperCase();
     if (vehicles.some((vehicle) => vehicle[field]?.toUpperCase() === expected)) {
       throw new InventoryValidationError(duplicateMessage[field], duplicateCode[field]);
     }
   }
 
-  const ids: Record<UniqueField, string> = {
-    stockNumber: lockId("stockNumber", input.stockNumber),
-    vin: lockId("vin", input.vin),
-    slug: lockId("slug", input.slug),
-  };
+  const ids = Object.fromEntries(fields.map((field) => [field, lockId(field, input[field])])) as Record<UniqueField, string>;
   let docs: LockDocument[];
   try {
     docs = await sanity().fetch<LockDocument[]>(`*[_id in $ids]{_id, vehicleId}`, {
@@ -299,7 +296,7 @@ async function assertUniquePrecheck(
   } catch (error) {
     throw translateSanityError(error);
   }
-  for (const field of uniqueFields) {
+  for (const field of fields) {
     const hit = docs.find((doc) => doc._id === ids[field]);
     if (hit && hit.vehicleId !== excludeVehicleId) {
       throw new InventoryValidationError(duplicateMessage[field], duplicateCode[field]);
@@ -373,6 +370,7 @@ export async function createVehicle(rawInput: unknown): Promise<VehicleRecord> {
     ...toSanityVehicleFields(vehicle),
   });
   for (const field of uniqueFields) {
+    if (field === "vin" && vehicle[field] === "") continue;
     tx.create({
       _id: lockId(field, vehicle[field]),
       _type: "vehicleLock",
@@ -434,11 +432,17 @@ export async function updateVehicle(id: string, rawInput: unknown): Promise<Vehi
   const tx = client.transaction().patch(id, (patch) =>
     patch.set(toSanityVehicleFields(after)).ifRevisionId(revision),
   );
+  const beforeUniqueFields = uniqueFields.filter((field) => field !== "vin" || before[field] !== "");
+  const afterUniqueFields = uniqueFields.filter((field) => field !== "vin" || after[field] !== "");
   for (const field of uniqueFields) {
     const oldLockId = lockId(field, before[field]);
     const newLockId = lockId(field, after[field]);
-    if (oldLockId !== newLockId) {
+    const hadOldLock = beforeUniqueFields.includes(field);
+    const hasNewLock = afterUniqueFields.includes(field);
+    if (hasNewLock && oldLockId !== newLockId) {
       tx.create({ _id: newLockId, _type: "vehicleLock", field, value: after[field], vehicleId: id });
+    }
+    if (hadOldLock && oldLockId !== newLockId) {
       tx.delete(oldLockId);
     }
   }

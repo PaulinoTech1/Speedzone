@@ -219,6 +219,15 @@ afterEach(() => {
 });
 
 describe("inventory persistence rules", () => {
+  it("allows multiple vehicles without VINs while retaining stock and slug uniqueness", async () => {
+    const first = await createVehicle(vehicle({ stockNumber: "10841", vin: "", slug: "2013-honda-civic-10841" }));
+    const second = await createVehicle(vehicle({ stockNumber: "10842", vin: "", slug: "2013-honda-civic-10842" }));
+
+    expect(first.vin).toBe("");
+    expect(second.vin).toBe("");
+    expect([...store.docs.values()].filter((doc) => doc._type === "vehicleLock" && doc.field === "vin")).toHaveLength(0);
+  });
+
   it.each([
     ["stockNumber", "sz-200", "DUPLICATE_STOCK"],
     ["vin", "1HGCM82633A004352", "DUPLICATE_VIN"],

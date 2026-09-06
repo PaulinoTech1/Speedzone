@@ -45,6 +45,11 @@ describe("vehicle validation and rendering", () => {
     expect(vehicleInputSchema.safeParse(draft({ status: "published" })).success).toBe(false);
   });
 
+  it("allows a missing VIN for inventory records", () => {
+    const result = vehicleInputSchema.safeParse(draft({ vin: "" }));
+    expect(result.success).toBe(true);
+  });
+
   it("rejects oversized photo metadata", () => {
     const result = vehiclePhotoSchema.safeParse({
       url: "https://store.public.blob.vercel-storage.com/a.webp",
