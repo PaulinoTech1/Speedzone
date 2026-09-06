@@ -1852,6 +1852,25 @@ body:has(.error-page) {
   text-align: center;
 }
 
+.demo-inventory-preview {
+  margin-top: clamp(3rem, 8vw, 6rem);
+  padding-top: clamp(2rem, 5vw, 4rem);
+  border-top: 1px solid var(--line);
+}
+
+.demo-inventory-preview > h2 {
+  margin: 0.35rem 0 0;
+}
+
+.demo-inventory-preview > p:not(.section-kicker) {
+  color: var(--muted);
+}
+
+.demo-vehicle-card {
+  max-width: 31rem;
+  margin-top: 1.5rem;
+}
+
 .vehicle-page {
   padding: 2rem 0 6rem;
 }

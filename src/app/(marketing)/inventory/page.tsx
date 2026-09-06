@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { DemoVehicleCard } from "@/components/public/DemoVehicleCard";
 import { SiteFooter, SiteHeader } from "@/components/public/SiteChrome";
 import { VehicleCard } from "@/components/public/VehicleCard";
 import { formatBracket, priceBrackets } from "@/lib/domain/price-brackets";
@@ -68,6 +69,13 @@ export default async function InventoryPage() {
                 </a>
               </div>
             )}
+
+            <section className="demo-inventory-preview" aria-labelledby="demo-inventory-title">
+              <p className="section-kicker">Proof of concept</p>
+              <h2 id="demo-inventory-title">Demo vehicle preview</h2>
+              <p>This local preview is separate from the live Sanity inventory.</p>
+              <DemoVehicleCard />
+            </section>
           </div>
         </section>
       </main>
