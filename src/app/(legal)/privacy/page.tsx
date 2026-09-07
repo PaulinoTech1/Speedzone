@@ -25,20 +25,12 @@ export default function PrivacyPage() {
         provide through your phone or email service. Please do not send
         sensitive financial information by ordinary email.
       </p>
-      <p>
-        When you submit a test-drive request, the name, contact details,
-        vehicle preference, scheduling details, and comments you provide are
-        sent to our dealership notification email and stored in private
-        Vercel Blob storage so we can respond and manage the request. Please
-        do not include financial account information, driver&apos;s license
-        numbers, or other sensitive identity information.
-      </p>
 
       <h2>Hosting and basic technical data</h2>
       <p>
-        Our hosting provider may process basic request information—such as an IP
-        address, browser type, requested page, and timestamp—to deliver and
-        secure the website. That processing is controlled by the provider’s own
+        Our hosting provider may process basic request informationâ€”such as an IP
+        address, browser type, requested page, and timestampâ€”to deliver and
+        secure the website. That processing is controlled by the providerâ€™s own
         terms and privacy practices.
       </p>
 

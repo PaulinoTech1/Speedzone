@@ -29,8 +29,6 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
-      - name: Production security smoke
-        run: npm run test:production-security
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Browser end-to-end tests

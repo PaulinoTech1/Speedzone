@@ -216,7 +216,7 @@ export function HomePageContent() {
                   className="button button-primary"
                   href="/inventory"
                 >
-                  Browse current inventory
+                  Ask about current inventory
                 </Link>
                 <a className="text-link" href="tel:+15088269405">
                   Ask what’s available <span aria-hidden="true">→</span>

@@ -5,7 +5,6 @@ type SiteChromeProps = {
     | "home"
     | "road-trip"
     | "inventory"
-    | "test-drive"
     | "sell-your-car"
     | "buying-costs"
     | "recall-check";
@@ -31,7 +30,7 @@ export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
             <a href={directionsUrl} target="_blank" rel="noopener">
               1094 Main St, Worcester, MA
             </a>
-            <span>Mon–Fri 10–4 · Sat by appointment</span>
+            <span>Monâ€“Fri 10â€“4 Â· Sat by appointment</span>
           </div>
         </div>
 
@@ -65,12 +64,6 @@ export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
               aria-current={currentPage === "inventory" ? "page" : undefined}
             >
               Inventory
-            </a>
-            <a
-              href="/test-drive"
-              aria-current={currentPage === "test-drive" ? "page" : undefined}
-            >
-              Test Drive
             </a>
             <a
               href="/buying-costs"
@@ -127,7 +120,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
               </span>
             </a>
             <p>
-              Worcester’s destination for quality, affordable used cars since
+              Worcesterâ€™s destination for quality, affordable used cars since
               2010.
             </p>
           </div>
@@ -138,8 +131,6 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
               <>
                 <a href="#inventory">Latest arrivals</a>
                 <a href="/inventory">Browse inventory</a>
-                <a href="/cars-under/5000">Cars under $5,000</a>
-                <a href="/test-drive">Test Drive</a>
                 <a href="/sell-your-car">Sell Your Car</a>
                 <a href="/buying-costs">Taxes &amp; fees</a>
                 <a href="/recall-check">Free recall check</a>
@@ -154,10 +145,6 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="/">Home</a>
                 <a href="/inventory" aria-current={currentPage === "inventory" ? "page" : undefined}>
                   Inventory
-                </a>
-                <a href="/cars-under/5000">Cars under $5,000</a>
-                <a href="/test-drive" aria-current={currentPage === "test-drive" ? "page" : undefined}>
-                  Test Drive
                 </a>
                 <a href="/sell-your-car" aria-current={currentPage === "sell-your-car" ? "page" : undefined}>
                   Sell Your Car
@@ -198,11 +185,10 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
         </div>
 
         <div className="shell footer-bottom">
-          <p>© 2026 SpeedZone Motorsports. All rights reserved.</p>
+          <p>Â© 2026 SpeedZone Motorsports. All rights reserved.</p>
           <div>
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
-            <a href="/admin/login">Administrator sign in</a>
           </div>
         </div>
       </footer>
@@ -249,13 +235,12 @@ export function LegalFooter({ counterpart }: { counterpart: "privacy" | "terms" 
   return (
     <footer className="site-footer legal-footer">
       <div className="shell footer-bottom">
-        <p>© 2026 SpeedZone Motorsports.</p>
+        <p>Â© 2026 SpeedZone Motorsports.</p>
         <div>
           <a href="/">Home</a>
           <a href={`/${counterpart}`}>
             {counterpart === "privacy" ? "Privacy" : "Terms"}
           </a>
-          <a href="/admin/login">Administrator sign in</a>
         </div>
       </div>
     </footer>

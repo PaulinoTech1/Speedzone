@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import retiredPaths from "./retired-paths.json";
 
 async function expectNoHorizontalOverflow(page: Page) {
   await expect
@@ -36,11 +37,8 @@ test.describe("mobile public site", () => {
     ).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
-    const administratorLink = page.getByRole("link", { name: "Administrator sign in" });
-    await expect(administratorLink).toHaveAttribute("href", "/admin/login");
-    await administratorLink.click();
-    await expect(page).toHaveURL(/\/admin\/login$/);
-    await expect(page.getByRole("heading", { name: "Administrator sign in" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Administrator sign in" })).toHaveCount(0);
+    await expect(page.locator('a[href="/test-drive"]')).toHaveCount(0);
   });
 
   test("Road Trip exposes 16 low-cost stops and expandable planning details", async ({ page }) => {
@@ -60,12 +58,20 @@ test.describe("mobile public site", () => {
     await expectNoHorizontalOverflow(page);
   });
 
-  test("public inventory renders its mobile empty state without exposing drafts", async ({ page }) => {
+  test("inventory offers direct contact", async ({ page }) => {
     await page.goto("/inventory");
 
     await expect(page.getByRole("heading", { level: 1, name: "Current inventory" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "0 vehicles available" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "New arrivals are on the way." })).toBeVisible();
+    await expect(page.getByText("Call us for current vehicle availability and pricing.")).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
+});
+
+test("all retired routes reject every HTTP method", async ({ request }) => {
+  for (const path of retiredPaths) {
+    for (const method of ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      const response = await request.fetch(path, { method });
+      expect(response.status(), `${method} ${path}`).toBe(404);
+    }
+  }
 });

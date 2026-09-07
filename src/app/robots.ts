@@ -22,12 +22,12 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/admin", "/api/"],
+        disallow: ["/api/"],
       },
       ...aiAssistantCrawlers.map((userAgent) => ({
         userAgent,
         allow: "/",
-        disallow: ["/admin", "/api/"],
+        disallow: ["/api/"],
       })),
     ],
     sitemap: "https://www.speedzonems.com/sitemap.xml",
