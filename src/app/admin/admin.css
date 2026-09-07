@@ -629,7 +629,7 @@ body:has(.admin-root) {
   bottom: 0;
   left: 0;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   padding: 0 0 env(safe-area-inset-bottom);
   background: white;
   border-top: 1px solid #d9dde3;
@@ -758,6 +758,87 @@ body:has(.admin-root) {
   font-size: 1.65rem;
   letter-spacing: -0.04em;
   line-height: 1;
+}
+
+/* Dashboard */
+.admin-dashboard {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.admin-dashboard-grid {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.admin-dashboard-side {
+  display: grid;
+  gap: 1.1rem;
+  align-content: start;
+}
+
+.admin-dashboard-card {
+  padding: 1.1rem;
+  background: var(--admin-panel);
+  border: 1px solid var(--admin-line);
+  border-radius: 0.75rem;
+  box-shadow: 0 0.45rem 1.5rem rgb(20 25 35 / 3%);
+}
+
+.admin-dashboard-card > h2 {
+  font-size: 1.05rem;
+}
+
+.admin-dashboard-card > p {
+  margin: 0.25rem 0 0;
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+}
+
+.admin-quick-actions {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
+.admin-source-list {
+  margin: 0.9rem 0 0;
+}
+
+.admin-source-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--admin-line);
+}
+
+.admin-source-list > div:first-child {
+  border-top: 0;
+}
+
+.admin-source-list dt {
+  color: var(--admin-muted);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.admin-source-list dd {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+@media (min-width: 60rem) {
+  .admin-dashboard-grid {
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    align-items: start;
+  }
 }
 
 .admin-inventory-panel,

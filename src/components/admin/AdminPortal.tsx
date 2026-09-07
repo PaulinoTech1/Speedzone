@@ -18,9 +18,11 @@ type AdminPortalProps = {
   encryptedDraftsEnabled: boolean;
   maximumImageBytes: number;
   maximumImageDimension: number;
+  sanityProjectId: string | null;
+  sanityDataset: string | null;
 };
 
-type AdminView = "inventory" | "editor" | "security";
+type AdminView = "dashboard" | "inventory" | "editor" | "security";
 type SessionResponse = { ok: true; authenticated: true } & SessionSummary;
 
 const money = new Intl.NumberFormat("en-US", {
@@ -50,12 +52,14 @@ function AdminPortalWorkspace({
   encryptedDraftsEnabled,
   maximumImageBytes,
   maximumImageDimension,
+  sanityProjectId,
+  sanityDataset,
 }: AdminPortalProps) {
   const router = useRouter();
   const [session, setSession] = useState<SessionSummary | null>(null);
   const [vehicles, setVehicles] = useState<VehicleRecord[]>([]);
   const [revision, setRevision] = useState(0);
-  const [view, setView] = useState<AdminView>("inventory");
+  const [view, setView] = useState<AdminView>("dashboard");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<VehicleStatus | "all">("all");
@@ -142,6 +146,19 @@ function AdminPortalWorkspace({
     return next;
   }, [vehicles]);
 
+  const recentVehicles = useMemo(
+    () =>
+      [...vehicles]
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+        .slice(0, 5),
+    [vehicles],
+  );
+
+  function goToInventory(filter: VehicleStatus | "all") {
+    setStatusFilter(filter);
+    setView("inventory");
+  }
+
   function openNewVehicle() {
     setSelectedId(null);
     setView("editor");
@@ -206,7 +223,7 @@ function AdminPortalWorkspace({
           <button
             className="admin-topbar-brand"
             type="button"
-            onClick={() => setView("inventory")}
+            onClick={() => setView("dashboard")}
             aria-label="SpeedZone inventory dashboard"
           >
             <span className="admin-brand-mark" aria-hidden="true">SZ</span>
@@ -222,6 +239,9 @@ function AdminPortalWorkspace({
       </header>
 
       <nav className="admin-mobile-nav" aria-label="Administrator navigation">
+        <button className={view === "dashboard" ? "is-active" : ""} type="button" onClick={() => setView("dashboard")}>
+          <span aria-hidden="true">◧</span> Dashboard
+        </button>
         <button className={view === "inventory" || view === "editor" ? "is-active" : ""} type="button" onClick={() => setView("inventory")}>
           <span aria-hidden="true">▦</span> Inventory
         </button>
@@ -237,6 +257,7 @@ function AdminPortalWorkspace({
             <div><strong>{session.administrator}</strong><small>Administrator</small></div>
           </div>
           <nav aria-label="Administrator navigation">
+            <button className={view === "dashboard" ? "is-active" : ""} type="button" onClick={() => setView("dashboard")}><span aria-hidden="true">◧</span>Dashboard</button>
             <button className={view === "inventory" || view === "editor" ? "is-active" : ""} type="button" onClick={() => setView("inventory")}><span aria-hidden="true">▦</span>Inventory</button>
             <button className={view === "security" ? "is-active" : ""} type="button" onClick={() => setView("security")}><span aria-hidden="true">◆</span>Security</button>
           </nav>
@@ -248,6 +269,97 @@ function AdminPortalWorkspace({
 
         <main className="admin-main" id="admin-main">
           {error ? <p className="admin-alert admin-alert-error" role="alert">{error}</p> : null}
+
+          {view === "dashboard" ? (
+            <div className="admin-dashboard">
+              <header className="admin-page-heading">
+                <p className="admin-eyebrow">SpeedZone Motorsports · Sanity CMS</p>
+                <h1>Dashboard</h1>
+                <p>Create, publish, and maintain your vehicle catalog. Every record is stored in Sanity and served to the live storefront.</p>
+              </header>
+
+              {session.needsBackupPasskey ? (
+                <button className="admin-backup-warning" type="button" onClick={() => setView("security")}>
+                  <strong>Register a backup passkey</strong>
+                  <span>This account has fewer than two authenticators. Add another before one is lost. →</span>
+                </button>
+              ) : null}
+
+              <section className="admin-metric-grid" aria-label="Content summary">
+                <button type="button" onClick={() => goToInventory("all")}><span>All vehicles</span><strong>{vehicles.length}</strong></button>
+                <button type="button" onClick={() => goToInventory("published")}><span>Published</span><strong>{counts.published}</strong></button>
+                <button type="button" onClick={() => goToInventory("draft")}><span>Drafts</span><strong>{counts.draft}</strong></button>
+                <button type="button" onClick={() => goToInventory("pending")}><span>Pending</span><strong>{counts.pending}</strong></button>
+              </section>
+
+              <div className="admin-dashboard-grid">
+                <section className="admin-inventory-panel" aria-labelledby="recent-title">
+                  <div className="admin-inventory-toolbar">
+                    <div>
+                      <h2 id="recent-title">Recently updated</h2>
+                      <p>{vehicles.length ? `${recentVehicles.length} of ${vehicles.length} shown` : "No vehicles yet"}</p>
+                    </div>
+                    <button className="admin-button admin-button-secondary admin-button-small" type="button" onClick={() => setView("inventory")}>View all</button>
+                  </div>
+
+                  {recentVehicles.length ? (
+                    <ul className="admin-vehicle-list">
+                      {recentVehicles.map((vehicle) => {
+                        const photo = vehicle.photographs[0];
+                        return (
+                          <li key={vehicle.id}>
+                            <button className="admin-vehicle-card" type="button" onClick={() => openVehicle(vehicle.id)}>
+                              <span className="admin-vehicle-thumb">
+                                {photo ? (
+                                  <Image src={photo.url} alt="" width={photo.width} height={photo.height} sizes="7rem" />
+                                ) : <span aria-hidden="true">No photo</span>}
+                              </span>
+                              <span className="admin-vehicle-summary">
+                                <span className="admin-vehicle-title">{vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim}</span>
+                                <span className="admin-vehicle-meta">Stock {vehicle.stockNumber} · {integer.format(vehicle.mileage)} mi</span>
+                                <span className="admin-vehicle-price">{money.format(vehicle.price)}</span>
+                              </span>
+                              <span className={`admin-status admin-status-${vehicle.status}`}>{statusNames[vehicle.status]}</span>
+                              <span className="admin-chevron" aria-hidden="true">›</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <div className="admin-empty-state">
+                      <span aria-hidden="true">▦</span>
+                      <h3>No vehicles yet</h3>
+                      <p>Create the first inventory record to see it here.</p>
+                      <button className="admin-button admin-button-primary" type="button" onClick={openNewVehicle}>Add first vehicle</button>
+                    </div>
+                  )}
+                </section>
+
+                <div className="admin-dashboard-side">
+                  <section className="admin-dashboard-card" aria-label="Quick actions">
+                    <h2>Quick actions</h2>
+                    <div className="admin-quick-actions">
+                      <button className="admin-button admin-button-primary admin-button-block" type="button" onClick={openNewVehicle}>+ Add vehicle</button>
+                      <button className="admin-button admin-button-secondary admin-button-block" type="button" onClick={() => setView("inventory")}>Manage inventory</button>
+                      <button className="admin-button admin-button-secondary admin-button-block" type="button" onClick={() => setView("security")}>Security settings</button>
+                      <Link className="admin-button admin-button-quiet admin-button-block" href="/" target="_blank">View live site <span aria-hidden="true">↗</span></Link>
+                    </div>
+                  </section>
+
+                  <section className="admin-dashboard-card" aria-label="Content source">
+                    <h2>Content source</h2>
+                    <p>Vehicle inventory is managed in Sanity.</p>
+                    <dl className="admin-source-list">
+                      <div><dt>CMS</dt><dd>Sanity</dd></div>
+                      {sanityProjectId ? <div><dt>Project</dt><dd>{sanityProjectId}</dd></div> : null}
+                      {sanityDataset ? <div><dt>Dataset</dt><dd>{sanityDataset}</dd></div> : null}
+                    </dl>
+                  </section>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {view === "editor" ? (
             <VehicleEditor
