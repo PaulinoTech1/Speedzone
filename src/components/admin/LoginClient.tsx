@@ -36,7 +36,10 @@ export function LoginClient() {
       <form className="admin-form-stack" onSubmit={submit}>
         <label className="admin-field"><span>Administrator email</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
         <label className="admin-field"><span>Password</span><input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-        <button className="admin-button admin-button-primary admin-button-block" disabled={busy}>{busy ? "Signing in…" : "Sign in securely"}</button>
+        <div className="admin-form-actions">
+          <button className="admin-button admin-button-primary admin-button-block" disabled={busy}>{busy ? "Signing in…" : "Sign in securely"}</button>
+          <Link className="admin-back-link" href="/admin/forgot-password">Forgot password?</Link>
+        </div>
       </form>
       {error ? <p className="admin-alert admin-alert-error" role="alert">{error}</p> : null}
     </section>

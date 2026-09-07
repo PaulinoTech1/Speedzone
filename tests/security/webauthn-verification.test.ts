@@ -5,7 +5,6 @@ import type {
   RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 import { isoCBOR } from "@simplewebauthn/server/helpers";
-import type { CBORType } from "@levischuck/tiny-cbor";
 import { describe, expect, it } from "vitest";
 
 import type { AuthState, CeremonyClaims } from "@/lib/domain/auth";
@@ -95,11 +94,11 @@ function registrationResponse(
   authenticatorData.set(credentialPublicKey, 55 + credentialBytes.length);
 
   const attestationObject = isoCBOR.encode(
-    new Map<string | number, CBORType>([
+    new Map<string | number, unknown>([
       ["fmt", "none"],
       ["authData", authenticatorData],
-      ["attStmt", new Map<string | number, CBORType>()],
-    ]),
+      ["attStmt", new Map<string | number, unknown>()],
+    ]) as Parameters<typeof isoCBOR.encode>[0],
   );
   const clientDataJSON = Buffer.from(
     JSON.stringify({ type: "webauthn.create", challenge, origin, crossOrigin: false }),

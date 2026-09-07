@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { testDriveRequestSchema } from "@/lib/domain/test-drive";
+import { testDriveRequestSchema, vetTestDriveRequest } from "@/lib/domain/test-drive";
 
 function futureDate(daysFromNow = 3): string {
   const date = new Date();
@@ -81,5 +81,24 @@ describe("testDriveRequestSchema", () => {
     const today = new Date().toISOString().slice(0, 10);
     const result = testDriveRequestSchema.safeParse(submission({ preferredDate: today }));
     expect(result.success).toBe(true);
+  });
+
+  it("sanitizes text and marks the request pending review", () => {
+    const result = testDriveRequestSchema.parse(
+      submission({
+        fullName: "  Jamie <script>alert(1)</script> Rivera  ",
+        email: "JAMIE@EXAMPLE.COM",
+        comments: "Need a quote <a href=\"https://bad.example\">click</a>\nnow",
+      }),
+    );
+
+    expect(vetTestDriveRequest(result)).toMatchObject({
+      status: "pending_review",
+      source: "public_test_drive_form",
+      fullName: "Jamie Rivera",
+      email: "jamie@example.com",
+      comments: "Need a quote click now",
+    });
+    expect(vetTestDriveRequest(result)).not.toHaveProperty("website");
   });
 });

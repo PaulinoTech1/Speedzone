@@ -86,6 +86,8 @@ describe("test drive request route", () => {
     expect(path).toMatch(/^leads\/test-drive\/.+\.json$/);
     expect(JSON.parse(String(body))).toMatchObject({
       type: "test-drive-request",
+      status: "pending_review",
+      source: "public_test_drive_form",
       fullName: "Jamie Rivera",
     });
     expect(options).toMatchObject({

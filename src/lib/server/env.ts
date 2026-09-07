@@ -346,7 +346,9 @@ export function privateBlobToken(): string | undefined {
 }
 
 export function leadBlobToken(): string {
-  return requiredEnv("Test_Drive");
+  // The Blob integration provisions the read/write token under this name.
+  // Keep the legacy variable as a fallback for existing environments.
+  return optional("Test_Drive_READ_WRITE_TOKEN") ?? requiredEnv("Test_Drive");
 }
 
 export function leadBlobStoreId(): string {

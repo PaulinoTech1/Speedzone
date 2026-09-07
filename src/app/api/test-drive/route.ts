@@ -4,7 +4,8 @@ import { put } from "@vercel/blob";
 import {
   testDriveRequestSchema,
   testDriveTimeSlotLabels,
-  type TestDriveRequest,
+  type VettedTestDriveRequest,
+  vetTestDriveRequest,
 } from "@/lib/domain/test-drive";
 import { renderLeadEmail, sendLeadNotification } from "@/lib/server/lead-email";
 import { leadBlobStoreId, leadBlobToken, leadNotificationConfig, tokenConfig } from "@/lib/server/env";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 const maximumBodyBytes = 8 * 1024;
 
-function notificationEmail(request: TestDriveRequest): { text: string; html: string } {
+function notificationEmail(request: VettedTestDriveRequest): { text: string; html: string } {
   const rows: [string, string][] = [
     ["Full name", request.fullName],
     ["Email", request.email],
@@ -31,7 +32,7 @@ function notificationEmail(request: TestDriveRequest): { text: string; html: str
   return renderLeadEmail("New Test Drive Request", rows, request.comments);
 }
 
-async function storeRequest(request: TestDriveRequest): Promise<void> {
+async function storeRequest(request: VettedTestDriveRequest): Promise<void> {
   let storeId: string;
   let token: string;
   try {
@@ -77,14 +78,15 @@ export async function POST(request: NextRequest) {
     }
     await enforceClientRateLimit(request, "testDrive");
     const input = await parseStrictJsonBody(request, testDriveRequestSchema, maximumBodyBytes);
-    await storeRequest(input);
+    const vettedRequest = vetTestDriveRequest(input);
+    await storeRequest(vettedRequest);
     const { resendApiKey, fromEmail, notifyEmail } = leadNotificationConfig();
     if (resendApiKey && fromEmail && notifyEmail) {
-      const { text, html } = notificationEmail(input);
+      const { text, html } = notificationEmail(vettedRequest);
       try {
         await sendLeadNotification({
-          subject: `New Test Drive Request - ${input.fullName}`,
-          replyTo: input.email,
+          subject: `New Test Drive Request - ${vettedRequest.fullName}`,
+          replyTo: vettedRequest.email,
           text,
           html,
         });
