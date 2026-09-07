@@ -30,7 +30,7 @@ export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
             <a href={directionsUrl} target="_blank" rel="noopener">
               1094 Main St, Worcester, MA
             </a>
-            <span>Monâ€“Fri 10â€“4 Â· Sat by appointment</span>
+            <span>Mon–Fri 10am–4pm · Sat by appointment · Closed Sun</span>
           </div>
         </div>
 
@@ -120,8 +120,8 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
               </span>
             </a>
             <p>
-              Worcesterâ€™s destination for quality, affordable used cars since
-              2010.
+              Worcester&apos;s destination for quality, affordable used cars
+              since 2010.
             </p>
           </div>
 
