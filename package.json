@@ -45,6 +45,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@levischuck/tiny-cbor": "^0.3.6",
     "@playwright/test": "1.62.1",
     "@types/node": "22.20.1",
     "@types/pg": "^8.23.1",
