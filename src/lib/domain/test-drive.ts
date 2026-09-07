@@ -68,3 +68,32 @@ export const testDriveRequestSchema = z
   .strict();
 
 export type TestDriveRequest = z.infer<typeof testDriveRequestSchema>;
+
+export type VettedTestDriveRequest = Omit<TestDriveRequest, "website"> & {
+  status: "pending_review";
+  source: "public_test_drive_form";
+};
+
+function sanitizePlainText(value: string): string {
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/[<>`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function vetTestDriveRequest(request: TestDriveRequest): VettedTestDriveRequest {
+  return {
+    status: "pending_review",
+    source: "public_test_drive_form",
+    fullName: sanitizePlainText(request.fullName),
+    email: request.email.trim().toLowerCase(),
+    phone: sanitizePlainText(request.phone),
+    vehicleOfInterest: sanitizePlainText(request.vehicleOfInterest),
+    preferredDate: request.preferredDate,
+    preferredTime: request.preferredTime,
+    comments: sanitizePlainText(request.comments),
+  };
+}
