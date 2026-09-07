@@ -5,7 +5,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { headers } from "next/headers";
 
 import { db } from "@/lib/db";
-import { authBaseUrl, sendPasswordResetEmail } from "@/lib/server/auth-email";
+import { sendPasswordResetEmail } from "@/lib/server/auth-email";
 import * as schema from "@/lib/db/schema";
 
 const originCandidates = process.env.NODE_ENV === "development"
@@ -17,9 +17,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     resetPasswordTokenExpiresIn: 30 * 60,
-    sendResetPassword: async ({ user, token }) => {
-      const callbackURL = `${authBaseUrl()}/admin/reset-password`;
-      const url = `${authBaseUrl()}/api/auth/reset-password/${token}?callbackURL=${encodeURIComponent(callbackURL)}`;
+    sendResetPassword: async ({ user, url }) => {
       await sendPasswordResetEmail({ email: user.email, url });
     },
   },
