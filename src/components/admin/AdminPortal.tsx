@@ -10,6 +10,7 @@ import { ToastProvider } from "@/components/admin/Toast";
 import type { InventoryResponse, SessionSummary } from "@/components/admin/types";
 import { VehicleEditor } from "@/components/admin/VehicleEditor";
 import { AdminApiError, adminFetch, clearClientSecurityState } from "@/lib/client/admin-api";
+import { authClient } from "@/lib/auth-client";
 import { lockDraftVault } from "@/lib/client/draft-vault";
 import type { VehicleRecord, VehicleStatus } from "@/lib/domain/vehicle";
 
@@ -165,7 +166,7 @@ function AdminPortalWorkspace({
     setLoggingOut(true);
     setError("");
     try {
-      await adminFetch<{ ok: true }>("/api/admin/auth/session/logout", { method: "POST", json: {} });
+      await authClient.signOut();
     } catch (cause) {
       if (!(cause instanceof AdminApiError && cause.status === 401)) {
         setError(cause instanceof Error ? cause.message : "Sign out could not be confirmed.");

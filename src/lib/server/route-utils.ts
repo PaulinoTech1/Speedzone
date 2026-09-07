@@ -15,6 +15,8 @@ import {
   ipSecurityHash,
   logSecurityEvent,
 } from "@/lib/server/security-log";
+import { getAuthSession } from "@/lib/auth";
+import { adminConfig } from "@/lib/server/env";
 import { authorizeSession } from "@/lib/server/auth/session";
 import { assertCsrf } from "@/lib/server/csrf";
 import { StateConflictError, StateConfigurationError } from "@/lib/server/storage/state";
@@ -26,6 +28,22 @@ export class RateLimitError extends Error {
 }
 
 export async function requireAdmin(request: NextRequest) {
+  const neonSession = await getAuthSession();
+  const allowlistedEmail = adminConfig().identifier.toLowerCase();
+  if (neonSession?.user?.email?.toLowerCase() === allowlistedEmail) {
+    return {
+      claims: {
+        typ: "session-v1",
+        sid: neonSession.session.id,
+        administrator: neonSession.user.email,
+        epoch: 0,
+        issuedAt: Date.now(),
+        lastSeenAt: Date.now(),
+        absoluteExpiresAt: new Date(neonSession.session.expiresAt).getTime(),
+      } as SessionClaims,
+      state: null,
+    };
+  }
   const authorized = await authorizeSession(request);
   if (!authorized) throw new RequestValidationError("Authentication required", 401, "AUTH_REQUIRED");
   return authorized;
