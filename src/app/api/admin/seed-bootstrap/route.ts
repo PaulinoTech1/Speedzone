@@ -20,9 +20,9 @@ export async function POST(request: NextRequest) {
   if (!email) {
     return NextResponse.json({ ok: false, error: "ADMIN_ID not set" }, { status: 400 });
   }
-  if (password.length < 16 || password.length > 128) {
+  if (password.length < 8 || password.length > 128) {
     return NextResponse.json(
-      { ok: false, error: `SEED_ADMIN_PASSWORD length ${password.length} is outside the required 16-128 range` },
+      { ok: false, error: `SEED_ADMIN_PASSWORD length ${password.length} is outside Better Auth's 8-128 range` },
       { status: 400 },
     );
   }
