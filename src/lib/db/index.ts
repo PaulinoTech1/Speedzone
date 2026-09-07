@@ -5,5 +5,11 @@ import { Pool } from "pg";
 
 import * as schema from "./schema";
 
-export const pool = new Pool({ connectionString: process.env.AUTH_DATABASE_URL ?? process.env.DATABASE_URL });
+const connectionString = process.env.DATABASE_URL ?? process.env.AUTH_DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error("Missing Neon database connection string");
+}
+
+export const pool = new Pool({ connectionString });
 export const db = drizzle(pool, { schema });

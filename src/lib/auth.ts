@@ -14,7 +14,11 @@ const originCandidates = process.env.NODE_ENV === "development"
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg", schema }),
   emailAndPassword: { enabled: true },
-  baseURL: process.env.BETTER_AUTH_URL ?? process.env.NEON_AUTH_BASE_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined),
+  baseURL:
+    process.env.BETTER_AUTH_URL ??
+    process.env.NEON_AUTH_BASE_URL ??
+    (process.env.NODE_ENV === "development" ? process.env.V0_RUNTIME_URL : undefined) ??
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined),
   trustedOrigins: originCandidates.filter((value): value is string => Boolean(value)),
   ...(process.env.NODE_ENV === "development" ? { advanced: { defaultCookieAttributes: { sameSite: "none", secure: true } } } : {}),
 });
