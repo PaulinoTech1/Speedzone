@@ -5,11 +5,19 @@ import { Resend } from "resend";
 import { requiredEnv } from "@/lib/server/env";
 
 function resetEmailConfig() {
-  const domain = requiredEnv("RESEND_EMAIL_DOMAIN");
+  const configuredSender = requiredEnv("RESEND_EMAIL_DOMAIN");
   const apiKey = requiredEnv("RESEND_API_KEY");
+  const sender = configuredSender.includes("@")
+    ? configuredSender
+    : `no-reply@${configuredSender}`;
+
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(sender)) {
+    throw new Error("RESEND_EMAIL_DOMAIN must be a verified domain or sender email");
+  }
+
   return {
     resend: new Resend(apiKey),
-    from: `SpeedZone Motorsports <no-reply@${domain}>`,
+    from: `SpeedZone Motorsports <${sender}>`,
   };
 }
 
