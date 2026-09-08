@@ -1,12 +1,10 @@
 import { del, put } from "@vercel/blob";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { readInventory, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
-
-async function isAdmin() { return (await cookies()).get("speedzone_admin")?.value === "authenticated"; }
+import { isAdmin } from "@/lib/admin-auth";
 
 export async function GET() {
-  try { return NextResponse.json(await readInventory()); }
+  try { return NextResponse.json(await readInventory(), { headers: { "Cache-Control": "public, max-age=60" } }); }
   catch (error) { console.error("[v0] inventory read failed", error); return NextResponse.json({ error: "Unable to load inventory" }, { status: 500 }); }
 }
 
