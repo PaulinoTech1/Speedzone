@@ -14,7 +14,7 @@ export function TestDriveForm() {
   const [date, setDate] = useState("");
   const minDate = useMemo(() => new Date().toISOString().split("T")[0], []);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const selectedDate = new Date(`${date}T12:00:00`);
 
@@ -24,6 +24,15 @@ export function TestDriveForm() {
     }
 
     setError("");
+    const response = await fetch("/api/test-drive", {
+      method: "POST",
+      body: new FormData(event.currentTarget),
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      setError(result.error || "Unable to submit your request right now.");
+      return;
+    }
     setSubmitted(true);
   }
 
