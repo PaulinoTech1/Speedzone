@@ -90,6 +90,7 @@ export function TestDriveForm() {
       <div className="form-section-heading">
         <p className="eyebrow">Your details</p>
         <h2>Tell us how to reach you</h2>
+        <p className="form-disclaimer">Email address and phone number are required to submit a test-drive request.</p>
       </div>
       <div className="form-grid">
         <label>
@@ -97,12 +98,12 @@ export function TestDriveForm() {
           <input name="name" required autoComplete="name" />
         </label>
         <label>
-          Email address
-          <input name="email" type="email" required autoComplete="email" />
+          Email address <span>(required)</span>
+          <input name="email" type="email" required autoComplete="email" aria-required="true" />
         </label>
         <label>
-          Phone number
-          <input name="phone" type="tel" required autoComplete="tel" />
+          Phone number <span>(required)</span>
+          <input name="phone" type="tel" required autoComplete="tel" aria-required="true" />
         </label>
         <label>
           Vehicle of interest
