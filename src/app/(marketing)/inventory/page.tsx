@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
 import type { Metadata } from "next";
 import { SiteHeader, SiteFooter } from "@/components/public/SiteChrome";
 import { VehiclePhotoCarousel } from "@/components/public/VehiclePhotoCarousel";

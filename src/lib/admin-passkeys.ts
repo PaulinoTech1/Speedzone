@@ -10,8 +10,18 @@ import {
 import { isAdmin } from "@/lib/admin-auth";
 
 const rpName = "SpeedZone Motorsports";
-const rpID = process.env.WEBAUTHN_RP_ID || "localhost";
-const origin = process.env.WEBAUTHN_ORIGIN || `http://${rpID}:4173`;
+export type WebAuthnConfig = { rpID: string; origin: string };
+
+export function getWebAuthnConfig(headers: Headers): WebAuthnConfig {
+  const configuredRpID = process.env.WEBAUTHN_RP_ID?.trim();
+  const configuredOrigin = process.env.WEBAUTHN_ORIGIN?.trim();
+  const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || headers.get("host")?.trim() || "localhost:3000";
+  const rpID = configuredRpID || host.split(":")[0] || "localhost";
+  const forwardedProto = headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwardedProto || (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
+  return { rpID, origin: configuredOrigin || `${protocol}://${host}` };
+}
 const userID = "speedzone-admin";
 const challengeTtl = 300;
 
@@ -42,12 +52,12 @@ async function saveCredentials(credentials: StoredCredential[]) {
   return true;
 }
 
-export async function registrationOptions() {
+export async function registrationOptions(config: WebAuthnConfig) {
   if (!(await isAdmin())) return { error: "Unauthorized" as const };
   const credentials = await getCredentials();
   const options = await generateRegistrationOptions({
     rpName,
-    rpID,
+    rpID: config.rpID,
     userName: "admin@speedzonemotorsports",
     userDisplayName: "SpeedZone admin",
     userID: new TextEncoder().encode(userID),
@@ -61,7 +71,7 @@ export async function registrationOptions() {
   return { options };
 }
 
-export async function verifyRegistration(response: unknown) {
+export async function verifyRegistration(response: unknown, config: WebAuthnConfig) {
   if (!(await isAdmin())) return { error: "Unauthorized" as const };
   const client = redis();
   if (!client) return { error: "Passkey storage is not configured" as const };
@@ -71,7 +81,7 @@ export async function verifyRegistration(response: unknown) {
   const challenge = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge as string;
   const expected = await client.get<string>(`speedzone:passkey:registration:${challenge}`);
   if (!expected) return { error: "Passkey setup expired" as const };
-  const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: expected, expectedOrigin: origin, expectedRPID: rpID });
+  const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: expected, expectedOrigin: config.origin, expectedRPID: config.rpID });
   if (!verification.verified || !verification.registrationInfo) return { error: "Passkey could not be verified" as const };
   const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
   const credentials = await getCredentials();
@@ -81,10 +91,10 @@ export async function verifyRegistration(response: unknown) {
   return { verified: true };
 }
 
-export async function authenticationOptions() {
+export async function authenticationOptions(config: WebAuthnConfig) {
   const credentials = await getCredentials();
   const options = await generateAuthenticationOptions({
-    rpID,
+    rpID: config.rpID,
     allowCredentials: credentials.map((credential) => ({ id: credential.id, transports: credential.transports })),
     userVerification: "required",
   });
@@ -94,7 +104,7 @@ export async function authenticationOptions() {
   return { options };
 }
 
-export async function verifyAuthentication(response: unknown) {
+export async function verifyAuthentication(response: unknown, config: WebAuthnConfig) {
   const client = redis();
   if (!client) return { error: "Passkey login is not configured" as const };
   const parsed = response as { id?: string; response?: { clientDataJSON?: string } };
@@ -104,13 +114,12 @@ export async function verifyAuthentication(response: unknown) {
   const challenge = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge as string;
   const expected = await client.get<string>(`speedzone:passkey:authentication:${challenge}`);
   if (!expected) return { error: "Passkey login expired" as const };
-  const verification = await verifyAuthenticationResponse({ response: response as Parameters<typeof verifyAuthenticationResponse>[0]["response"], expectedChallenge: expected, expectedOrigin: origin, expectedRPID: rpID, credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, "base64url"), counter: credential.counter, transports: credential.transports } });
+  const verification = await verifyAuthenticationResponse({ response: response as Parameters<typeof verifyAuthenticationResponse>[0]["response"], expectedChallenge: expected, expectedOrigin: config.origin, expectedRPID: config.rpID, credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, "base64url"), counter: credential.counter, transports: credential.transports } });
   if (!verification.verified) return { error: "Passkey could not be verified" as const };
   await saveCredentials((await getCredentials()).map((item) => item.id === credential.id ? { ...item, counter: verification.authenticationInfo.newCounter } : item));
   await client.del(`speedzone:passkey:authentication:${challenge}`);
   return { verified: true };
 }
 
-export { rpID };
 export const acceptedPasskeyTypes = "Platform passkeys (Touch ID, Face ID, Windows Hello, Android screen lock) and roaming FIDO2 security keys (USB, NFC, or Bluetooth). Passwords, SMS codes, OTPs, and magic links are not passkeys.";
 export { createAdminSession } from "@/lib/admin-auth";
