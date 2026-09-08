@@ -32,6 +32,7 @@ type StoredCredential = {
   transports?: AuthenticatorTransport[];
   deviceType: CredentialDeviceType;
   backedUp: boolean;
+  name: string;
 };
 
 function redis() {
@@ -52,17 +53,16 @@ async function saveCredentials(credentials: StoredCredential[]) {
   return true;
 }
 
-export type AdminPasskeySummary = { id: string; deviceType: string; backedUp: boolean };
+export type AdminPasskeySummary = { id: string; deviceType: string; backedUp: boolean; name: string };
 
 export async function listPasskeys(): Promise<AdminPasskeySummary[]> {
   const credentials = await getCredentials();
-  return credentials.map(({ id, deviceType, backedUp }) => ({ id, deviceType, backedUp }));
+  return credentials.map(({ id, deviceType, backedUp, name }) => ({ id, deviceType, backedUp, name }));
 }
 
 export async function deletePasskey(id: string): Promise<{ deleted: boolean; reason?: string }> {
   const credentials = await getCredentials();
   if (!credentials.some((credential) => credential.id === id)) return { deleted: false, reason: "Passkey not found" };
-  if (credentials.length <= 1) return { deleted: false, reason: "Keep at least one passkey registered" };
   await saveCredentials(credentials.filter((credential) => credential.id !== id));
   return { deleted: true };
 }
@@ -86,7 +86,7 @@ export async function registrationOptions(config: WebAuthnConfig) {
   return { options };
 }
 
-export async function verifyRegistration(response: unknown, config: WebAuthnConfig) {
+export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig) {
   if (!(await isAdmin())) return { error: "Unauthorized" as const };
   const client = redis();
   if (!client) return { error: "Passkey storage is not configured" as const };
@@ -100,7 +100,7 @@ export async function verifyRegistration(response: unknown, config: WebAuthnConf
   if (!verification.verified || !verification.registrationInfo) return { error: "Passkey could not be verified" as const };
   const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
   const credentials = await getCredentials();
-  credentials.push({ id: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"), counter: credential.counter, deviceType: credentialDeviceType, backedUp: credentialBackedUp });
+  credentials.push({ id: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"), counter: credential.counter, deviceType: credentialDeviceType, backedUp: credentialBackedUp, name: name || "Unnamed passkey" });
   await saveCredentials(credentials);
   await client.del(`speedzone:passkey:registration:${challenge}`);
   return { verified: true };
