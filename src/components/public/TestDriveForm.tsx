@@ -1,7 +1,6 @@
 "use client";
 
-import Script from "next/script";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 
 const hours = [
@@ -14,29 +13,7 @@ export function TestDriveForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [date, setDate] = useState("");
-  const [turnstileToken, setTurnstileToken] = useState("");
-  const turnstileRef = useRef<HTMLDivElement>(null);
   const minDate = useMemo(() => new Date().toISOString().split("T")[0], []);
-
-  function renderTurnstile() {
-    const turnstile = (window as Window & { turnstile?: { render: (element: HTMLElement, options: Record<string, unknown>) => void } }).turnstile;
-    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-    if (!turnstile || !siteKey || !turnstileRef.current || turnstileRef.current.childElementCount > 0) return;
-    turnstile.render(turnstileRef.current, {
-      sitekey: siteKey,
-      callback: (token: string) => setTurnstileToken(token),
-      "expired-callback": () => setTurnstileToken(""),
-      "error-callback": () => setTurnstileToken(""),
-      appearance: "interaction-only",
-      execution: "render",
-      size: "invisible",
-    });
-  }
-
-  useEffect(() => {
-    const timer = window.setTimeout(renderTurnstile, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,11 +22,6 @@ export function TestDriveForm() {
 
     if (validationError) {
       setError(validationError);
-      return;
-    }
-
-    if (!turnstileToken) {
-      setError("Unable to submit your request right now. Please try again.");
       return;
     }
 
@@ -139,12 +111,6 @@ export function TestDriveForm() {
         Notes <span>(optional)</span>
         <textarea name="notes" rows={4} placeholder="Anything we should know?" />
       </label>
-      <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-        strategy="afterInteractive"
-        onLoad={renderTurnstile}
-      />
-      <div ref={turnstileRef} className="turnstile-container" aria-hidden="true" data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       <p className="form-disclaimer">
         This request does not guarantee an appointment. We&apos;ll confirm the

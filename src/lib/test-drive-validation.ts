@@ -8,7 +8,6 @@ export type TestDriveFields = {
   date: string;
   time: string;
   notes: string;
-  turnstileToken?: string;
 };
 
 function isValidEmail(value: string) {
@@ -59,6 +58,5 @@ export function getTestDriveFields(form: FormData): TestDriveFields {
     date: normalizeTestDriveField(form.get("date")),
     time: normalizeTestDriveField(form.get("time")),
     notes: normalizeTestDriveField(form.get("notes")),
-    turnstileToken: normalizeTestDriveField(form.get("cf-turnstile-response")),
   };
 }

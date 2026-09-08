@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 import { getRequestKeys, limitTestDriveSubmission } from "@/lib/test-drive-rate-limit";
 
-const privateToken = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN;
+const privateToken = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
 
 export type TestDriveSubmission = {
   id: string;
@@ -26,20 +26,6 @@ export async function POST(request: Request) {
   const fields = getTestDriveFields(form);
   const validationError = validateTestDriveFields(fields);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
-
-  const turnstileToken = fields.turnstileToken;
-  if (!turnstileToken || !process.env.TURNSTILE_SECRET_KEY) {
-    return NextResponse.json({ error: "Unable to verify your request." }, { status: 400 });
-  }
-  const turnstileResponse = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ secret: process.env.TURNSTILE_SECRET_KEY, response: turnstileToken }),
-  });
-  const turnstileResult = (await turnstileResponse.json()) as { success?: boolean };
-  if (!turnstileResponse.ok || !turnstileResult.success) {
-    return NextResponse.json({ error: "Unable to verify your request." }, { status: 400 });
-  }
 
   let rateLimit;
   try {
