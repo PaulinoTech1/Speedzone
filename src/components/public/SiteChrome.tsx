@@ -87,6 +87,7 @@ export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
             <a href={`${prefix}#why-us`}>Why SpeedZone</a>
             <a href={`${prefix}#maintenance`}>Car care</a>
             <a href={`${prefix}#contact`}>Visit us</a>
+            <a href="/admin">Admin login</a>
           </div>
         </nav>
       </header>
@@ -139,6 +140,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="#maintenance">Car care</a>
                 <a href="#faq">FAQ</a>
                 <a href="#contact">Visit us</a>
+                <a href="/admin">Admin login</a>
               </>
             ) : (
               <>
@@ -161,6 +163,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="/#maintenance">Car care</a>
                 <a href="/#faq">FAQ</a>
                 <a href="/#contact">Visit us</a>
+                <a href="/admin">Admin login</a>
               </>
             )}
           </nav>
