@@ -1,10 +1,28 @@
-import { get, list } from "@vercel/blob";
+import { del, get, list } from "@vercel/blob";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { TestDriveSubmission } from "@/app/api/test-drive/route";
 
 const token = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN;
 async function isAdmin() { return (await cookies()).get("speedzone_admin")?.value === "authenticated"; }
+
+export async function DELETE(request: Request) {
+  if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const privateToken = token();
+  if (!privateToken) return NextResponse.json({ error: "Test-drive storage is not configured" }, { status: 503 });
+
+  try {
+    const { pathname } = await request.json() as { pathname?: string };
+    if (!pathname || !pathname.startsWith("test-drive/")) {
+      return NextResponse.json({ error: "Invalid submission" }, { status: 400 });
+    }
+    await del(pathname, { token: privateToken });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[v0] test-drive admin delete failed", error);
+    return NextResponse.json({ error: "Unable to delete test-drive request" }, { status: 500 });
+  }
+}
 
 export async function GET(request: Request) {
   if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
