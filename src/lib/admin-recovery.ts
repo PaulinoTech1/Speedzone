@@ -16,7 +16,7 @@ function hash(value: string) {
 }
 
 export function recoveryConfigured() {
-  return Boolean(getRedis() && process.env.RESEND_API_KEY && process.env.RESEND_EMAIL_DOMAIN);
+  return Boolean(getRedis() && process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN);
 }
 
 export async function createRecoveryToken() {
