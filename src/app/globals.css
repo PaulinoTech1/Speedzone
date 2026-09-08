@@ -1014,6 +1014,9 @@ h1 em::after {
   .submission-item h3, .submission-item p { margin: 0; }
   .submission-item p + p { margin-top: .35rem; color: var(--muted); font-size: .9rem; }
   .submission-actions { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
+  .passkey-list { display: grid; gap: .75rem; margin-top: 1.25rem; }
+  .passkey-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--surface-2); }
+  .passkey-row p { margin: .25rem 0 0; }
   .button-danger { color: #fff; background: #a30d2d; border-color: #a30d2d; }
   .button-danger:hover:not(:disabled) { background: #c0173b; border-color: #c0173b; }
   .button-danger:disabled { cursor: wait; opacity: .65; }

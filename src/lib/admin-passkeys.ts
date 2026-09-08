@@ -52,6 +52,21 @@ async function saveCredentials(credentials: StoredCredential[]) {
   return true;
 }
 
+export type AdminPasskeySummary = { id: string; deviceType: string; backedUp: boolean };
+
+export async function listPasskeys(): Promise<AdminPasskeySummary[]> {
+  const credentials = await getCredentials();
+  return credentials.map(({ id, deviceType, backedUp }) => ({ id, deviceType, backedUp }));
+}
+
+export async function deletePasskey(id: string): Promise<{ deleted: boolean; reason?: string }> {
+  const credentials = await getCredentials();
+  if (!credentials.some((credential) => credential.id === id)) return { deleted: false, reason: "Passkey not found" };
+  if (credentials.length <= 1) return { deleted: false, reason: "Keep at least one passkey registered" };
+  await saveCredentials(credentials.filter((credential) => credential.id !== id));
+  return { deleted: true };
+}
+
 export async function registrationOptions(config: WebAuthnConfig) {
   if (!(await isAdmin())) return { error: "Unauthorized" as const };
   const credentials = await getCredentials();

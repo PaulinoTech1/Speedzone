@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/admin-auth";
-import { authenticationOptions, getWebAuthnConfig, registrationOptions, verifyAuthentication, verifyRegistration, createAdminSession } from "@/lib/admin-passkeys";
+import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, verifyAuthentication, verifyRegistration, createAdminSession } from "@/lib/admin-passkeys";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 
 export async function POST(request: Request) {
@@ -33,5 +33,10 @@ export async function POST(request: Request) {
     return response;
   }
   if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (action === "list") return NextResponse.json({ passkeys: await listPasskeys() }, { headers: { "Cache-Control": "no-store" } });
+  if (action === "delete") {
+    const result = await deletePasskey(typeof body.id === "string" ? body.id : "");
+    return NextResponse.json(result, { status: result.deleted ? 200 : 400, headers: { "Cache-Control": "no-store" } });
+  }
   return NextResponse.json({ error: "Unsupported passkey action" }, { status: 400 });
 }
