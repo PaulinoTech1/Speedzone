@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { adminCookieOptions, clearAdminCookie, createAdminSession } from "@/lib/admin-auth";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
+import { getAdminPassword } from "@/lib/admin-recovery";
 
 function getClientIdentifier(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -30,7 +31,8 @@ export async function POST(request: Request) {
   }
 
   const { password } = await request.json().catch(() => ({}));
-  if (!process.env.SPEEDZONE_ADMIN_PASSWORD || password !== process.env.SPEEDZONE_ADMIN_PASSWORD) {
+  const configuredPassword = await getAdminPassword();
+  if (!configuredPassword || password !== configuredPassword) {
     return NextResponse.json({ error: "Invalid password" }, { status: 401 });
   }
   const session = createAdminSession();

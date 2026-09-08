@@ -1,5 +1,4 @@
 import { del, get, list } from "@vercel/blob";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { TestDriveSubmission } from "@/app/api/test-drive/route";
 import { isAdmin, privateResponseHeaders } from "@/lib/admin-auth";
