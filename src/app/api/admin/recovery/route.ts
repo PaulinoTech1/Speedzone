@@ -23,7 +23,11 @@ export async function POST(request: Request) {
   const token = await createRecoveryToken();
   if (!token) return NextResponse.json({ error: "Recovery is temporarily unavailable" }, { status: 503, headers: noStore });
   const domain = process.env.RESEND_EMAIL_DOMAIN;
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const recoveryApiKey = process.env.RESEND_PASSWORD_RESET_API_KEY;
+  if (!domain || !recoveryApiKey) {
+    return NextResponse.json({ error: "Recovery email is not configured" }, { status: 503, headers: noStore });
+  }
+  const resend = new Resend(recoveryApiKey);
   const { error } = await resend.emails.send({
     from: `SpeedZone Admin <admin@${domain}>`,
     to: [recoveryEmail],
