@@ -27,6 +27,20 @@ export async function POST(request: Request) {
   const validationError = validateTestDriveFields(fields);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
+  const turnstileToken = fields.turnstileToken;
+  if (!turnstileToken || !process.env.TURNSTILE_SECRET_KEY) {
+    return NextResponse.json({ error: "Unable to verify your request." }, { status: 400 });
+  }
+  const turnstileResponse = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ secret: process.env.TURNSTILE_SECRET_KEY, response: turnstileToken }),
+  });
+  const turnstileResult = (await turnstileResponse.json()) as { success?: boolean };
+  if (!turnstileResponse.ok || !turnstileResult.success) {
+    return NextResponse.json({ error: "Unable to verify your request." }, { status: 400 });
+  }
+
   let rateLimit;
   try {
     rateLimit = await limitTestDriveSubmission(getRequestKeys(request, fields.email, fields.phone));
@@ -46,7 +60,13 @@ export async function POST(request: Request) {
 
   const submission: TestDriveSubmission = {
     id: crypto.randomUUID(),
-    ...fields,
+    name: fields.name,
+    email: fields.email,
+    phone: fields.phone,
+    vehicle: fields.vehicle,
+    date: fields.date,
+    time: fields.time,
+    notes: fields.notes,
     createdAt: new Date().toISOString(),
   };
 
