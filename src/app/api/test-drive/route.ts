@@ -1,5 +1,6 @@
 import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
+import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 
 const privateToken = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN;
 
@@ -24,21 +25,15 @@ export async function POST(request: Request) {
   if (!token) return NextResponse.json({ error: "Test-drive storage is not configured" }, { status: 503 });
 
   const form = await request.formData();
+  const fields = getTestDriveFields(form);
+  const validationError = validateTestDriveFields(fields);
+  if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
+
   const submission: TestDriveSubmission = {
     id: crypto.randomUUID(),
-    name: clean(form.get("name")),
-    email: clean(form.get("email")),
-    phone: clean(form.get("phone")),
-    vehicle: clean(form.get("vehicle")),
-    date: clean(form.get("date")),
-    time: clean(form.get("time")),
-    notes: clean(form.get("notes")),
+    ...fields,
     createdAt: new Date().toISOString(),
   };
-
-  if (!submission.name || !submission.email || !submission.phone || !submission.vehicle || !submission.date || !submission.time) {
-    return NextResponse.json({ error: "Please complete all required fields." }, { status: 400 });
-  }
 
   try {
     await put(`test-drive/${submission.createdAt.slice(0, 10)}/${submission.id}.json`, JSON.stringify(submission), {

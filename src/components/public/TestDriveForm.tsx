@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 
 const hours = [
   ["Monday–Friday", "10:00 AM–4:00 PM"],
@@ -16,17 +17,18 @@ export function TestDriveForm() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const selectedDate = new Date(`${date}T12:00:00`);
+    const form = new FormData(event.currentTarget);
+    const validationError = validateTestDriveFields(getTestDriveFields(form));
 
-    if (selectedDate.getDay() === 0) {
-      setError("Sunday appointments are unavailable. Please choose another day.");
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     setError("");
     const response = await fetch("/api/test-drive", {
       method: "POST",
-      body: new FormData(event.currentTarget),
+      body: form,
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
@@ -59,6 +61,19 @@ export function TestDriveForm() {
         <h2>Tell us how to reach you</h2>
       </div>
       <div className="form-grid">
+        <label
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: "-10000px",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+          }}
+        >
+          Website
+          <input name="website" tabIndex={-1} autoComplete="off" />
+        </label>
         <label>
           Full name
           <input name="name" required autoComplete="name" />
