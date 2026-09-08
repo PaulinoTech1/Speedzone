@@ -31,7 +31,13 @@ export async function POST(request: Request) {
   const validationError = validateTestDriveFields(fields);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
-  const rateLimit = await limitTestDriveSubmission(getRequestKeys(request, fields.email, fields.phone));
+  let rateLimit;
+  try {
+    rateLimit = await limitTestDriveSubmission(getRequestKeys(request, fields.email, fields.phone));
+  } catch (error) {
+    console.error("[v0] test-drive rate limit failed", error);
+    return NextResponse.json({ error: "Submissions are temporarily unavailable." }, { status: 503 });
+  }
   if (!rateLimit.configured) {
     return NextResponse.json({ error: "Submissions are temporarily unavailable." }, { status: 503 });
   }
