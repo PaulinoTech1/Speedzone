@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteFooter, SiteHeader } from "@/components/public/SiteChrome";
+import { SteeringWheel } from "@/components/public/SteeringWheel";
 import { TestDriveForm } from "@/components/public/TestDriveForm";
 
 const dealershipHours = [
@@ -22,6 +23,7 @@ export default function TestDrivePage() {
           <div className="test-drive-intro">
             <p className="eyebrow">Take it for a spin</p>
             <h1>Find out how it feels behind the wheel.</h1>
+            <SteeringWheel />
             <p className="lede">
               Tell us what you&apos;re interested in and when you&apos;d like to
               visit. We&apos;ll make sure the vehicle is ready when you arrive.

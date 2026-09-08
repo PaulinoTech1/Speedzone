@@ -2550,8 +2550,18 @@ body:has(.error-page) {
 /* Test-drive request page */
 .test-drive-page { padding: 4rem 0 6rem; }
 .test-drive-hero { display: grid; gap: 3rem; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; }
-.test-drive-intro h1 { max-width: 12ch; margin: .5rem 0 1rem; }
+.test-drive-intro h1 { max-width: 12ch; margin: .5rem 0 0.5rem; }
 .test-drive-intro .lede { max-width: 45ch; font-size: 1.1rem; line-height: 1.6; }
+.steering-wheel-wrap { display: grid; justify-items: start; gap: .55rem; width: min(11rem, 45vw); margin: 0 0 1.5rem 1rem; color: var(--muted); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
+.steering-wheel-wrap p { margin: 0; }
+.steering-wheel { position: relative; width: 8.5rem; aspect-ratio: 1; border: .65rem solid var(--red-bright); border-radius: 50%; background: radial-gradient(circle, var(--surface-2) 0 1.15rem, transparent 1.2rem), var(--surface); box-shadow: 0 0 0 .15rem var(--ink), 0 0 0 .3rem var(--line), 0 1rem 2rem rgb(0 0 0 / 28%); transition: transform .08s linear; }
+.steering-wheel::before { position: absolute; inset: 1.15rem; border: .18rem solid var(--line); border-radius: 50%; content: ""; }
+.steering-wheel-spoke { position: absolute; left: 50%; top: 50%; width: .35rem; height: 3.1rem; border-radius: 999px; background: var(--red-bright); transform-origin: 50% 0; }
+.steering-wheel-spoke-left { transform: translate(-50%, 0) rotate(-58deg); }
+.steering-wheel-spoke-right { transform: translate(-50%, 0) rotate(58deg); }
+.steering-wheel-spoke-bottom { transform: translate(-50%, 0) rotate(180deg); }
+.steering-wheel-hub { position: absolute; left: 50%; top: 50%; width: 1.1rem; height: 1.1rem; border: .2rem solid var(--red-bright); border-radius: 50%; background: var(--surface-2); transform: translate(-50%, -50%); }
+@media (prefers-reduced-motion: reduce) { .steering-wheel { transition: none; } }
 .hours-card, .test-drive-form, .form-success { border: 1px solid var(--line); background: var(--surface); padding: 1.5rem; border-radius: var(--radius); box-shadow: 0 12px 32px rgb(0 0 0 / 24%); }
 .hours-card { margin-top: 2rem; }
 .hours-card h2, .form-section-heading h2, .form-success h2 { margin: .35rem 0 1rem; }
