@@ -15,7 +15,6 @@ export function TestDriveForm() {
   const [error, setError] = useState("");
   const [date, setDate] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
-  const [turnstileReady, setTurnstileReady] = useState(false);
   const turnstileRef = useRef<HTMLDivElement>(null);
   const minDate = useMemo(() => new Date().toISOString().split("T")[0], []);
 
@@ -28,8 +27,10 @@ export function TestDriveForm() {
       callback: (token: string) => setTurnstileToken(token),
       "expired-callback": () => setTurnstileToken(""),
       "error-callback": () => setTurnstileToken(""),
+      appearance: "interaction-only",
+      execution: "render",
+      size: "invisible",
     });
-    setTurnstileReady(true);
   }
 
   useEffect(() => {
@@ -48,7 +49,7 @@ export function TestDriveForm() {
     }
 
     if (!turnstileToken) {
-      setError("Please complete the anti-bot verification before submitting.");
+      setError("Unable to submit your request right now. Please try again.");
       return;
     }
 
@@ -143,10 +144,8 @@ export function TestDriveForm() {
         strategy="afterInteractive"
         onLoad={renderTurnstile}
       />
-      <div className="form-disclaimer">Security verification required before submitting.</div>
-      <div ref={turnstileRef} className="turnstile-container" aria-label="Security verification" data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
+      <div ref={turnstileRef} className="turnstile-container" aria-hidden="true" data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
       {error ? <p className="form-error" role="alert">{error}</p> : null}
-      {!turnstileReady ? <p className="form-disclaimer">Loading security verification…</p> : null}
       <p className="form-disclaimer">
         This request does not guarantee an appointment. We&apos;ll confirm the
         vehicle and time with you before your visit.
