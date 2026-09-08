@@ -6,16 +6,62 @@ import AdminPasskey from "@/components/admin/AdminPasskey";
 
 const empty = { year: "", make: "", model: "", price: "", mileage: "", condition: "Used", status: "available", description: "" };
 const supportedPhotoTypes = ["image/jpeg", "image/png", "image/webp"];
+const maxPhotoSize = 8 * 1024 * 1024;
+const maxPhotoDimension = 2400;
+const webpQuality = 0.82;
+
+async function compressPhoto(file: File): Promise<File> {
+  if (file.type === "image/webp" && file.size <= maxPhotoSize) return file;
+
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.src = sourceUrl;
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+    });
+
+    const scale = Math.min(1, maxPhotoDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Your browser cannot prepare this photo.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", webpQuality));
+    if (!blob) throw new Error(`Unable to compress ${file.name}.`);
+    const filename = `${file.name.replace(/\.[^.]+$/, "") || "vehicle-photo"}.webp`;
+    return new File([blob], filename, { type: "image/webp", lastModified: file.lastModified });
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
+}
+
 export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authenticated: boolean) => void }) {
   const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [message, setMessage] = useState(""); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false);
   useEffect(() => () => photoPreviews.forEach((preview) => URL.revokeObjectURL(preview)), [photoPreviews]);
-  function selectPhotos(files: FileList | null) {
+  async function selectPhotos(files: FileList | null) {
     const selected = Array.from(files || []);
     if (selected.some((file) => !supportedPhotoTypes.includes(file.type))) { setMessage("Use JPG, PNG, or WebP photos. HEIC files need to be converted before uploading."); return; }
-    if (selected.some((file) => file.size > 8 * 1024 * 1024)) { setMessage("Each photo must be under 8MB."); return; }
-    setPhotos(selected);
-    setPhotoPreviews(selected.map((file) => URL.createObjectURL(file)));
-    setMessage(`${selected.length} photo${selected.length === 1 ? "" : "s"} ready to upload.`);
+    if (selected.some((file) => file.size > maxPhotoSize)) { setMessage("Each photo must be under 8MB before compression."); return; }
+
+    setMessage("Preparing compressed WebP photos…");
+    try {
+      const compressed = await Promise.all(selected.map(compressPhoto));
+      setPhotos(compressed);
+      setPhotoPreviews(compressed.map((file) => URL.createObjectURL(file)));
+      const originalBytes = selected.reduce((total, file) => total + file.size, 0);
+      const compressedBytes = compressed.reduce((total, file) => total + file.size, 0);
+      const savedPercent = originalBytes ? Math.max(0, Math.round((1 - compressedBytes / originalBytes) * 100)) : 0;
+      setMessage(`${compressed.length} WebP photo${compressed.length === 1 ? "" : "s"} ready. Saved ${savedPercent}% storage.`);
+    } catch (error) {
+      setPhotos([]);
+      setPhotoPreviews([]);
+      setMessage(error instanceof Error ? error.message : "Unable to prepare photos for upload.");
+    }
   }
   const load = async () => { const response = await fetch("/api/inventory", { credentials: "include" }); if (response.ok) setVehicles(await response.json()); };
   async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setLoggedIn(true); onAuthChange?.(true); await load(); setMessage(""); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
