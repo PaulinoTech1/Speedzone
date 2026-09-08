@@ -1,8 +1,34 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { adminCookieOptions, clearAdminCookie, createAdminSession } from "@/lib/admin-auth";
+import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
+
+function getClientIdentifier(request: Request) {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  return forwardedFor?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
+}
 
 export async function POST(request: Request) {
+  const rateLimit = await checkAdminLoginRateLimit(`ip:${getClientIdentifier(request)}`);
+  if (!rateLimit.configured) {
+    return NextResponse.json(
+      { error: "Admin login is temporarily unavailable" },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Too many login attempts. Try again later." },
+      {
+        status: 429,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": String(rateLimit.retryAfter),
+        },
+      },
+    );
+  }
+
   const { password } = await request.json().catch(() => ({}));
   if (!process.env.SPEEDZONE_ADMIN_PASSWORD || password !== process.env.SPEEDZONE_ADMIN_PASSWORD) {
     return NextResponse.json({ error: "Invalid password" }, { status: 401 });
