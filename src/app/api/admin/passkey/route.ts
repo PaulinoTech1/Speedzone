@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: result.error ? 403 : 200, headers: { "Cache-Control": "no-store" } });
   }
   if (action === "register") {
-    const result = await verifyRegistration(body.response, webAuthnConfig);
+    const result = await verifyRegistration(body.response, typeof body.name === "string" ? body.name.trim().slice(0, 80) : "", webAuthnConfig);
     return NextResponse.json(result, { status: result.error ? 400 : 200, headers: { "Cache-Control": "no-store" } });
   }
   if (action === "authentication-options") {
