@@ -18,10 +18,6 @@ export type TestDriveSubmission = {
   createdAt: string;
 };
 
-function clean(value: FormDataEntryValue | null) {
-  return String(value ?? "").trim();
-}
-
 export async function POST(request: Request) {
   const token = privateToken();
   if (!token) return NextResponse.json({ error: "Test-drive storage is not configured" }, { status: 503 });
