@@ -8,7 +8,7 @@ export type TestDriveFields = {
   date: string;
   time: string;
   notes: string;
-  website?: string;
+  turnstileToken?: string;
 };
 
 function isValidEmail(value: string) {
@@ -20,8 +20,6 @@ function isValidPhone(value: string) {
 }
 
 export function validateTestDriveFields(fields: TestDriveFields) {
-  if (fields.website) return "Unable to submit your request.";
-
   const required: Array<keyof Pick<TestDriveFields, "name" | "email" | "phone" | "vehicle" | "date" | "time">> = [
     "name",
     "email",
@@ -61,6 +59,6 @@ export function getTestDriveFields(form: FormData): TestDriveFields {
     date: normalizeTestDriveField(form.get("date")),
     time: normalizeTestDriveField(form.get("time")),
     notes: normalizeTestDriveField(form.get("notes")),
-    website: normalizeTestDriveField(form.get("website")),
+    turnstileToken: normalizeTestDriveField(form.get("cf-turnstile-response")),
   };
 }

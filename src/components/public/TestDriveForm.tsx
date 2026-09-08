@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import Script from "next/script";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 
 const hours = [
@@ -13,7 +14,28 @@ export function TestDriveForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [date, setDate] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReady, setTurnstileReady] = useState(false);
+  const turnstileRef = useRef<HTMLDivElement>(null);
   const minDate = useMemo(() => new Date().toISOString().split("T")[0], []);
+
+  function renderTurnstile() {
+    const turnstile = (window as Window & { turnstile?: { render: (element: HTMLElement, options: Record<string, unknown>) => void } }).turnstile;
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (!turnstile || !siteKey || !turnstileRef.current || turnstileRef.current.childElementCount > 0) return;
+    turnstile.render(turnstileRef.current, {
+      sitekey: siteKey,
+      callback: (token: string) => setTurnstileToken(token),
+      "expired-callback": () => setTurnstileToken(""),
+      "error-callback": () => setTurnstileToken(""),
+    });
+    setTurnstileReady(true);
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(renderTurnstile, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,6 +44,11 @@ export function TestDriveForm() {
 
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    if (!turnstileToken) {
+      setError("Please complete the anti-bot verification before submitting.");
       return;
     }
 
@@ -65,19 +92,6 @@ export function TestDriveForm() {
         <h2>Tell us how to reach you</h2>
       </div>
       <div className="form-grid">
-        <label
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            left: "-10000px",
-            width: 1,
-            height: 1,
-            overflow: "hidden",
-          }}
-        >
-          Website
-          <input name="website" tabIndex={-1} autoComplete="off" />
-        </label>
         <label>
           Full name
           <input name="name" required autoComplete="name" />
@@ -123,7 +137,15 @@ export function TestDriveForm() {
         Notes <span>(optional)</span>
         <textarea name="notes" rows={4} placeholder="Anything we should know?" />
       </label>
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        strategy="afterInteractive"
+        onLoad={renderTurnstile}
+      />
+      <div className="form-disclaimer">Security verification required before submitting.</div>
+      <div ref={turnstileRef} className="turnstile-container" aria-label="Security verification" data-sitekey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY} />
       {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {!turnstileReady ? <p className="form-disclaimer">Loading security verification…</p> : null}
       <p className="form-disclaimer">
         This request does not guarantee an appointment. We&apos;ll confirm the
         vehicle and time with you before your visit.
