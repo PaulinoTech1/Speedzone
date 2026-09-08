@@ -1,4 +1,16 @@
+"use client";
+
+import { useState } from "react";
 import AdminInventory from "@/components/admin/AdminInventory";
 import TestDriveSubmissions from "@/components/admin/TestDriveSubmissions";
-export const metadata = { title: "Inventory admin" };
-export default function AdminPage() { return <><AdminInventory /><TestDriveSubmissions /></>; }
+
+export default function AdminPage() {
+  const [authenticated, setAuthenticated] = useState(false);
+
+  return (
+    <>
+      <AdminInventory onAuthChange={setAuthenticated} />
+      {authenticated && <TestDriveSubmissions />}
+    </>
+  );
+}
