@@ -1004,6 +1004,10 @@ h1 em::after {
 .admin-listing span { display: block; color: var(--muted); font-size: .85rem; text-transform: capitalize; }
 .text-button { color: var(--red-bright); background: none; border: 0; cursor: pointer; font: inherit; font-weight: 800; }
 .form-message { min-height: 1.5rem; color: var(--muted); }
+.photo-selection { padding: .8rem; background: var(--ink); border: 1px solid var(--line); border-radius: .45rem; }
+.photo-selection p { margin: 0 0 .7rem; color: var(--muted); font-size: .9rem; }
+.photo-selection-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+.photo-selection-grid img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: .3rem; }
 .count { color: var(--red-bright); font-size: .6em; }
 @media (min-width: 42rem) { .vehicle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .form-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 60rem) { .admin-grid { grid-template-columns: minmax(20rem, 1fr) minmax(0, 1.2fr); align-items: start; } .vehicle-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

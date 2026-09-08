@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const photos: string[] = [];
     for (const entry of form.getAll("photos")) {
       if (!(entry instanceof File) || entry.size === 0) continue;
-      if (!entry.type.startsWith("image/") || entry.size > 8 * 1024 * 1024) return NextResponse.json({ error: "Photos must be images under 8MB" }, { status: 400 });
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(entry.type) || entry.size > 8 * 1024 * 1024) return NextResponse.json({ error: "Photos must be JPG, PNG, or WebP images under 8MB" }, { status: 400 });
       const blob = await put(`inventory/${crypto.randomUUID()}-${entry.name.replace(/[^a-zA-Z0-9._-]/g, "")}`, entry, { access: "public", contentType: entry.type });
       photos.push(blob.url);
     }
