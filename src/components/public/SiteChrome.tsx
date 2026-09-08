@@ -139,7 +139,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="#maintenance">Car care</a>
                 <a href="#faq">FAQ</a>
                 <a href="#contact">Visit us</a>
-              </>
+                  </>
             ) : (
               <>
                 <a href="/">Home</a>
@@ -161,7 +161,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
                 <a href="/#maintenance">Car care</a>
                 <a href="/#faq">FAQ</a>
                 <a href="/#contact">Visit us</a>
-              </>
+                  </>
             )}
           </nav>
 
@@ -189,6 +189,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
           <div>
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
+            <a href="/admin">Admin inventory</a>
           </div>
         </div>
       </footer>

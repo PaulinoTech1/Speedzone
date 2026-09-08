@@ -7,7 +7,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid password" }, { status: 401 });
   }
   const store = await cookies();
-  store.set("speedzone_admin", "authenticated", { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 8 });
+  store.set("speedzone_admin", "authenticated", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 8,
+  });
   return NextResponse.json({ ok: true });
 }
 
