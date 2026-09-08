@@ -2547,6 +2547,29 @@ body:has(.error-page) {
   }
 }
 
+/* Test-drive request page */
+.test-drive-page { padding: 4rem 0 6rem; }
+.test-drive-hero { display: grid; gap: 3rem; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; }
+.test-drive-intro h1 { max-width: 12ch; margin: .5rem 0 1rem; }
+.test-drive-intro .lede { max-width: 45ch; font-size: 1.1rem; line-height: 1.6; }
+.hours-card, .test-drive-form, .form-success { border: 1px solid var(--line); background: var(--surface); padding: 1.5rem; border-radius: var(--radius); box-shadow: 0 12px 32px rgb(0 0 0 / 24%); }
+.hours-card { margin-top: 2rem; }
+.hours-card h2, .form-section-heading h2, .form-success h2 { margin: .35rem 0 1rem; }
+.hours-card dl { display: grid; gap: .75rem; margin: 0; }
+.hours-card dl div { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--line); padding-bottom: .75rem; }
+.hours-card dt { font-weight: 700; }
+.hours-card dd { margin: 0; color: var(--muted); text-align: right; }
+.hours-note, .form-disclaimer { color: var(--muted); font-size: .9rem; line-height: 1.5; }
+.test-drive-form { display: grid; gap: 1.25rem; }
+.form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.test-drive-form label { display: grid; gap: .45rem; font-weight: 700; }
+.test-drive-form label span { color: var(--muted); font-weight: 400; }
+.test-drive-form input, .test-drive-form select, .test-drive-form textarea { width: 100%; border: 1px solid var(--line); border-radius: .55rem; background: var(--surface-2); color: var(--text); padding: .8rem .9rem; font: inherit; font-weight: 400; }
+.test-drive-form textarea { resize: vertical; }
+.form-error { margin: 0; color: #ff8c96; font-weight: 700; }
+.form-success { align-self: start; }
+@media (max-width: 760px) { .test-drive-page { padding: 2.5rem 0 4rem; } .test-drive-hero, .form-grid { grid-template-columns: 1fr; } .test-drive-intro h1 { max-width: 16ch; } }
+
 @media (min-width: 56rem) {
   .lead-layout {
     grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 0.9fr);

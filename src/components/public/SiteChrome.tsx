@@ -7,7 +7,8 @@ type SiteChromeProps = {
     | "inventory"
     | "sell-your-car"
     | "buying-costs"
-    | "recall-check";
+    | "recall-check"
+    | "test-drive";
 };
 
 const directionsUrl =
@@ -64,6 +65,12 @@ export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
               aria-current={currentPage === "inventory" ? "page" : undefined}
             >
               Inventory
+            </a>
+            <a
+              href="/test-drive"
+              aria-current={currentPage === "test-drive" ? "page" : undefined}
+            >
+              Test drive
             </a>
             <a
               href="/buying-costs"
@@ -131,6 +138,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
               <>
                 <a href="#inventory">Latest arrivals</a>
                 <a href="/inventory">Browse inventory</a>
+                <a href="/test-drive">Schedule a test drive</a>
                 <a href="/sell-your-car">Sell Your Car</a>
                 <a href="/buying-costs">Taxes &amp; fees</a>
                 <a href="/recall-check">Free recall check</a>
