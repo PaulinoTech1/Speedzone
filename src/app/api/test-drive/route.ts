@@ -2,6 +2,7 @@ import { put } from "@vercel/blob";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
+import { getRequestKeys, limitTestDriveSubmission } from "@/lib/test-drive-rate-limit";
 
 const privateToken = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN;
 
@@ -29,6 +30,17 @@ export async function POST(request: Request) {
   const fields = getTestDriveFields(form);
   const validationError = validateTestDriveFields(fields);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
+
+  const rateLimit = await limitTestDriveSubmission(getRequestKeys(request, fields.email, fields.phone));
+  if (!rateLimit.configured) {
+    return NextResponse.json({ error: "Submissions are temporarily unavailable." }, { status: 503 });
+  }
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfter) } },
+    );
+  }
 
   const submission: TestDriveSubmission = {
     id: crypto.randomUUID(),

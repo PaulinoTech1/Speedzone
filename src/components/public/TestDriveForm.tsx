@@ -32,7 +32,11 @@ export function TestDriveForm() {
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      setError(result.error || "Unable to submit your request right now.");
+      setError(
+        response.status === 429
+          ? "Too many requests from this contact. Please try again later."
+          : result.error || "Unable to submit your request right now.",
+      );
       return;
     }
     setSubmitted(true);
