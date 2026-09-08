@@ -1001,7 +1001,20 @@ h1 em::after {
 .admin-listing { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; background: var(--surface); border: 1px solid var(--line); border-radius: .6rem; }
 .admin-listing > div { display: flex; align-items: center; gap: .8rem; }
 .admin-listing img { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: .35rem; }
-.admin-listing span { display: block; color: var(--muted); font-size: .85rem; text-transform: capitalize; }
+  .admin-listing span { display: block; color: var(--muted); font-size: .85rem; text-transform: capitalize; }
+  .submission-list { display: grid; gap: .75rem; }
+  .submission-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: .6rem; }
+  .submission-item h3, .submission-item p { margin: 0; }
+  .submission-item p + p { margin-top: .35rem; color: var(--muted); font-size: .9rem; }
+  .submission-actions { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
+  .button-danger { color: #fff; background: #a30d2d; border-color: #a30d2d; }
+  .button-danger:hover:not(:disabled) { background: #c0173b; border-color: #c0173b; }
+  .button-danger:disabled { cursor: wait; opacity: .65; }
+  @media (max-width: 42rem) {
+    .submission-item { align-items: stretch; flex-direction: column; }
+    .submission-actions { justify-content: stretch; }
+    .submission-actions .button { flex: 1; text-align: center; }
+  }
 .text-button { color: var(--red-bright); background: none; border: 0; cursor: pointer; font: inherit; font-weight: 800; }
 .form-message { min-height: 1.5rem; color: var(--muted); }
 .photo-selection { padding: .8rem; background: var(--ink); border: 1px solid var(--line); border-radius: .45rem; }
