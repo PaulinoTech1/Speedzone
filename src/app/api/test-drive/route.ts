@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 import { getRequestKeys, limitTestDriveSubmission } from "@/lib/test-drive-rate-limit";
 
-const privateToken = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN;
+const privateToken = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
 
 export type TestDriveSubmission = {
   id: string;

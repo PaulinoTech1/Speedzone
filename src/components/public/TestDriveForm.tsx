@@ -41,6 +41,7 @@ export function TestDriveForm() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    if (turnstileToken) form.set("cf-turnstile-response", turnstileToken);
     const validationError = validateTestDriveFields(getTestDriveFields(form));
 
     if (validationError) {
