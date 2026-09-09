@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { del, list } from "@vercel/blob";
 import { Redis } from "@upstash/redis";
 
 const TOKEN_TTL_SECONDS = 15 * 60;
@@ -48,6 +49,20 @@ export async function getAdminPassword() {
   const redis = getRedis();
   const override = redis ? await redis.get<string>(PASSWORD_KEY) : null;
   return override || process.env.SPEEDZONE_ADMIN_PASSWORD;
+}
+
+export async function deleteAllTestDriveSubmissions() {
+  const token = process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
+  if (!token) return false;
+
+  let cursor: string | undefined;
+  do {
+    const page = await list({ prefix: "test-drive/", token, limit: 1000, ...(cursor ? { cursor } : {}) });
+    if (page.blobs.length) await del(page.blobs.map((blob) => blob.pathname), { token });
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+
+  return true;
 }
 
 export const recoveryTtlSeconds = TOKEN_TTL_SECONDS;
