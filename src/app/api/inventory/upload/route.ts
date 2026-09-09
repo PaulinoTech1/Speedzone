@@ -1,0 +1,78 @@
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { NextResponse } from "next/server";
+import { isAdmin, privateResponseHeaders } from "@/lib/admin-auth";
+import {
+  inventoryPhotoContentTypes,
+  isInventoryPhotoPath,
+  maxInventoryPhotoSize,
+} from "@/lib/inventory-photos";
+
+export async function POST(request: Request) {
+  let parsedBody: unknown;
+
+  try {
+    parsedBody = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid upload request" },
+      { status: 400, headers: privateResponseHeaders() },
+    );
+  }
+
+  if (
+    !parsedBody ||
+    typeof parsedBody !== "object" ||
+    !("type" in parsedBody) ||
+    parsedBody.type !== "blob.generate-client-token" ||
+    !("payload" in parsedBody) ||
+    !parsedBody.payload ||
+    typeof parsedBody.payload !== "object" ||
+    !("pathname" in parsedBody.payload) ||
+    typeof parsedBody.payload.pathname !== "string"
+  ) {
+    return NextResponse.json(
+      { error: "Invalid upload request" },
+      { status: 400, headers: privateResponseHeaders() },
+    );
+  }
+
+  const body = parsedBody as Extract<
+    HandleUploadBody,
+    { type: "blob.generate-client-token" }
+  >;
+
+  if (!(await isAdmin())) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: privateResponseHeaders() },
+    );
+  }
+
+  if (!isInventoryPhotoPath(body.payload.pathname)) {
+    return NextResponse.json(
+      { error: "Invalid photo path" },
+      { status: 400, headers: privateResponseHeaders() },
+    );
+  }
+
+  try {
+    const response = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async () => ({
+        allowedContentTypes: inventoryPhotoContentTypes,
+        maximumSizeInBytes: maxInventoryPhotoSize,
+        addRandomSuffix: false,
+        cacheControlMaxAge: 60 * 60 * 24 * 30,
+      }),
+    });
+
+    return NextResponse.json(response, { headers: privateResponseHeaders() });
+  } catch (error) {
+    console.error("[inventory] unable to issue photo upload token", error);
+    return NextResponse.json(
+      { error: "Unable to start photo upload" },
+      { status: 500, headers: privateResponseHeaders() },
+    );
+  }
+}

@@ -15,7 +15,7 @@ export function proxy(request: NextRequest) {
       ? "style-src 'self' 'unsafe-inline'"
       : `style-src 'self' 'nonce-${nonce}'`,
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDevelopment ? " 'unsafe-eval'" : ""}`,
-    "connect-src 'self'",
+    "connect-src 'self' https://vercel.com",
     "media-src 'none'",
     "worker-src 'none'",
     "manifest-src 'self'",

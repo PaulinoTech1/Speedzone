@@ -1009,6 +1009,9 @@ h1 em::after {
 .admin-listing > div { display: flex; align-items: center; gap: .8rem; }
 .admin-listing img { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: .35rem; }
   .admin-listing span { display: block; color: var(--muted); font-size: .85rem; text-transform: capitalize; }
+  .admin-listing-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .admin-upload-button { min-height: 2.35rem; padding: .55rem .7rem; color: var(--text); background: var(--ink); border-color: var(--line); cursor: pointer; font-size: .7rem; text-align: center; }
+  .admin-upload-button[aria-disabled="true"], .text-button:disabled { cursor: wait; opacity: .55; }
   .submission-list { display: grid; gap: .75rem; }
   .submission-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: .6rem; }
   .submission-item h3, .submission-item p { margin: 0; }
@@ -1038,6 +1041,7 @@ h1 em::after {
 .count { color: var(--red-bright); font-size: .6em; }
 @media (min-width: 42rem) { .vehicle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .form-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 60rem) { .admin-grid { grid-template-columns: minmax(20rem, 1fr) minmax(0, 1.2fr); align-items: start; } .vehicle-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 42rem) { .admin-listing { align-items: stretch; flex-direction: column; } .admin-listing-actions { justify-content: flex-start; } }
 
 
 .contact-cards h3 a {

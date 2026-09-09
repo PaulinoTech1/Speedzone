@@ -1,7 +1,8 @@
-import { del, put } from "@vercel/blob";
+import { del } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import { readInventory, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
+import { appendVehiclePhotos, readInventory, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
 import { isAdmin } from "@/lib/admin-auth";
+import { isInventoryPhotoUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 
 export async function GET() {
   try { return NextResponse.json(await readInventory(), { headers: { "Cache-Control": "public, max-age=60" } }); }
@@ -11,20 +12,39 @@ export async function GET() {
 export async function POST(request: Request) {
   if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const form = await request.formData();
-    const payload = JSON.parse(String(form.get("vehicle") || "{}")) as Record<string, unknown>;
-    const photos: string[] = [];
-    for (const entry of form.getAll("photos")) {
-      if (!(entry instanceof File) || entry.size === 0) continue;
-      if (!['image/jpeg', 'image/png', 'image/webp'].includes(entry.type) || entry.size > 8 * 1024 * 1024) return NextResponse.json({ error: "Photos must be JPG, PNG, or WebP images under 8MB" }, { status: 400 });
-      const blob = await put(`inventory/${crypto.randomUUID()}-${entry.name.replace(/[^a-zA-Z0-9._-]/g, "")}`, entry, { access: "public", contentType: entry.type });
-      photos.push(blob.url);
+    const body = (await request.json()) as { vehicle?: unknown; photos?: unknown };
+    const payload = body.vehicle && typeof body.vehicle === "object"
+      ? body.vehicle as Record<string, unknown>
+      : {};
+    if (!Array.isArray(body.photos) || body.photos.length > maxInventoryPhotoCount || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoUrl(photo))) {
+      return NextResponse.json({ error: "One or more photo uploads are invalid" }, { status: 400 });
     }
+    const photos = body.photos as string[];
     const vehicle = sanitizeVehicleInput(payload, photos);
     const vehicles = await readInventory();
     await writeInventory([vehicle, ...vehicles]);
     return NextResponse.json(vehicle, { status: 201 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to save vehicle" }, { status: 400 }); }
+}
+
+export async function PATCH(request: Request) {
+  if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const body = (await request.json()) as { id?: unknown; photos?: unknown };
+    if (typeof body.id !== "string" || !body.id) {
+      return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
+    }
+    if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoUrl(photo))) {
+      return NextResponse.json({ error: "One or more photo uploads are invalid" }, { status: 400 });
+    }
+
+    const vehicles = await readInventory();
+    const updated = appendVehiclePhotos(vehicles, body.id, body.photos as string[]);
+    await writeInventory(updated.inventory);
+    return NextResponse.json(updated.vehicle);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update vehicle" }, { status: 400 });
+  }
 }
 
 export async function DELETE(request: Request) {

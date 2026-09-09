@@ -1,4 +1,5 @@
 import { list, put } from "@vercel/blob";
+import { maxInventoryPhotoCount } from "@/lib/inventory-photos";
 
 export type Vehicle = {
   id: string;
@@ -51,5 +52,22 @@ export function sanitizeVehicleInput(input: Record<string, unknown>, photos: str
     condition: text("condition") || "Used", description: text("description"),
     status: input.status === "sold" || input.status === "pending" ? input.status : "available",
     photos, createdAt: text("createdAt") || new Date().toISOString(),
+  };
+}
+
+export function appendVehiclePhotos(vehicles: Vehicle[], id: string, photos: string[]) {
+  const vehicleIndex = vehicles.findIndex((vehicle) => vehicle.id === id);
+  if (vehicleIndex === -1) throw new Error("Vehicle not found");
+
+  const vehicle = vehicles[vehicleIndex];
+  if (!vehicle) throw new Error("Vehicle not found");
+  if (vehicle.photos.length + photos.length > maxInventoryPhotoCount) {
+    throw new Error(`A listing can have no more than ${maxInventoryPhotoCount} photos`);
+  }
+
+  const updatedVehicle = { ...vehicle, photos: [...vehicle.photos, ...photos] };
+  return {
+    vehicle: updatedVehicle,
+    inventory: vehicles.map((item, index) => index === vehicleIndex ? updatedVehicle : item),
   };
 }
