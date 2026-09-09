@@ -40,15 +40,23 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const body = (await request.json()) as { id?: unknown; photos?: unknown };
+    const body = (await request.json()) as { id?: unknown; photos?: unknown } & Record<string, unknown>;
     if (typeof body.id !== "string" || !body.id) {
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
+    }
+
+    const vehicles = await readInventory();
+    if (body.photos === undefined) {
+      const existing = vehicles.find((vehicle) => vehicle.id === body.id);
+      if (!existing) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
+      const updatedVehicle = sanitizeVehicleInput(body, existing.photos);
+      await writeInventory(vehicles.map((item) => item.id === existing.id ? updatedVehicle : item));
+      return NextResponse.json(updatedVehicle);
     }
     if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoUrl(photo))) {
       return NextResponse.json({ error: "One or more photo uploads are invalid" }, { status: 400 });
     }
 
-    const vehicles = await readInventory();
     const updated = appendVehiclePhotos(vehicles, body.id, body.photos as string[]);
     await writeInventory(updated.inventory);
     return NextResponse.json(updated.vehicle);
