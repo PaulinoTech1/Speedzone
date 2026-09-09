@@ -193,7 +193,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
         </div>
 
         <div className="shell footer-bottom">
-          <p>Â© 2026 SpeedZone Motorsports. All rights reserved.</p>
+          <p>© 2026 SpeedZone Motorsports. All rights reserved.</p>
           <div>
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
@@ -244,7 +244,7 @@ export function LegalFooter({ counterpart }: { counterpart: "privacy" | "terms" 
   return (
     <footer className="site-footer legal-footer">
       <div className="shell footer-bottom">
-        <p>Â© 2026 SpeedZone Motorsports.</p>
+        <p>© 2026 SpeedZone Motorsports.</p>
         <div>
           <a href="/">Home</a>
           <a href={`/${counterpart}`}>
