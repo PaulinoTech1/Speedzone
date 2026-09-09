@@ -363,11 +363,28 @@ h1 em::after {
   flex: 0 0 auto;
   overflow: hidden;
   background:
-    linear-gradient(90deg, transparent 0 35%, var(--red) 35% 52%, transparent 52%),
-    linear-gradient(0deg, transparent 0 35%, var(--red) 35% 52%, transparent 52%),
+    linear-gradient(45deg, var(--text) 25%, transparent 25% 75%, var(--text) 75%),
+    linear-gradient(45deg, var(--text) 25%, transparent 25% 75%, var(--text) 75%),
     var(--text);
+  background-position: 0 0, 0.575rem 0.575rem;
+  background-size: 1.15rem 1.15rem;
   border: 1px solid rgb(255 255 255 / 18%);
   transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.button-inventory::before {
+  position: absolute;
+  z-index: -1;
+  inset: -0.2rem;
+  border-radius: 0.7rem;
+  background: repeating-conic-gradient(from 0deg, var(--text) 0deg 18deg, var(--ink) 18deg 36deg);
+  content: "";
+  opacity: 0;
+  -webkit-mask: linear-gradient(var(--text) 0 0) content-box, linear-gradient(var(--text) 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 0.18rem;
+  pointer-events: none;
 }
 
 .button-inventory::after {
@@ -388,10 +405,22 @@ h1 em::after {
   transform: scale(1.2) rotate(-4deg);
 }
 
+.button-inventory:hover::before,
+.button-inventory:focus-visible::before {
+  opacity: 1;
+  animation: inventory-border-race 900ms linear infinite;
+}
+
 .button-inventory:hover::after,
 .button-inventory:focus-visible::after {
   opacity: 1;
   animation: inventory-flag-shimmer 650ms ease-out;
+} 
+
+@keyframes inventory-border-race {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes inventory-flag-shimmer {
