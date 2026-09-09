@@ -59,11 +59,26 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { id } = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => ({})) as { id?: unknown; photos?: unknown };
   const vehicles = await readInventory();
-  const vehicle = vehicles.find((item) => item.id === id);
+  const vehicle = vehicles.find((item) => item.id === body.id);
   if (!vehicle) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
+
+  if (body.photos !== undefined) {
+    if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoUrl(photo))) {
+      return NextResponse.json({ error: "Selected photos are invalid" }, { status: 400 });
+    }
+    const selectedPhotos = [...new Set(body.photos as string[])];
+    if (selectedPhotos.some((photo) => !vehicle.photos.includes(photo))) {
+      return NextResponse.json({ error: "Selected photo does not belong to this listing" }, { status: 400 });
+    }
+    const updatedVehicle = { ...vehicle, photos: vehicle.photos.filter((photo) => !selectedPhotos.includes(photo)) };
+    await Promise.all(selectedPhotos.map((url) => del(url).catch(() => undefined)));
+    await writeInventory(vehicles.map((item) => item.id === vehicle.id ? updatedVehicle : item));
+    return NextResponse.json(updatedVehicle);
+  }
+
   await Promise.all(vehicle.photos.map((url) => del(url).catch(() => undefined)));
-  await writeInventory(vehicles.filter((item) => item.id !== id));
+  await writeInventory(vehicles.filter((item) => item.id !== body.id));
   return NextResponse.json({ ok: true });
 }
