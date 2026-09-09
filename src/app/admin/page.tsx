@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AdminInventory from "@/components/admin/AdminInventory";
+import InventoryPhotoOptimizer from "@/components/admin/InventoryPhotoOptimizer";
 import TestDriveSubmissions from "@/components/admin/TestDriveSubmissions";
 
 export default function AdminPage() {
@@ -10,7 +11,10 @@ export default function AdminPage() {
   return (
     <>
       <AdminInventory onAuthChange={setAuthenticated} />
-      {authenticated && <TestDriveSubmissions />}
+      {authenticated && <>
+        <InventoryPhotoOptimizer />
+        <TestDriveSubmissions />
+      </>}
     </>
   );
 }

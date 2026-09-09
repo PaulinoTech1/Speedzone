@@ -1121,6 +1121,19 @@ h1 em::after {
   }
 .text-button { color: var(--red-bright); background: none; border: 0; cursor: pointer; font: inherit; font-weight: 800; }
 .form-message { min-height: 1.5rem; color: var(--muted); }
+.inventory-photo-optimizer { width: min(100% - 2rem, 78rem); margin: 0 auto 2rem; }
+.inventory-photo-optimizer h2 { margin: .2rem 0 .35rem; }
+.inventory-photo-optimizer .photo-selection-heading > div { max-width: 42rem; }
+.optimizer-picker { position: relative; flex: 0 0 auto; cursor: pointer; }
+.optimizer-picker input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.optimizer-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 1rem 0; color: var(--muted); font-size: .85rem; }
+.optimizer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .8rem; }
+.optimizer-item { display: grid; gap: .45rem; padding: .65rem; background: var(--surface); border: 1px solid var(--line); border-radius: .5rem; }
+.optimizer-item img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: var(--surface-2); border-radius: .3rem; }
+.optimizer-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
+.optimizer-item > span { color: var(--muted); font-size: .78rem; }
+.optimizer-item-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; }
+.optimizer-item-actions .button { padding: .55rem .7rem; font-size: .7rem; }
 .photo-selection { padding: .8rem; background: var(--ink); border: 1px solid var(--line); border-radius: .45rem; }
 .photo-selection p { margin: 0 0 .7rem; color: var(--muted); font-size: .9rem; }
 .photo-selection-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
@@ -1132,7 +1145,12 @@ h1 em::after {
 .count { color: var(--red-bright); font-size: .6em; }
 @media (min-width: 42rem) { .vehicle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .form-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 60rem) { .admin-grid { grid-template-columns: minmax(20rem, 1fr) minmax(0, 1.2fr); align-items: start; } .vehicle-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 42rem) { .admin-listing { align-items: stretch; flex-direction: column; } .admin-listing-actions { justify-content: flex-start; } }
+@media (max-width: 42rem) {
+  .admin-listing { align-items: stretch; flex-direction: column; }
+  .admin-listing-actions { justify-content: flex-start; }
+  .inventory-photo-optimizer .photo-selection-heading { align-items: stretch; flex-direction: column; }
+  .optimizer-picker { justify-self: start; }
+}
 
 
 .contact-cards h3 a {
