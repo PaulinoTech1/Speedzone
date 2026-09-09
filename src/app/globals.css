@@ -382,12 +382,14 @@ h1 em::after {
   pointer-events: none;
 }
 
-.button-inventory:has(.button-flag:hover) .button-flag {
+.button-inventory:hover .button-flag,
+.button-inventory:focus-visible .button-flag {
   box-shadow: 0 0 0 3px rgb(255 255 255 / 12%);
   transform: scale(1.2) rotate(-4deg);
 }
 
-.button-inventory:has(.button-flag:hover)::after {
+.button-inventory:hover::after,
+.button-inventory:focus-visible::after {
   opacity: 1;
   animation: inventory-flag-shimmer 650ms ease-out;
 }
