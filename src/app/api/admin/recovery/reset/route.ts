@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { consumeRecoveryToken, setAdminPassword } from "@/lib/admin-recovery";
+import { consumeRecoveryToken, deleteAllTestDriveSubmissions, setAdminPassword } from "@/lib/admin-recovery";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
@@ -9,7 +9,14 @@ export async function POST(request: Request) {
   if (!/\S/.test(password)) return NextResponse.json({ error: "Password cannot be blank." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   const valid = await consumeRecoveryToken(token);
   if (!valid) return NextResponse.json({ error: "This recovery link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
-  const saved = await setAdminPassword(password);
-  if (!saved) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  try {
+    const cleaned = await deleteAllTestDriveSubmissions();
+    if (!cleaned) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    const saved = await setAdminPassword(password);
+    if (!saved) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("[v0] encrypted test-drive cleanup failed", error);
+    return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
