@@ -346,6 +346,89 @@ h1 em::after {
   border-color: #3a3a3a;
 }
 
+.button-inventory {
+  position: relative;
+  isolation: isolate;
+  gap: 0.65rem;
+  overflow: hidden;
+  background: var(--ink);
+  border-color: var(--red);
+}
+
+.button-flag {
+  position: relative;
+  z-index: 2;
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, var(--text) 25%, transparent 25% 75%, var(--text) 75%),
+    linear-gradient(45deg, var(--text) 25%, transparent 25% 75%, var(--text) 75%),
+    var(--text);
+  background-position: 0 0, 0.575rem 0.575rem;
+  background-size: 1.15rem 1.15rem;
+  border: 1px solid rgb(255 255 255 / 18%);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.button-inventory::before {
+  position: absolute;
+  z-index: -1;
+  inset: -0.2rem;
+  border-radius: 0.7rem;
+  background: repeating-conic-gradient(from 0deg, var(--text) 0deg 18deg, var(--ink) 18deg 36deg);
+  content: "";
+  opacity: 0;
+  -webkit-mask: linear-gradient(var(--text) 0 0) content-box, linear-gradient(var(--text) 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 0.18rem;
+  pointer-events: none;
+}
+
+.button-inventory::after {
+  position: absolute;
+  z-index: 1;
+  inset: -60% auto -60% -35%;
+  width: 22%;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 48%), transparent);
+  opacity: 0;
+  transform: skewX(-18deg) translateX(-500%);
+  pointer-events: none;
+}
+
+.button-inventory:hover .button-flag,
+.button-inventory:focus-visible .button-flag {
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 12%);
+  transform: scale(1.2) rotate(-4deg);
+}
+
+.button-inventory:hover::before,
+.button-inventory:focus-visible::before {
+  opacity: 1;
+  animation: inventory-border-race 900ms linear infinite;
+}
+
+.button-inventory:hover::after,
+.button-inventory:focus-visible::after {
+  opacity: 1;
+  animation: inventory-flag-shimmer 650ms ease-out;
+} 
+
+@keyframes inventory-border-race {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes inventory-flag-shimmer {
+  to {
+    transform: skewX(-18deg) translateX(650%);
+  }
+}
+
 .proof-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1568,7 +1651,7 @@ body:has(.error-page) {
 
 @media (min-width: 36rem) {
   .hero-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .action-row {
