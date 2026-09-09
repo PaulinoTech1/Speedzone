@@ -1030,7 +1030,11 @@ h1 em::after {
 .photo-selection { padding: .8rem; background: var(--ink); border: 1px solid var(--line); border-radius: .45rem; }
 .photo-selection p { margin: 0 0 .7rem; color: var(--muted); font-size: .9rem; }
 .photo-selection-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
-.photo-selection-grid img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: .3rem; }
+.photo-selection-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
+.photo-selection-heading h2, .photo-selection-heading p { margin: 0; }
+.photo-selection-heading p { color: var(--muted); }
+.photo-selection-item { display: grid; gap: .35rem; }
+.photo-selection-grid img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border-radius: .3rem; background: var(--surface-2); }
 .count { color: var(--red-bright); font-size: .6em; }
 @media (min-width: 42rem) { .vehicle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .form-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 60rem) { .admin-grid { grid-template-columns: minmax(20rem, 1fr) minmax(0, 1.2fr); align-items: start; } .vehicle-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
