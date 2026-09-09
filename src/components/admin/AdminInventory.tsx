@@ -11,17 +11,15 @@ const maxPhotoDimension = 2400;
 const webpQuality = 0.82;
 
 async function compressPhoto(file: File): Promise<File> {
-  if (file.type === "image/webp" && file.size <= maxPhotoSize) return file;
-
   const sourceUrl = URL.createObjectURL(file);
   try {
     const image = new Image();
-    image.crossOrigin = "anonymous";
     image.src = sourceUrl;
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
-      image.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+      image.onerror = () => reject(new Error(`Unable to read ${file.name}. Choose a JPG, PNG, or WebP image.`));
     });
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error(`Unable to read ${file.name}.`);
 
     const scale = Math.min(1, maxPhotoDimension / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement("canvas");

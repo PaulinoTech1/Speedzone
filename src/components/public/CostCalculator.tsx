@@ -58,6 +58,10 @@ export function CostCalculator() {
             <th scope="row">State inspection</th>
             <td>{usd.format(breakdown.inspectionFee)}</td>
           </tr>
+          <tr>
+            <th scope="row">Documentation fee</th>
+            <td>{usd.format(breakdown.documentationFee)}</td>
+          </tr>
         </tbody>
         <tfoot>
           <tr className="cost-row-subtotal">
