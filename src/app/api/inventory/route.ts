@@ -5,8 +5,18 @@ import { isAdmin } from "@/lib/admin-auth";
 import { isInventoryPhotoUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 
 export async function GET() {
-  try { return NextResponse.json(await readInventory(), { headers: { "Cache-Control": "public, max-age=60" } }); }
-  catch (error) { console.error("[v0] inventory read failed", error); return NextResponse.json({ error: "Unable to load inventory" }, { status: 500 }); }
+  try {
+    const inventory = await readInventory();
+    const adminRequest = await isAdmin();
+    return NextResponse.json(inventory, {
+      headers: {
+        "Cache-Control": adminRequest ? "private, no-store" : "public, max-age=60",
+      },
+    });
+  } catch (error) {
+    console.error("[v0] inventory read failed", error);
+    return NextResponse.json({ error: "Unable to load inventory" }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {

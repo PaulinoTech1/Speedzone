@@ -130,7 +130,10 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       inventoryOperation.current = false;
     }
   }
-  const load = async () => { const response = await fetch("/api/inventory", { credentials: "include" }); if (response.ok) setVehicles(await response.json()); };
+  const load = async () => {
+    const response = await fetch("/api/inventory", { credentials: "include", cache: "no-store" });
+    if (response.ok) setVehicles(await response.json());
+  };
   async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setLoggedIn(true); onAuthChange?.(true); await load(); setMessage(""); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
   async function requestRecovery(event: FormEvent) { event.preventDefault(); setRecoveryMessage("Processing request…"); const response = await fetch("/api/admin/recovery", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: recoveryEmailInput }) }); const result = await response.json().catch(() => ({})); setRecoveryMessage(result.message || result.error || "Unable to request recovery."); if (response.ok) setRecoverySent(true); }
   async function resetPassword(event: FormEvent) { event.preventDefault(); setRecoveryMessage("Updating password…"); const response = await fetch("/api/admin/recovery/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: recoveryToken, password: recoveryPassword }) }); const result = await response.json().catch(() => ({})); setRecoveryMessage(response.ok ? "Password updated. You can now sign in." : result.error || "Unable to update password."); if (response.ok) { setRecoveryToken(""); setRecoveryPassword(""); window.history.replaceState({}, "", "/admin"); } }
@@ -208,7 +211,23 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       inventoryOperation.current = false;
     }
   }
-  async function remove(id: string) { if (!confirm("Remove this vehicle from inventory?")) return; await fetch("/api/inventory", { credentials: "include", method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) }); setVehicles((current) => current.filter((vehicle) => vehicle.id !== id)); }
+  async function remove(id: string) {
+    if (!confirm("Remove this vehicle from inventory?")) return;
+    setInventoryMessage("Removing listing…");
+    const response = await fetch("/api/inventory", {
+      credentials: "include",
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setInventoryMessage(result.error || "Unable to remove listing.");
+      return;
+    }
+    setVehicles((current) => current.filter((vehicle) => vehicle.id !== id));
+    setInventoryMessage("Listing removed.");
+  }
   const inventoryBusy = preparingPhotos || submitting || updatingVehicleId !== null;
   if (!loggedIn) return <main className="admin-shell"><div className="admin-card admin-login"><p className="eyebrow">SpeedZone Motorsports</p><h1>Inventory admin</h1><p>Sign in to manage current vehicle listings.</p>{recoveryToken ? <form onSubmit={resetPassword}><label>New password<input type="password" minLength={12} value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} required autoFocus /></label><button className="button button-primary" type="submit">Set new password</button><p>Use at least 12 characters.</p></form> : <><form onSubmit={login}><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoFocus /></label><button className="button button-primary" type="submit">Sign in</button></form><form onSubmit={requestRecovery}><label>Admin email<input type="email" value={recoveryEmailInput} onChange={(event) => setRecoveryEmailInput(event.target.value)} required autoComplete="email" /></label><button className="button button-secondary" type="submit" disabled={recoverySent}>{recoverySent ? "Request processed" : "Forgot password?"}</button><p>Enter the email address associated with this admin account. For security, the response will be the same whether the address is eligible or not.</p></form></>}<AdminPasskey authenticated={false} onAuthenticated={() => { setLoggedIn(true); onAuthChange?.(true); void load(); }} /><p role="status" className="form-message">{message || recoveryMessage}</p></div></main>;
   return (
