@@ -163,6 +163,10 @@ export function HomePageContent() {
             <a className="button button-primary" href="tel:+15088269405">
               Call about a car
             </a>
+            <a className="button button-inventory" href="/inventory">
+              <span className="button-flag" aria-hidden="true" />
+              Inventory
+            </a>
             <a
               className="button button-ghost"
               href={directionsUrl}

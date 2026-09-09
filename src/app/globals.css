@@ -346,6 +346,23 @@ h1 em::after {
   border-color: #3a3a3a;
 }
 
+.button-inventory {
+  gap: 0.65rem;
+  background: var(--ink);
+  border-color: var(--red);
+}
+
+.button-flag {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  background:
+    linear-gradient(45deg, white 25%, transparent 25%) 0 0 / 0.575rem 0.575rem,
+    linear-gradient(45deg, transparent 75%, white 75%) 0 0 / 0.575rem 0.575rem,
+    var(--red);
+  border: 1px solid rgb(255 255 255 / 18%);
+}
+
 .proof-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1568,7 +1585,7 @@ body:has(.error-page) {
 
 @media (min-width: 36rem) {
   .hero-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .action-row {
