@@ -87,7 +87,7 @@ async function uploadPhotosSequentially(
 }
 
 export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authenticated: boolean) => void }) {
-  const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [selectedPhotos, setSelectedPhotos] = useState<Record<string, string[]>>({}); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [preparingPhotos, setPreparingPhotos] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [deletingPhotosVehicleId, setDeletingPhotosVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null); const [editForms, setEditForms] = useState<Record<string, Record<string, string>>>({}); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [selectedPhotos, setSelectedPhotos] = useState<Record<string, string[]>>({}); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [preparingPhotos, setPreparingPhotos] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [deletingPhotosVehicleId, setDeletingPhotosVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false);
   const previewUrls = useRef<string[]>([]);
   const inventoryOperation = useRef(false);
   useEffect(() => {
@@ -246,6 +246,37 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       setDeletingPhotosVehicleId(null);
     }
   }
+  function startEditing(vehicle: Vehicle) {
+    setEditingVehicleId(vehicle.id);
+    setEditForms((current) => ({ ...current, [vehicle.id]: { year: String(vehicle.year), make: vehicle.make, model: vehicle.model, price: String(vehicle.price), mileage: String(vehicle.mileage), condition: vehicle.condition, status: vehicle.status, description: vehicle.description } }));
+  }
+  function updateEditField(vehicleId: string, field: string, value: string) {
+    setEditForms((current) => ({ ...current, [vehicleId]: { ...(current[vehicleId] || {}), [field]: value } }));
+  }
+  async function saveVehicle(vehicle: Vehicle) {
+    const editForm = editForms[vehicle.id];
+    if (!editForm || inventoryOperation.current) return;
+    inventoryOperation.current = true;
+    setUpdatingVehicleId(vehicle.id);
+    setInventoryMessage(`Saving ${vehicle.year} ${vehicle.make} ${vehicle.model}…`);
+    try {
+      const response = await fetch("/api/inventory", { credentials: "include", method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: vehicle.id, ...editForm, createdAt: vehicle.createdAt }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Unable to update listing.");
+      setVehicles((current) => current.map((item) => item.id === vehicle.id ? result : item));
+      setEditingVehicleId(null);
+      setInventoryMessage("Listing updated.");
+    } catch (error) {
+      setInventoryMessage(error instanceof Error ? error.message : "Unable to update listing.");
+    } finally {
+      setUpdatingVehicleId(null);
+      inventoryOperation.current = false;
+    }
+  }
+  function cancelEditing(vehicleId: string) {
+    setEditingVehicleId(null);
+    setEditForms((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== vehicleId)));
+  }
   async function remove(id: string) {
     if (!confirm("Remove this vehicle from inventory?")) return;
     setInventoryMessage("Removing listing…");
@@ -336,6 +367,21 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
                       <span>{vehicle.status} · ${vehicle.price.toLocaleString()} · {vehicle.photos.length} photo{vehicle.photos.length === 1 ? "" : "s"}</span>
                     </div>
                   </div>
+                  {editingVehicleId === vehicle.id && editForms[vehicle.id] && (
+                    <div className="admin-edit-form" aria-label={`Edit ${vehicle.year} ${vehicle.make} ${vehicle.model}`}>
+                      <div className="form-row">
+                        {(["year", "make", "model"] as const).map((field) => <label key={field}>{field.slice(0, 1).toUpperCase() + field.slice(1)}<input type={field === "year" ? "number" : "text"} value={editForms[vehicle.id]?.[field] || ""} onChange={(event) => updateEditField(vehicle.id, field, event.target.value)} required /></label>)}
+                      </div>
+                      <div className="form-row">
+                        <label>Price<input type="number" min="0" value={editForms[vehicle.id]?.price || ""} onChange={(event) => updateEditField(vehicle.id, "price", event.target.value)} required /></label>
+                        <label>Mileage<input type="number" min="0" value={editForms[vehicle.id]?.mileage || ""} onChange={(event) => updateEditField(vehicle.id, "mileage", event.target.value)} required /></label>
+                        <label>Status<select value={editForms[vehicle.id]?.status || "available"} onChange={(event) => updateEditField(vehicle.id, "status", event.target.value)}><option value="available">Available</option><option value="pending">Pending</option><option value="sold">Sold</option></select></label>
+                      </div>
+                      <label>Condition<input value={editForms[vehicle.id]?.condition || ""} onChange={(event) => updateEditField(vehicle.id, "condition", event.target.value)} /></label>
+                      <label>Description<textarea rows={4} value={editForms[vehicle.id]?.description || ""} onChange={(event) => updateEditField(vehicle.id, "description", event.target.value)} /></label>
+                      <div className="admin-listing-actions"><button type="button" className="button button-primary" disabled={updatingThisVehicle} onClick={() => void saveVehicle(vehicle)}>{updatingThisVehicle ? "Saving…" : "Save changes"}</button><button type="button" className="button button-secondary" disabled={updatingThisVehicle} onClick={() => cancelEditing(vehicle.id)}>Cancel</button></div>
+                    </div>
+                  )}
                   {vehicle.photos.length > 0 && (
                     <div className="admin-photo-management">
                       <p>Select uploaded photos to remove from this listing.</p>
@@ -369,6 +415,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
                     </div>
                   )}
                   <div className="admin-listing-actions">
+                    {editingVehicleId !== vehicle.id && <button type="button" className="button button-secondary" disabled={inventoryBusy} onClick={() => startEditing(vehicle)}>Edit listing</button>}
                     <button
                       type="button"
                       className="button button-secondary admin-upload-button"
