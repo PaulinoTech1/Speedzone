@@ -87,7 +87,7 @@ async function uploadPhotosSequentially(
 }
 
 export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authenticated: boolean) => void }) {
-  const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [preparingPhotos, setPreparingPhotos] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [selectedPhotos, setSelectedPhotos] = useState<Record<string, string[]>>({}); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [preparingPhotos, setPreparingPhotos] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [deletingPhotosVehicleId, setDeletingPhotosVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false);
   const previewUrls = useRef<string[]>([]);
   const inventoryOperation = useRef(false);
   useEffect(() => {
@@ -211,6 +211,41 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       inventoryOperation.current = false;
     }
   }
+  function togglePhoto(vehicleId: string, photoUrl: string) {
+    setSelectedPhotos((current) => {
+      const selected = current[vehicleId] || [];
+      const next = selected.includes(photoUrl)
+        ? selected.filter((photo) => photo !== photoUrl)
+        : [...selected, photoUrl];
+      if (next.length === 0) {
+        return Object.fromEntries(Object.entries(current).filter(([id]) => id !== vehicleId));
+      }
+      return { ...current, [vehicleId]: next };
+    });
+  }
+  async function deleteSelectedPhotos(vehicle: Vehicle) {
+    const photosToDelete = selectedPhotos[vehicle.id] || [];
+    if (!photosToDelete.length || !confirm(`Delete ${photosToDelete.length} selected photo${photosToDelete.length === 1 ? "" : "s"} from this listing?`)) return;
+    setDeletingPhotosVehicleId(vehicle.id);
+    setInventoryMessage("Deleting selected photos…");
+    try {
+      const response = await fetch("/api/inventory", {
+        credentials: "include",
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: vehicle.id, photos: photosToDelete }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Unable to delete selected photos.");
+      setVehicles((current) => current.map((item) => item.id === vehicle.id ? result : item));
+      setSelectedPhotos((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== vehicle.id)));
+      setInventoryMessage("Selected photos deleted.");
+    } catch (error) {
+      setInventoryMessage(error instanceof Error ? error.message : "Unable to delete selected photos.");
+    } finally {
+      setDeletingPhotosVehicleId(null);
+    }
+  }
   async function remove(id: string) {
     if (!confirm("Remove this vehicle from inventory?")) return;
     setInventoryMessage("Removing listing…");
@@ -301,6 +336,38 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
                       <span>{vehicle.status} · ${vehicle.price.toLocaleString()} · {vehicle.photos.length} photo{vehicle.photos.length === 1 ? "" : "s"}</span>
                     </div>
                   </div>
+                  {vehicle.photos.length > 0 && (
+                    <div className="admin-photo-management">
+                      <p>Select uploaded photos to remove from this listing.</p>
+                      <div className="admin-photo-grid">
+                        {vehicle.photos.map((photo, index) => {
+                          const selected = (selectedPhotos[vehicle.id] || []).includes(photo);
+                          return (
+                            <label className={`admin-photo-option${selected ? " is-selected" : ""}`} key={photo}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={inventoryBusy || deletingPhotosVehicleId === vehicle.id}
+                                onChange={() => togglePhoto(vehicle.id, photo)}
+                                aria-label={`Select photo ${index + 1} for ${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                              />
+                              <img src={photo} alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}, photo ${index + 1}`} />
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {(selectedPhotos[vehicle.id] || []).length > 0 && (
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          disabled={inventoryBusy || deletingPhotosVehicleId === vehicle.id}
+                          onClick={() => void deleteSelectedPhotos(vehicle)}
+                        >
+                          {deletingPhotosVehicleId === vehicle.id ? "Deleting…" : `Delete selected photos (${(selectedPhotos[vehicle.id] || []).length})`}
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div className="admin-listing-actions">
                     <button
                       type="button"
