@@ -19,10 +19,17 @@ async function compressPhoto(file: File): Promise<File> {
   const sourceUrl = URL.createObjectURL(file);
   try {
     const image = new Image();
-    image.src = sourceUrl;
     await new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
-      image.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+      image.onerror = () => {
+        console.error("[inventory] browser could not decode selected photo", {
+          name: file.name,
+          type: file.type,
+          size: file.size,
+        });
+        reject(new Error(`Unable to read ${file.name}. The image may be damaged or use an unsupported format.`));
+      };
+      image.src = sourceUrl;
     });
 
     const scale = Math.min(1, maxPhotoDimension / Math.max(image.naturalWidth, image.naturalHeight));
@@ -36,7 +43,10 @@ async function compressPhoto(file: File): Promise<File> {
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", webpQuality));
     if (!blob) throw new Error(`Unable to compress ${file.name}.`);
     const baseName = file.name.replace(/\.[^.]+$/, "") || "vehicle-photo";
-    return new File([blob], `${baseName}.webp`, { type: "image/webp", lastModified: Date.now() });
+    if (!inventoryPhotoContentTypes.includes(blob.type)) throw new Error(`Unable to optimize ${file.name} in a supported format.`);
+    const outputType = blob.type;
+    const extension = outputType === "image/webp" ? "webp" : outputType === "image/jpeg" ? "jpg" : "png";
+    return new File([blob], `${baseName}.${extension}`, { type: outputType, lastModified: Date.now() });
   } finally {
     URL.revokeObjectURL(sourceUrl);
   }
@@ -50,7 +60,8 @@ function photoSelectionError(selected: File[], existingCount: number) {
 }
 
 async function preparePhotos(selected: File[]) {
-  const compressed = await Promise.all(selected.map(compressPhoto));
+  const compressed: File[] = [];
+  for (const photo of selected) compressed.push(await compressPhoto(photo));
   if (compressed.some((file) => file.size > maxInventoryPhotoSize)) throw new Error("A compressed photo is still over 8MB. Try a smaller original.");
   const originalBytes = selected.reduce((total, file) => total + file.size, 0);
   const compressedBytes = compressed.reduce((total, file) => total + file.size, 0);
@@ -76,8 +87,9 @@ async function uploadPhotosSequentially(
 }
 
 export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authenticated: boolean) => void }) {
-  const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [preparingPhotos, setPreparingPhotos] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false);
   const previewUrls = useRef<string[]>([]);
+  const inventoryOperation = useRef(false);
   useEffect(() => {
     const urls = previewUrls;
     return () => urls.current.forEach((preview) => URL.revokeObjectURL(preview));
@@ -97,12 +109,14 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   }
   async function selectPhotos(files: FileList | null) {
     const selected = Array.from(files || []);
-    if (!selected.length) return;
-    const selectionError = photoSelectionError(selected, photos.length);
-    if (selectionError) { setMessage(selectionError); return; }
+    if (!selected.length || inventoryOperation.current) return;
+    inventoryOperation.current = true;
 
-    setMessage("Compressing photos to WebP…");
+    setPreparingPhotos(true);
     try {
+      const selectionError = photoSelectionError(selected, photos.length);
+      if (selectionError) { setMessage(selectionError); return; }
+      setMessage("Optimizing photos…");
       const { compressed, savedPercent } = await preparePhotos(selected);
       const previews = compressed.map((file) => URL.createObjectURL(file));
       previewUrls.current.push(...previews);
@@ -111,6 +125,9 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       setMessage(`${compressed.length} photo${compressed.length === 1 ? "" : "s"} added. Reduced by ${savedPercent}%.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to compress photos.");
+    } finally {
+      setPreparingPhotos(false);
+      inventoryOperation.current = false;
     }
   }
   const load = async () => { const response = await fetch("/api/inventory", { credentials: "include" }); if (response.ok) setVehicles(await response.json()); };
@@ -119,7 +136,8 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   async function resetPassword(event: FormEvent) { event.preventDefault(); setRecoveryMessage("Updating password…"); const response = await fetch("/api/admin/recovery/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: recoveryToken, password: recoveryPassword }) }); const result = await response.json().catch(() => ({})); setRecoveryMessage(response.ok ? "Password updated. You can now sign in." : result.error || "Unable to update password."); if (response.ok) { setRecoveryToken(""); setRecoveryPassword(""); window.history.replaceState({}, "", "/admin"); } }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (submitting) return;
+    if (inventoryOperation.current) return;
+    inventoryOperation.current = true;
     setSubmitting(true);
     let uploadingPhotos = photos.length > 0;
     try {
@@ -144,22 +162,24 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       setMessage("Listing published.");
     } catch (error) {
       setMessage(uploadingPhotos
-        ? "Unable to upload photos. Check your connection and try again."
+        ? `Unable to upload photos${error instanceof Error ? `: ${error.message}` : "."}`
         : error instanceof Error ? error.message : "Unable to save listing.");
     } finally {
       setSubmitting(false);
+      inventoryOperation.current = false;
     }
   }
   async function addPhotosToVehicle(vehicle: Vehicle, files: FileList | null) {
     const selected = Array.from(files || []);
-    if (!selected.length) return;
-    const selectionError = photoSelectionError(selected, vehicle.photos.length);
-    if (selectionError) { setInventoryMessage(selectionError); return; }
+    if (!selected.length || inventoryOperation.current) return;
+    inventoryOperation.current = true;
 
     setUpdatingVehicleId(vehicle.id);
     let stage: "compress" | "upload" | "save" = "compress";
     try {
-      setInventoryMessage(`Compressing ${selected.length} photo${selected.length === 1 ? "" : "s"} for ${vehicle.year} ${vehicle.make} ${vehicle.model}…`);
+      const selectionError = photoSelectionError(selected, vehicle.photos.length);
+      if (selectionError) { setInventoryMessage(selectionError); return; }
+      setInventoryMessage(`Optimizing ${selected.length} photo${selected.length === 1 ? "" : "s"} for ${vehicle.year} ${vehicle.make} ${vehicle.model}…`);
       const { compressed } = await preparePhotos(selected);
       stage = "upload";
       const photoUrls = await uploadPhotosSequentially(
@@ -181,14 +201,15 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       setInventoryMessage(`${photoUrls.length} photo${photoUrls.length === 1 ? "" : "s"} added to ${vehicle.year} ${vehicle.make} ${vehicle.model}.`);
     } catch (error) {
       setInventoryMessage(stage === "upload"
-        ? "Unable to upload photos. Check your connection and try again."
+        ? `Unable to upload photos${error instanceof Error ? `: ${error.message}` : "."}`
         : error instanceof Error ? error.message : "Unable to update listing.");
     } finally {
       setUpdatingVehicleId(null);
+      inventoryOperation.current = false;
     }
   }
   async function remove(id: string) { if (!confirm("Remove this vehicle from inventory?")) return; await fetch("/api/inventory", { credentials: "include", method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) }); setVehicles((current) => current.filter((vehicle) => vehicle.id !== id)); }
-  const inventoryBusy = submitting || updatingVehicleId !== null;
+  const inventoryBusy = preparingPhotos || submitting || updatingVehicleId !== null;
   if (!loggedIn) return <main className="admin-shell"><div className="admin-card admin-login"><p className="eyebrow">SpeedZone Motorsports</p><h1>Inventory admin</h1><p>Sign in to manage current vehicle listings.</p>{recoveryToken ? <form onSubmit={resetPassword}><label>New password<input type="password" minLength={12} value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} required autoFocus /></label><button className="button button-primary" type="submit">Set new password</button><p>Use at least 12 characters.</p></form> : <><form onSubmit={login}><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoFocus /></label><button className="button button-primary" type="submit">Sign in</button></form><form onSubmit={requestRecovery}><label>Admin email<input type="email" value={recoveryEmailInput} onChange={(event) => setRecoveryEmailInput(event.target.value)} required autoComplete="email" /></label><button className="button button-secondary" type="submit" disabled={recoverySent}>{recoverySent ? "Request processed" : "Forgot password?"}</button><p>Enter the email address associated with this admin account. For security, the response will be the same whether the address is eligible or not.</p></form></>}<AdminPasskey authenticated={false} onAuthenticated={() => { setLoggedIn(true); onAuthChange?.(true); void load(); }} /><p role="status" className="form-message">{message || recoveryMessage}</p></div></main>;
   return (
     <main className="admin-shell">
@@ -232,7 +253,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
             <label>
               Photos
               <input id="inventory-photo-picker" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple disabled={inventoryBusy} onChange={(e) => { void selectPhotos(e.target.files); e.currentTarget.value = ""; }} />
-              <span className="field-help">Select one or several photos. They are resized, converted to WebP, and uploaded one at a time. Keep each original under 8MB.</span>
+              <span className="field-help">Select one or several JPG, PNG, or WebP photos. They are resized, optimized, and uploaded one at a time. Keep each original under 8MB.</span>
             </label>
             {photos.length > 0 && (
               <div className="photo-selection" aria-live="polite">
@@ -251,6 +272,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
             {vehicles.map((vehicle) => {
               const atPhotoLimit = vehicle.photos.length >= maxInventoryPhotoCount;
               const updatingThisVehicle = updatingVehicleId === vehicle.id;
+              const photoPickerId = `inventory-photo-picker-${vehicle.id}`;
               return (
                 <article className="admin-listing" key={vehicle.id}>
                   <div>
@@ -261,17 +283,26 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
                     </div>
                   </div>
                   <div className="admin-listing-actions">
-                    <label className="button button-secondary admin-upload-button" aria-disabled={inventoryBusy || atPhotoLimit}>
+                    <button
+                      type="button"
+                      className="button button-secondary admin-upload-button"
+                      disabled={inventoryBusy || atPhotoLimit}
+                      aria-label={`Add photos to ${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                      onClick={() => document.getElementById(photoPickerId)?.click()}
+                    >
                       {atPhotoLimit ? "Photo limit reached" : updatingThisVehicle ? "Uploading…" : "Add photos"}
-                      <input
-                        className="visually-hidden"
-                        type="file"
-                        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-                        multiple
-                        disabled={inventoryBusy || atPhotoLimit}
-                        onChange={(event) => { void addPhotosToVehicle(vehicle, event.target.files); event.currentTarget.value = ""; }}
-                      />
-                    </label>
+                    </button>
+                    <input
+                      id={photoPickerId}
+                      className="visually-hidden"
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      multiple
+                      tabIndex={-1}
+                      disabled={inventoryBusy || atPhotoLimit}
+                      aria-label={`Select photos for ${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                      onChange={(event) => { void addPhotosToVehicle(vehicle, event.target.files); event.currentTarget.value = ""; }}
+                    />
                     <button type="button" className="text-button" disabled={inventoryBusy} onClick={() => remove(vehicle.id)}>Remove</button>
                   </div>
                 </article>

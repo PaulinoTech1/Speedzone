@@ -9,7 +9,7 @@ export function proxy(request: NextRequest) {
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    "img-src 'self' data: https:",
+    "img-src 'self' blob: data: https:",
     "font-src 'self'",
     isDevelopment
       ? "style-src 'self' 'unsafe-inline'"
