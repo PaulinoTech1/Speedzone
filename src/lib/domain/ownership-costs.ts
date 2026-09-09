@@ -12,6 +12,7 @@ export const massachusettsFees = {
   titleFee: 75,
   registrationFee: 60,
   inspectionFee: 35,
+  documentationFee: 300,
 } as const;
 
 export type CostBreakdown = {
@@ -20,6 +21,7 @@ export type CostBreakdown = {
   titleFee: number;
   registrationFee: number;
   inspectionFee: number;
+  documentationFee: number;
   feesSubtotal: number;
   total: number;
 };
@@ -31,7 +33,8 @@ export function estimateUpfrontCost(price: number): CostBreakdown {
     salesTax +
     massachusettsFees.titleFee +
     massachusettsFees.registrationFee +
-    massachusettsFees.inspectionFee;
+    massachusettsFees.inspectionFee +
+    massachusettsFees.documentationFee;
 
   return {
     price: safePrice,
@@ -39,6 +42,7 @@ export function estimateUpfrontCost(price: number): CostBreakdown {
     titleFee: massachusettsFees.titleFee,
     registrationFee: massachusettsFees.registrationFee,
     inspectionFee: massachusettsFees.inspectionFee,
+    documentationFee: massachusettsFees.documentationFee,
     feesSubtotal,
     total: safePrice + feesSubtotal,
   };

@@ -117,6 +117,12 @@ export default async function BuyingCostsPage() {
                   seven days after registering to get it done.
                 </p>
 
+                <h3>Documentation fee &mdash; $300</h3>
+                <p>
+                  SpeedZone charges a $300 documentation fee for preparing and processing the vehicle
+                  purchase paperwork. This dealer fee is included in the calculator above.
+                </p>
+
                 <h3>Excise tax &mdash; billed later</h3>
                 <p>
                   Your city or town bills motor vehicle excise tax once a year, based on the
