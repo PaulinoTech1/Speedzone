@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminCookieOptions, createAdminSession, isAdmin } from "@/lib/admin-auth";
+import { getCredentialEpoch } from "@/lib/admin-recovery";
 import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, verifyAuthentication, verifyRegistration } from "@/lib/admin-passkeys";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 
@@ -26,7 +27,9 @@ export async function POST(request: Request) {
     if (!limit.success) return NextResponse.json({ error: "Too many login attempts. Try again later." }, { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": String(limit.retryAfter) } });
     const result = await verifyAuthentication(body.response, webAuthnConfig);
     if (!result.verified) return NextResponse.json(result, { status: 401, headers: { "Cache-Control": "no-store" } });
-    const session = await createAdminSession();
+    const credentialEpoch = await getCredentialEpoch();
+    if (credentialEpoch === null) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
+    const session = await createAdminSession(credentialEpoch);
     if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
     const response = NextResponse.json({ verified: true }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set("speedzone_admin", session, adminCookieOptions());

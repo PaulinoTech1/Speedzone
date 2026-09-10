@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revokeAllAdminSessions } from "@/lib/admin-auth";
-import { consumeRecoveryToken, setAdminPassword } from "@/lib/admin-recovery";
+import { consumeRecoveryToken, replaceAdminPassword } from "@/lib/admin-recovery";
 import { revokeAllPasskeysAndChallenges } from "@/lib/admin-passkeys";
 
 export async function POST(request: Request) {
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
   try {
-    const saved = await setAdminPassword(password);
+    const saved = await replaceAdminPassword(password);
     if (!saved || !(await revokeAllPasskeysAndChallenges())) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
     await revokeAllAdminSessions();
   } catch {
