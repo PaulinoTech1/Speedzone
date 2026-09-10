@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { adminCookieOptions, clearAdminCookie, createAdminSession } from "@/lib/admin-auth";
+import { adminCookieOptions, clearAdminCookie, createAdminSession, revokeAdminSession } from "@/lib/admin-auth";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { getAdminPasswordCandidates } from "@/lib/admin-recovery";
 
@@ -35,13 +35,14 @@ export async function POST(request: Request) {
   if (!configuredPasswords.length || typeof password !== "string" || !configuredPasswords.includes(password)) {
     return NextResponse.json({ error: "Invalid password" }, { status: 401 });
   }
-  const session = createAdminSession();
+  const session = await createAdminSession();
   if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
   (await cookies()).set("speedzone_admin", session, adminCookieOptions());
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  await revokeAdminSession(request);
   const response = NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   const cookie = clearAdminCookie();
   response.cookies.set(cookie.name, cookie.value, adminCookieOptions());
