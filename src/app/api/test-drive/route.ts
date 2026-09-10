@@ -3,7 +3,6 @@ import { Resend } from "resend";
 import { NextResponse } from "next/server";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 import { getRequestKeys, limitTestDriveSubmission } from "@/lib/test-drive-rate-limit";
-import { getAdminPassword } from "@/lib/admin-recovery";
 import { encryptTestDrivePayload } from "@/lib/test-drive-crypto";
 
 const privateToken = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
@@ -59,9 +58,7 @@ export async function POST(request: Request) {
   };
 
   try {
-    const encryptionKey = await getAdminPassword();
-    if (!encryptionKey) return NextResponse.json({ error: "Test-drive encryption is not configured" }, { status: 503 });
-    const encryptedPayload = await encryptTestDrivePayload(submission, encryptionKey);
+    const encryptedPayload = await encryptTestDrivePayload(submission);
     await put(`test-drive/${submission.createdAt.slice(0, 10)}/${submission.id}.enc`, encryptedPayload, {
       access: "private",
       token,
