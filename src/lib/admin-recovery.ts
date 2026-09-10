@@ -51,6 +51,13 @@ export async function getAdminPassword() {
   return override || process.env.SPEEDZONE_ADMIN_PASSWORD;
 }
 
+export async function getAdminPasswordCandidates() {
+  const configuredPassword = process.env.SPEEDZONE_ADMIN_PASSWORD;
+  const redis = getRedis();
+  const override = redis ? await redis.get<string>(PASSWORD_KEY) : null;
+  return [...new Set([configuredPassword, override].filter((value): value is string => Boolean(value)))];
+}
+
 export async function deleteAllTestDriveSubmissions() {
   const token = process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
   if (!token) return false;
