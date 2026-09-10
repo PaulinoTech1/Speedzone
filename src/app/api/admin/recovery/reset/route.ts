@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revokeAllAdminSessions } from "@/lib/admin-auth";
 import { consumeRecoveryToken, deleteAllTestDriveSubmissions, setAdminPassword } from "@/lib/admin-recovery";
 
 export async function POST(request: Request) {
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
     if (!cleaned) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
     const saved = await setAdminPassword(password);
     if (!saved) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    await revokeAllAdminSessions();
   } catch (error) {
     console.error("[v0] encrypted test-drive cleanup failed", error);
     return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
