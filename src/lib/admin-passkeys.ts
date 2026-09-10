@@ -53,6 +53,19 @@ async function saveCredentials(credentials: StoredCredential[]) {
   return true;
 }
 
+export async function revokeAllPasskeysAndChallenges() {
+  const client = redis();
+  if (!client) return false;
+  await client.del("speedzone:admin:passkeys");
+  let cursor = 0;
+  do {
+    const [nextCursor, keys] = await client.scan(cursor, { match: "speedzone:passkey:*", count: 100 });
+    cursor = Number(nextCursor);
+    if (keys.length) await client.del(...keys);
+  } while (cursor !== 0);
+  return true;
+}
+
 export type AdminPasskeySummary = { id: string; deviceType: string; backedUp: boolean; name: string };
 
 export async function listPasskeys(): Promise<AdminPasskeySummary[]> {
