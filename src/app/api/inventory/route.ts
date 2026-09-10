@@ -2,7 +2,7 @@ import { del } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { appendVehiclePhotos, readInventory, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
 import { isAdmin } from "@/lib/admin-auth";
-import { isInventoryPhotoUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
+import { isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 
 export async function GET() {
   try {
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     const payload = body.vehicle && typeof body.vehicle === "object"
       ? body.vehicle as Record<string, unknown>
       : {};
-    if (!Array.isArray(body.photos) || body.photos.length > maxInventoryPhotoCount || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoUrl(photo))) {
+    if (!Array.isArray(body.photos) || body.photos.length > maxInventoryPhotoCount || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoBlobOriginUrl(photo))) {
       return NextResponse.json({ error: "One or more photo uploads are invalid" }, { status: 400 });
     }
     const photos = body.photos as string[];
@@ -53,7 +53,7 @@ export async function PATCH(request: Request) {
       await writeInventory(vehicles.map((item) => item.id === existing.id ? updatedVehicle : item));
       return NextResponse.json(updatedVehicle);
     }
-    if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoUrl(photo))) {
+    if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoBlobOriginUrl(photo))) {
       return NextResponse.json({ error: "One or more photo uploads are invalid" }, { status: 400 });
     }
 
@@ -73,7 +73,7 @@ export async function DELETE(request: Request) {
   if (!vehicle) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
 
   if (body.photos !== undefined) {
-    if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoUrl(photo))) {
+    if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoBlobOriginUrl(photo))) {
       return NextResponse.json({ error: "Selected photos are invalid" }, { status: 400 });
     }
     const selectedPhotos = [...new Set(body.photos as string[])];
