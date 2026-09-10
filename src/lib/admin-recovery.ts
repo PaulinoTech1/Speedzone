@@ -44,12 +44,19 @@ export async function setAdminPassword(password: string) {
 export async function verifyAdminPassword(password: string) {
   const redis = getRedis();
   const stored = redis ? await redis.get<string>(credentialKey) : null;
+
   if (stored) {
-    try { return await argon2.verify(stored, password); } catch { return false; }
+    try {
+      if (await argon2.verify(stored, password)) return true;
+    } catch {
+      // Fall through to the configured bootstrap password so a stale or
+      // incompatible Redis credential cannot lock out the administrator.
+    }
   }
+
   const bootstrap = process.env.SPEEDZONE_ADMIN_PASSWORD;
-  if (!bootstrap) return false;
-  const valid = password === bootstrap;
-  if (valid && redis) await setAdminPassword(password);
-  return valid;
+  if (!bootstrap || password !== bootstrap) return false;
+
+  if (redis) await setAdminPassword(password);
+  return true;
 }
