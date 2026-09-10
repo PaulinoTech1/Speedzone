@@ -9,17 +9,23 @@ export async function POST(request: Request) {
   const password = typeof body.password === "string" ? body.password : "";
   if (password.length < 12 || password.length > 128) return NextResponse.json({ error: "Password must be between 12 and 128 characters." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   if (!/\S/.test(password)) return NextResponse.json({ error: "Password cannot be blank." }, { status: 400, headers: { "Cache-Control": "no-store" } });
-  const valid = await consumeRecoveryToken(token);
-  if (!valid) return NextResponse.json({ error: "This recovery link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  const consumption = await consumeRecoveryToken(token);
+  if (consumption.status === "invalid_or_expired") {
+    return NextResponse.json({ error: "This recovery link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
+  if (consumption.status === "storage_unavailable") {
+    return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
   try {
     const cleaned = await deleteAllTestDriveSubmissions();
     if (!cleaned) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
     const saved = await setAdminPassword(password);
     if (!saved || !(await revokeAllPasskeysAndChallenges())) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
     await revokeAllAdminSessions();
-  } catch (error) {
-    console.error("[v0] encrypted test-drive cleanup failed", error);
+  } catch {
+    console.warn("[recovery] failed after token consumption");
     return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
+  console.info("[recovery] password recovery completed");
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
