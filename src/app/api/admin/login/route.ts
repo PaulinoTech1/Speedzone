@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { adminCookieOptions, clearAdminCookie, createAdminSession, revokeAdminSession } from "@/lib/admin-auth";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
-import { getAdminPasswordCandidates } from "@/lib/admin-recovery";
+import { verifyAdminPassword } from "@/lib/admin-recovery";
 
 function getClientIdentifier(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -31,8 +31,7 @@ export async function POST(request: Request) {
   }
 
   const { password } = await request.json().catch(() => ({}));
-  const configuredPasswords = await getAdminPasswordCandidates();
-  if (!configuredPasswords.length || typeof password !== "string" || !configuredPasswords.includes(password)) {
+  if (typeof password !== "string" || !(await verifyAdminPassword(password))) {
     return NextResponse.json({ error: "Invalid password" }, { status: 401 });
   }
   const session = await createAdminSession();
