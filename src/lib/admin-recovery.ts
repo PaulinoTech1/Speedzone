@@ -11,6 +11,29 @@ const credentialStateKey = "speedzone:admin-credential-state:v1";
 const tokenLength = 43;
 
 type CredentialState = "uninitialized" | "initialized";
+export type PasswordVerification =
+  | { verified: true; credentialEpoch: number }
+  | { verified: false; reason: "invalid" | "recovery_required" | "unavailable" }; 
+const epochKey = "speedzone:admin-credential-epoch";
+const commitCredentialScript = `
+local current = redis.call('GET', KEYS[1])
+local legacy = redis.call('GET', KEYS[2])
+local state = redis.call('GET', KEYS[3])
+local epoch = redis.call('GET', KEYS[4])
+if current or legacy or state == 'initialized' or (ARGV[1] ~= '' and epoch ~= ARGV[1]) then return 0 end
+local nextEpoch = tonumber(epoch or '0') + 1
+redis.call('SET', KEYS[1], ARGV[2])
+redis.call('SET', KEYS[3], 'initialized')
+redis.call('SET', KEYS[4], tostring(nextEpoch))
+return nextEpoch
+`;
+const replaceCredentialScript = `
+local nextEpoch = tonumber(redis.call('GET', KEYS[2]) or '0') + 1
+redis.call('SET', KEYS[1], ARGV[1])
+redis.call('SET', KEYS[3], 'initialized')
+redis.call('SET', KEYS[2], tostring(nextEpoch))
+return nextEpoch
+`;
 
 function hashToken(token: string) { return createHash("sha256").update(token).digest("hex"); }
 export function recoveryConfigured() { return Boolean(process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN); }
@@ -35,15 +58,30 @@ export async function consumeRecoveryToken(token: unknown) {
   } catch { return { status: "storage_unavailable" as const }; }
 }
 
-export async function setAdminPassword(password: string) {
+async function hashPassword(password: string) {
+  return argon2.hash(password, { type: argon2.argon2id });
+}
+
+export async function setAdminPassword(password: string, expectedEpoch?: number) {
   const redis = getRedis();
-  if (!redis || password.length < 12) return false;
+  if (!redis || password.length < 12) return null;
   try {
-    const hash = await argon2.hash(password, { type: argon2.argon2id });
-    await redis.set(credentialKey, hash);
-    await redis.set(credentialStateKey, "initialized");
-    return true;
-  } catch { return false; }
+    const hash = await hashPassword(password);
+    const keys = [credentialKey, legacyCredentialKeys[0]!, credentialStateKey, epochKey];
+    const args = [expectedEpoch === undefined ? "" : String(expectedEpoch), hash];
+    const result = await redis.eval(commitCredentialScript, keys, args);
+    return Number(result) > 0 ? Number(result) : null;
+  } catch { return null; }
+}
+
+export async function replaceAdminPassword(password: string) {
+  const redis = getRedis();
+  if (!redis || password.length < 12) return null;
+  try {
+    const hash = await hashPassword(password);
+    const result = await redis.eval(replaceCredentialScript, [credentialKey, epochKey, credentialStateKey], [hash]);
+    return Number(result) > 0 ? Number(result) : null;
+  } catch { return null; }
 }
 
 async function getStoredCredential(redis: NonNullable<ReturnType<typeof getRedis>>) {
@@ -56,32 +94,40 @@ async function getStoredCredential(redis: NonNullable<ReturnType<typeof getRedis
   return null;
 }
 
-export async function verifyAdminPassword(password: string) {
+export async function getCredentialEpoch() {
   const redis = getRedis();
-  if (!redis) return false;
+  if (!redis) return null;
+  const value = await redis.get<string>(epochKey);
+  return value ? Number(value) : 0;
+}
 
-  const stored = await getStoredCredential(redis);
-  if (stored) {
-    try {
-      if (stored.startsWith("$argon2") && await argon2.verify(stored, password)) return true;
-      if (!stored.startsWith("$argon2") && stored === password) return await setAdminPassword(password);
-    } catch { return false; }
-    return false;
-  }
-
-  const state = await redis.get<CredentialState>(credentialStateKey);
-  if (state === "initialized") return false;
-
-  const bootstrap = process.env.SPEEDZONE_ADMIN_PASSWORD;
-  if (!bootstrap || password !== bootstrap) return false;
-
-  const lockKey = `${credentialStateKey}:bootstrap-lock`;
-  const claimed = await redis.set(lockKey, "claimed", { nx: true, ex: 30 });
-  if (!claimed) return false;
+export async function verifyAdminPassword(password: string): Promise<PasswordVerification> {
+  const redis = getRedis();
+  if (!redis) return { verified: false, reason: "unavailable" };
   try {
-    if (await getStoredCredential(redis)) return false;
-    return await setAdminPassword(password);
-  } finally {
-    await redis.del(lockKey);
+    const current = await redis.get<string>(credentialKey);
+    const state = await redis.get<CredentialState>(credentialStateKey);
+    const epoch = await getCredentialEpoch();
+    if (current) {
+      try {
+        return await argon2.verify(current, password)
+          ? { verified: true, credentialEpoch: epoch ?? 0 }
+          : { verified: false, reason: "invalid" };
+      } catch {
+        return { verified: false, reason: "recovery_required" };
+      }
+    }
+    if (state === "initialized") return { verified: false, reason: "recovery_required" };
+    const legacy = await getStoredCredential(redis);
+    if (legacy && legacy === password) {
+      const migrated = await setAdminPassword(password, epoch ?? 0);
+      return migrated ? { verified: true, credentialEpoch: migrated } : { verified: false, reason: "invalid" };
+    }
+    const bootstrap = process.env.SPEEDZONE_ADMIN_PASSWORD;
+    if (!bootstrap || password !== bootstrap) return { verified: false, reason: "invalid" };
+    const migrated = await setAdminPassword(password, epoch ?? 0);
+    return migrated ? { verified: true, credentialEpoch: migrated } : { verified: false, reason: "invalid" };
+  } catch {
+    return { verified: false, reason: "unavailable" };
   }
 }

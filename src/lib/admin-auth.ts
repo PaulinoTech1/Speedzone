@@ -5,15 +5,17 @@ import { getRedis } from "@/lib/redis";
 const COOKIE_NAME = "speedzone_admin";
 const SESSION_PREFIX = "speedzone:admin-session:";
 const GENERATION_KEY = "speedzone:admin-session-generation";
+const CREDENTIAL_EPOCH_KEY = "speedzone:admin-credential-epoch";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
 const SESSION_IDLE_TTL_SECONDS = 60 * 30;
-type AdminSession = { createdAt: number; lastSeenAt: number; generation: string };
+type AdminSession = { createdAt: number; lastSeenAt: number; generation: string; credentialEpoch: number };
 function sessionKey(token: string) { return `${SESSION_PREFIX}${createHash("sha256").update(token).digest("hex")}`; }
 async function getCookieToken(request?: Request) { if (request) return request.headers.get("cookie")?.match(/(?:^|;\s*)speedzone_admin=([^;]+)/)?.[1]; return (await cookies()).get(COOKIE_NAME)?.value; }
 async function generation() { const redis = getRedis(); if (!redis) return null; const current = await redis.get<string>(GENERATION_KEY); if (current) return current; const value = randomBytes(16).toString("hex"); const stored = await redis.set(GENERATION_KEY, value, { nx: true }); return stored ? value : redis.get<string>(GENERATION_KEY); }
 const createSessionScript = `
 local current = redis.call('GET', KEYS[2])
-if not current or current ~= ARGV[1] then return 0 end
+local credentialEpoch = redis.call('GET', KEYS[3])
+if not current or current ~= ARGV[1] or not credentialEpoch or credentialEpoch ~= ARGV[4] then return 0 end
 redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
 return 1
 `;
@@ -23,7 +25,7 @@ local raw = redis.call('GET', KEYS[1])
 local current = redis.call('GET', KEYS[2])
 if not raw or not current then return 0 end
 local session = cjson.decode(raw)
-if session.generation ~= current then return 0 end
+if session.generation ~= current or tostring(session.credentialEpoch) ~= redis.call('GET', KEYS[3]) then return 0 end
 local now = tonumber(ARGV[1])
 local created = tonumber(session.createdAt)
 local lastSeen = tonumber(session.lastSeenAt)
@@ -37,15 +39,15 @@ redis.call('SET', KEYS[1], cjson.encode(session), 'EX', remaining)
 return 1
 `;
 
-export async function createAdminSession() {
+export async function createAdminSession(credentialEpoch: number) {
   const redis = getRedis();
   const current = await generation();
   if (!redis || !current) return null;
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
-  const created = JSON.stringify({ createdAt: now, lastSeenAt: now, generation: current } satisfies AdminSession);
+  const created = JSON.stringify({ createdAt: now, lastSeenAt: now, generation: current, credentialEpoch } satisfies AdminSession);
   try {
-    const stored = await redis.eval(createSessionScript, [sessionKey(token), GENERATION_KEY], [current, created, SESSION_TTL_SECONDS]);
+    const stored = await redis.eval(createSessionScript, [sessionKey(token), GENERATION_KEY, CREDENTIAL_EPOCH_KEY], [current, created, SESSION_TTL_SECONDS, credentialEpoch]);
     return Number(stored) === 1 ? token : null;
   } catch {
     return null;
@@ -57,7 +59,7 @@ export async function isValidAdminSession(value: string | undefined) {
   const redis = getRedis();
   if (!redis) return false;
   try {
-    const result = await redis.eval(validateSessionScript, [sessionKey(value), GENERATION_KEY], [Date.now(), SESSION_TTL_SECONDS * 1000, SESSION_IDLE_TTL_SECONDS * 1000]);
+    const result = await redis.eval(validateSessionScript, [sessionKey(value), GENERATION_KEY, CREDENTIAL_EPOCH_KEY], [Date.now(), SESSION_TTL_SECONDS * 1000, SESSION_IDLE_TTL_SECONDS * 1000]);
     return Number(result) === 1;
   } catch {
     return false;

@@ -31,10 +31,12 @@ export async function POST(request: Request) {
   }
 
   const { password } = await request.json().catch(() => ({}));
-  if (typeof password !== "string" || !(await verifyAdminPassword(password))) {
-    return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+  if (typeof password !== "string") return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+  const verification = await verifyAdminPassword(password);
+  if (!verification.verified) {
+    return NextResponse.json({ error: verification.reason === "unavailable" ? "Admin authentication is temporarily unavailable" : "Invalid password" }, { status: verification.reason === "unavailable" ? 503 : 401 });
   }
-  const session = await createAdminSession();
+  const session = await createAdminSession(verification.credentialEpoch);
   if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
   (await cookies()).set("speedzone_admin", session, adminCookieOptions());
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
