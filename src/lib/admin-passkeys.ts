@@ -13,7 +13,7 @@ import { getRedis } from "@/lib/redis";
 const rpName = "SpeedZone Motorsports";
 export type WebAuthnConfig = { rpID: string; origin: string };
 const userID = "speedzone-admin";
-const challengeTtl = 300;
+const challengeTtl = 120;
 const credentialsKey = "speedzone:admin:passkeys";
 const challengePrefix = "speedzone:passkey:";
 const epochKey = "speedzone:admin-credential-epoch";
