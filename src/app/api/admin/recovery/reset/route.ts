@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
-import { revokeAllAdminSessions } from "@/lib/admin-auth";
 import { resetAdminPasswordWithToken } from "@/lib/admin-recovery";
 
 export async function POST(request: Request) {
@@ -17,20 +16,19 @@ export async function POST(request: Request) {
   }
   const token = typeof body.token === "string" ? body.token : "";
   const password = typeof body.password === "string" ? body.password : "";
+  const operationId = typeof body.operationId === "string" ? body.operationId : "";
   if (password.length < 12 || password.length > 128) return NextResponse.json({ error: "Password must be between 12 and 128 characters." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   if (!/\S/.test(password)) return NextResponse.json({ error: "Password cannot be blank." }, { status: 400, headers: { "Cache-Control": "no-store" } });
-  const commit = await resetAdminPasswordWithToken(token, password);
+  const commit = await resetAdminPasswordWithToken(token, password, operationId);
+  if (commit.status === "operation_conflict") {
+    return NextResponse.json({ error: "This recovery operation was already used with a different password." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  }
   if (commit.status === "invalid_or_expired" || commit.status === "invalid") {
     return NextResponse.json({ error: "This recovery link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
   if (commit.status === "storage_unavailable") {
     return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
-  try {
-    await revokeAllAdminSessions();
-  } catch {
-    console.warn("[recovery] credential committed; session revocation needs reconciliation");
-  }
-  console.info("[recovery] password recovery completed");
+  console.info("[recovery] password recovery committed; credential epoch invalidates prior sessions");
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }

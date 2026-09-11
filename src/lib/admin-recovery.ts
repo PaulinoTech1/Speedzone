@@ -11,6 +11,9 @@ const legacyCredentialKey = "speedzone:admin-credential";
 const credentialStateKey = "speedzone:admin-credential-state:v1";
 const epochKey = "speedzone:admin-credential-epoch";
 const tokenLength = 43;
+const operationIdLength = 36;
+const receiptPrefix = "speedzone:admin-recovery-receipt:v1:";
+const recoveryReceiptTtlSeconds = 24 * 60 * 60;
 
 type CredentialSnapshot = {
   current: string | null;
@@ -86,15 +89,22 @@ redis.call('DEL', KEYS[1])
 return 1
 `;
 const commitRecoveryScript = `
+local receipt = redis.call('GET', KEYS[5])
+if receipt then
+  local saved = cjson.decode(receipt)
+  if saved.passwordHash == ARGV[2] then return tonumber(saved.epoch) end
+  return -2
+end
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
 local record = cjson.decode(raw)
 local epoch = redis.call('GET', KEYS[2]) or '0'
-if tostring(record.epoch) ~= epoch then redis.call('DEL', KEYS[1]); return -1 end
+if tostring(record.epoch) ~= epoch or not string.match(epoch, '^[1-9]%d*$') then return -1 end
 local nextEpoch = tonumber(epoch) + 1
 redis.call('SET', KEYS[3], ARGV[1])
 redis.call('SET', KEYS[4], 'initialized')
 redis.call('SET', KEYS[2], tostring(nextEpoch))
+redis.call('SET', KEYS[5], cjson.encode({ version = 1, epoch = nextEpoch, passwordHash = ARGV[2] }), 'EX', ARGV[3])
 redis.call('DEL', KEYS[1])
 return nextEpoch
 `;
@@ -121,12 +131,14 @@ export async function consumeRecoveryToken(token: unknown) {
   } catch { return { status: "storage_unavailable" as const }; }
 }
 
-export async function resetAdminPasswordWithToken(token: unknown, password: string) {
-  if (typeof token !== "string" || token.length !== tokenLength || !/^[A-Za-z0-9_-]+$/.test(token) || password.length < 12 || password.length > 128) return { status: "invalid" as const };
+export async function resetAdminPasswordWithToken(token: unknown, password: string, operationId: unknown) {
+  if (typeof token !== "string" || token.length !== tokenLength || !/^[A-Za-z0-9_-]+$/.test(token) || typeof operationId !== "string" || operationId.length !== operationIdLength || !/^[0-9a-f-]+$/.test(operationId) || password.length < 12 || password.length > 128) return { status: "invalid" as const };
   const redis = getRedis(); if (!redis) return { status: "storage_unavailable" as const };
   try {
     const hash = await hashPassword(password);
-    const result = await redis.eval(commitRecoveryScript, [`${tokenPrefix}${hashToken(token)}`, epochKey, credentialKey, credentialStateKey], [hash]);
+    const receiptKey = `${receiptPrefix}${hashToken(operationId)}`;
+    const result = await redis.eval(commitRecoveryScript, [`${tokenPrefix}${hashToken(token)}`, epochKey, credentialKey, credentialStateKey, receiptKey], [hash, hashToken(password), recoveryReceiptTtlSeconds]);
+    if (Number(result) === -2) return { status: "operation_conflict" as const };
     if (Number(result) === 0 || Number(result) === -1) return { status: "invalid_or_expired" as const };
     return { status: "committed" as const, credentialEpoch: Number(result) };
   } catch { return { status: "storage_unavailable" as const }; }
