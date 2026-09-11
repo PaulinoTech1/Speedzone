@@ -1,8 +1,6 @@
 [
-  "/test-drive",
   "/admin/forgot-password",
   "/admin/login",
-  "/admin",
   "/admin/reset-password",
   "/admin/setup",
   "/api/admin/auth/bootstrap/options",
@@ -35,7 +33,6 @@
   "/api/admin/uploads",
   "/api/auth/get-session",
   "/api/recall-check",
-  "/api/test-drive",
   "/api/trade-in",
   "/api/vin-decode",
   "/api/auth/sign-in/email",

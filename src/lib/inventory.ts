@@ -17,7 +17,32 @@ export type Vehicle = {
 
 const catalogPath = "inventory/inventory.json";
 
+const browserFixture: Vehicle = {
+  id: "e2e-honda-civic",
+  year: 2022,
+  make: "Honda",
+  model: "Civic",
+  price: 18_000,
+  mileage: 32_000,
+  condition: "Used",
+  description: "Synthetic browser-test inventory fixture.",
+  status: "available",
+  photos: [],
+  createdAt: "2026-09-09T00:00:00.000Z",
+};
+
+function readBrowserFixture(): Vehicle[] | null {
+  if (process.env.SPEEDZONE_E2E !== "1" || process.env.VERCEL) return null;
+  const mode = process.env.INVENTORY_E2E_FIXTURE;
+  if (!mode) return null;
+  if (mode === "failure") throw new Error("Synthetic inventory storage failure");
+  return mode === "empty" ? [] : [browserFixture];
+}
+
 export async function readInventory(): Promise<Vehicle[]> {
+  const fixture = readBrowserFixture();
+  if (fixture) return fixture;
+
   const { blobs } = await list({ prefix: catalogPath, limit: 1 });
   const catalog = blobs.find((blob) => blob.pathname === catalogPath);
   if (!catalog) return [];

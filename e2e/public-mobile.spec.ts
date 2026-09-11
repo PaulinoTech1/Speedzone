@@ -38,7 +38,13 @@ test.describe("mobile public site", () => {
     await expectNoHorizontalOverflow(page);
 
     await expect(page.getByRole("link", { name: "Administrator sign in" })).toHaveCount(0);
-    await expect(page.locator('a[href="/test-drive"]')).toHaveCount(0);
+
+    const testDriveLink = page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Test drive" });
+    await expect(testDriveLink).toHaveAttribute("href", "/test-drive");
+    await testDriveLink.click();
+    await expect(page).toHaveURL(/\/test-drive$/);
+    await expect(page.getByRole("heading", { level: 1, name: /Find out how it feels behind the wheel/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Request a test drive" })).toBeVisible();
   });
 
   test("Road Trip exposes 16 low-cost stops and expandable planning details", async ({ page }) => {
