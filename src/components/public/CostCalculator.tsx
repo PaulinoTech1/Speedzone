@@ -59,7 +59,7 @@ export function CostCalculator() {
             <td>{usd.format(breakdown.inspectionFee)}</td>
           </tr>
           <tr>
-            <th scope="row">Documentation fee</th>
+            <th scope="row">Dealer documentation fee</th>
             <td>{usd.format(breakdown.documentationFee)}</td>
           </tr>
         </tbody>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   handleUpload: vi.fn<(options: unknown) => Promise<unknown>>(),
@@ -25,9 +25,17 @@ function tokenRequest(pathname: string) {
 }
 
 describe("inventory photo upload route", () => {
+  const originalOrigin = process.env.INVENTORY_BLOB_ORIGIN;
+
   beforeEach(() => {
     mocks.handleUpload.mockReset();
     mocks.isAdmin.mockReset();
+    process.env.INVENTORY_BLOB_ORIGIN = "https://speedzone.public.blob.vercel-storage.com";
+  });
+
+  afterEach(() => {
+    if (originalOrigin === undefined) delete process.env.INVENTORY_BLOB_ORIGIN;
+    else process.env.INVENTORY_BLOB_ORIGIN = originalOrigin;
   });
 
   it("does not issue an upload token without an admin session", async () => {
