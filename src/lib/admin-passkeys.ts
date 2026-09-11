@@ -6,7 +6,7 @@ import {
   type AuthenticatorTransport,
   type CredentialDeviceType,
 } from "@simplewebauthn/server";
-import { isAdmin } from "@/lib/admin-auth";
+import { isAdmin, isAdminSetup } from "@/lib/admin-auth";
 import { getCredentialEpoch, parseCredentialEpoch } from "@/lib/admin-recovery";
 import { getRedis } from "@/lib/redis";
 
@@ -103,7 +103,7 @@ export async function deletePasskey(id: string) {
   return Number(result) === 1 ? { deleted: true } : { deleted: false, reason: "Passkey changed; retry" };
 }
 export async function registrationOptions(config: WebAuthnConfig) {
-  if (!(await isAdmin())) return { error: "Unauthorized" as const };
+  if (!(await isAdminSetup()) && !(await isAdmin())) return { error: "Unauthorized" as const };
   const client = redis(); const credentials = await getCredentials(); const epoch = await getCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey storage is not configured" as const };
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "admin@speedzonemotorsports", userDisplayName: "SpeedZone admin", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: credentials.filter((item) => item.credentialEpoch === epoch).map((item) => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
@@ -111,7 +111,7 @@ export async function registrationOptions(config: WebAuthnConfig) {
   return { options };
 }
 export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig) {
-  if (!(await isAdmin())) return { error: "Unauthorized" as const };
+  if (!(await isAdminSetup()) && !(await isAdmin())) return { error: "Unauthorized" as const };
   const client = redis(); if (!client) return { error: "Passkey storage is not configured" as const };
   try {
     const clientData = (response as { response?: { clientDataJSON?: string } }).response?.clientDataJSON;
@@ -124,7 +124,7 @@ export async function verifyRegistration(response: unknown, name: string, config
     const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
     const stored: StoredCredential = { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"), counter: credential.counter, deviceType: credentialDeviceType, backedUp: credentialBackedUp, name: name || "Unnamed passkey", credentialEpoch: record.credentialEpoch };
     const result = await client.eval(registrationCommitScript, [credentialsKey, epochKey, challengeKey("registration", challenge)], [String(record.credentialEpoch), record.challenge, JSON.stringify(stored)]);
-    return Number(result) === 1 ? { verified: true } : { error: "Passkey setup expired" as const };
+    return Number(result) === 1 ? { verified: true, credentialEpoch: record.credentialEpoch } : { error: "Passkey setup expired" as const };
   } catch { return { error: "Passkey could not be verified" as const }; }
 }
 export async function authenticationOptions(config: WebAuthnConfig) {
