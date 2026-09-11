@@ -93,6 +93,10 @@ export async function revokeAllPasskeysAndChallenges() {
   return true;
 }
 export type AdminPasskeySummary = { id: string; deviceType: string; backedUp: boolean; name: string };
+export async function hasCurrentPasskey() {
+  const [credentials, epoch] = await Promise.all([getCredentials(), getCredentialEpoch()]);
+  return credentials?.some((credential) => credential.credentialEpoch === epoch) ?? false;
+}
 export async function listPasskeys(): Promise<AdminPasskeySummary[]> { return (await getCredentials() ?? []).map(({ id, deviceType, backedUp, name }) => ({ id, deviceType, backedUp, name })); }
 export async function deletePasskey(id: string) {
   const client = redis(); const credentials = await getCredentials(); const epoch = await getCredentialEpoch();
@@ -103,7 +107,9 @@ export async function deletePasskey(id: string) {
   return Number(result) === 1 ? { deleted: true } : { deleted: false, reason: "Passkey changed; retry" };
 }
 export async function registrationOptions(config: WebAuthnConfig) {
-  if (!(await isAdminSetup()) && !(await isAdmin())) return { error: "Unauthorized" as const };
+  const admin = await isAdmin();
+  if (!admin && !(await isAdminSetup())) return { error: "Unauthorized" as const };
+  if (!admin && await hasCurrentPasskey()) return { error: "Passkey enrollment is already complete" as const };
   const client = redis(); const credentials = await getCredentials(); const epoch = await getCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey storage is not configured" as const };
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "admin@speedzonemotorsports", userDisplayName: "SpeedZone admin", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: credentials.filter((item) => item.credentialEpoch === epoch).map((item) => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
@@ -111,7 +117,9 @@ export async function registrationOptions(config: WebAuthnConfig) {
   return { options };
 }
 export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig) {
-  if (!(await isAdminSetup()) && !(await isAdmin())) return { error: "Unauthorized" as const };
+  const admin = await isAdmin();
+  if (!admin && !(await isAdminSetup())) return { error: "Unauthorized" as const };
+  if (!admin && await hasCurrentPasskey()) return { error: "Passkey enrollment is already complete" as const };
   const client = redis(); if (!client) return { error: "Passkey storage is not configured" as const };
   try {
     const clientData = (response as { response?: { clientDataJSON?: string } }).response?.clientDataJSON;
