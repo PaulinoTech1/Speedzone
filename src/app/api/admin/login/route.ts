@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { adminCookieOptions, clearAdminCookie, createAdminSession, revokeAdminSession } from "@/lib/admin-auth";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { verifyAdminPassword } from "@/lib/admin-recovery";
+import { hasCurrentPasskey } from "@/lib/admin-passkeys";
 
 function getClientIdentifier(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -35,6 +36,9 @@ export async function POST(request: Request) {
   const verification = await verifyAdminPassword(password);
   if (!verification.verified) {
     return NextResponse.json({ error: verification.reason === "unavailable" ? "Admin authentication is temporarily unavailable" : "Invalid password" }, { status: verification.reason === "unavailable" ? 503 : 401 });
+  }
+  if (await hasCurrentPasskey()) {
+    return NextResponse.json({ error: "Passkey sign-in is required" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
   const session = await createAdminSession(verification.credentialEpoch, "setup");
   if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
