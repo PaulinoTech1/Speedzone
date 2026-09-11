@@ -46,14 +46,23 @@ return tonumber(epoch)
 `;
 
 function hashToken(token: string) { return createHash("sha256").update(token).digest("hex"); }
+export function parseCredentialEpoch(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 && String(parsed) === value ? parsed : null;
+}
+
 function parseSnapshot(value: unknown): CredentialSnapshot | null {
   if (!Array.isArray(value) || value.length !== 5) return null;
-  return { current: value[0] == null ? null : String(value[0]), legacyOverride: value[1] == null ? null : String(value[1]), legacyCredential: value[2] == null ? null : String(value[2]), state: value[3] == null ? null : String(value[3]), epoch: value[4] == null ? null : String(value[4]) };
+  const rawEpoch = value[4];
+  const parsedEpoch = rawEpoch == null ? null : parseCredentialEpoch(rawEpoch);
+  return { current: value[0] == null ? null : String(value[0]), legacyOverride: value[1] == null ? null : String(value[1]), legacyCredential: value[2] == null ? null : String(value[2]), state: value[3] == null ? null : String(value[3]), epoch: rawEpoch == null ? null : parsedEpoch === null ? String(rawEpoch) : String(parsedEpoch) };
 }
 function validEpoch(value: string | null): value is string {
-  if (value === null || !/^[1-9]\d*$/.test(value)) return false;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 && String(parsed) === value;
+  return parseCredentialEpoch(value) !== null;
 }
 function classify(snapshot: CredentialSnapshot): CredentialState {
   const hasLegacy = Boolean(snapshot.legacyOverride || snapshot.legacyCredential);
@@ -100,7 +109,11 @@ export async function consumeRecoveryToken(token: unknown) {
 }
 async function hashPassword(password: string) { return argon2.hash(password, { type: argon2.argon2id }); }
 export async function replaceAdminPassword(password: string) { const redis = getRedis(); if (!redis || password.length < 12) return null; try { const hash = await hashPassword(password); const result = await redis.eval("local e = tonumber(redis.call('GET', KEYS[2]) or '0') + 1; redis.call('SET', KEYS[1], ARGV[1]); redis.call('SET', KEYS[3], 'initialized'); redis.call('SET', KEYS[2], tostring(e)); return e", [credentialKey, epochKey, credentialStateKey], [hash]); return Number(result) > 0 ? Number(result) : null; } catch { return null; } }
-export async function getCredentialEpoch() { const redis = getRedis(); if (!redis) return null; const value = await redis.get<string>(epochKey); return value && validEpoch(value) ? Number(value) : null; }
+export async function getCredentialEpoch() {
+  const redis = getRedis();
+  if (!redis) return null;
+  return parseCredentialEpoch(await redis.get<unknown>(epochKey));
+}
 
 export async function verifyAdminPassword(password: string): Promise<PasswordVerification> {
   if (typeof password !== "string" || password.length > 256) return { verified: false, reason: "invalid" };

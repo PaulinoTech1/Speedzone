@@ -7,7 +7,7 @@ import {
   type CredentialDeviceType,
 } from "@simplewebauthn/server";
 import { isAdmin } from "@/lib/admin-auth";
-import { getCredentialEpoch } from "@/lib/admin-recovery";
+import { getCredentialEpoch, parseCredentialEpoch } from "@/lib/admin-recovery";
 import { getRedis } from "@/lib/redis";
 
 const rpName = "SpeedZone Motorsports";
@@ -38,13 +38,13 @@ async function getCredentials() {
   if (!client) return null;
   const value = await client.get<StoredCredential[]>(credentialsKey);
   if (!value) return [];
-  return Array.isArray(value) && value.every((item) => item && typeof item.id === "string" && typeof item.publicKey === "string" && typeof item.counter === "number" && Number.isInteger(item.credentialEpoch)) ? value : null;
+  return Array.isArray(value) && value.every((item) => item && typeof item.id === "string" && typeof item.publicKey === "string" && typeof item.counter === "number" && parseCredentialEpoch(item.credentialEpoch) !== null) ? value : null;
 }
 async function getChallenge(kind: "registration" | "authentication", challenge: string) {
   const client = redis();
   if (!client) return null;
   const record = await client.get<ChallengeRecord>(challengeKey(kind, challenge));
-  return record && record.challenge === challenge && Number.isInteger(record.credentialEpoch) && typeof record.createdAt === "number" ? record : null;
+  return record && record.challenge === challenge && parseCredentialEpoch(record.credentialEpoch) !== null && typeof record.createdAt === "number" ? record : null;
 }
 const registrationCommitScript = `
 local epoch = redis.call('GET', KEYS[2])
