@@ -12,7 +12,7 @@ const credentialStateKey = "speedzone:admin-credential-state:v1";
 const epochKey = "speedzone:admin-credential-epoch";
 const tokenLength = 43;
 const operationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const receiptPrefix = "speedzone:admin-recovery-receipt:v1:";
+const receiptPrefix = "speedzone:admin-recovery-receipt:v2:";
 const recoveryReceiptTtlSeconds = 24 * 60 * 60;
 
 type CredentialSnapshot = {
@@ -92,7 +92,7 @@ const commitRecoveryScript = `
 local receipt = redis.call('GET', KEYS[5])
 if receipt then
   local saved = cjson.decode(receipt)
-  if saved.attemptBinding == ARGV[2] then return tonumber(saved.epoch) end
+  if saved.version == 2 and saved.operationId == ARGV[2] and saved.tokenHash == ARGV[3] then return -3 end
   return -2
 end
 local raw = redis.call('GET', KEYS[1])
@@ -104,7 +104,7 @@ local nextEpoch = tonumber(epoch) + 1
 redis.call('SET', KEYS[3], ARGV[1])
 redis.call('SET', KEYS[4], 'initialized')
 redis.call('SET', KEYS[2], tostring(nextEpoch))
-redis.call('SET', KEYS[5], cjson.encode({ version = 1, epoch = nextEpoch, attemptBinding = ARGV[2] }), 'EX', ARGV[3])
+redis.call('SET', KEYS[5], cjson.encode({ version = 2, epoch = nextEpoch, operationId = ARGV[2], tokenHash = ARGV[3], createdAt = ARGV[4] }), 'EX', ARGV[3])
 redis.call('DEL', KEYS[1])
 return nextEpoch
 `;
@@ -137,8 +137,17 @@ export async function resetAdminPasswordWithToken(token: unknown, password: stri
   try {
     const hash = await hashPassword(password);
     const receiptKey = `${receiptPrefix}${hashToken(operationId)}`;
-    const result = await redis.eval(commitRecoveryScript, [`${tokenPrefix}${hashToken(token)}`, epochKey, credentialKey, credentialStateKey, receiptKey], [hash, hashToken(`${operationId}:${password}`), recoveryReceiptTtlSeconds]);
+    const result = await redis.eval(commitRecoveryScript, [`${tokenPrefix}${hashToken(token)}`, epochKey, credentialKey, credentialStateKey, receiptKey], [hash, operationId, hashToken(token), String(Date.now()), recoveryReceiptTtlSeconds]);
     if (Number(result) === -2) return { status: "operation_conflict" as const };
+    if (Number(result) === -3) {
+      const current = await redis.get<string>(credentialKey);
+      if (!current) return { status: "storage_unavailable" as const };
+      let matches = false;
+      try { matches = await argon2.verify(current, password); } catch { return { status: "storage_unavailable" as const }; }
+      const currentEpoch = await getCredentialEpoch();
+      if (!currentEpoch) return { status: "storage_unavailable" as const };
+      return matches ? { status: "committed" as const, credentialEpoch: currentEpoch } : { status: "operation_conflict" as const };
+    }
     if (Number(result) === 0 || Number(result) === -1) return { status: "invalid_or_expired" as const };
     return { status: "committed" as const, credentialEpoch: Number(result) };
   } catch { return { status: "storage_unavailable" as const }; }
