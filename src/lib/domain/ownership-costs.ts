@@ -5,7 +5,8 @@
  * standard two-year passenger-plate fee; inspection is the annual safety and
  * emissions test performed at a licensed station, not by the RMV. Excise tax
  * is billed separately by the buyer's city or town and is deliberately not
- * folded into this up-front estimate.
+ * folded into this up-front estimate. The documentation fee is a clearly
+ * labeled dealer fee, not a Massachusetts government charge.
  */
 export const massachusettsFees = {
   salesTaxRate: 0.0625,

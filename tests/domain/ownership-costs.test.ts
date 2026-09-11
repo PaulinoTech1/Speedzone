@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { estimateUpfrontCost, massachusettsFees } from "@/lib/domain/ownership-costs";
 
 const fixedFees =
-  massachusettsFees.titleFee + massachusettsFees.registrationFee + massachusettsFees.inspectionFee;
+  massachusettsFees.titleFee +
+  massachusettsFees.registrationFee +
+  massachusettsFees.inspectionFee +
+  massachusettsFees.documentationFee;
 
 describe("estimateUpfrontCost", () => {
   it("applies the Massachusetts 6.25% rate plus fixed RMV fees", () => {
