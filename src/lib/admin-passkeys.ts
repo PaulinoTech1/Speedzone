@@ -54,6 +54,11 @@ local challenge = raw and cjson.decode(raw).challenge
 if not challenge or challenge ~= ARGV[2] then return 0 end
 local existing = redis.call('GET', KEYS[1])
 local credentials = existing and cjson.decode(existing) or {}
+local currentCount = 0
+for _, item in ipairs(credentials) do
+  if tostring(item.credentialEpoch) == ARGV[1] then currentCount = currentCount + 1 end
+end
+if ARGV[4] == 'initial' and currentCount > 0 then return -2 end
 table.insert(credentials, cjson.decode(ARGV[3]))
 redis.call('SET', KEYS[1], cjson.encode(credentials))
 redis.call('DEL', KEYS[3])
@@ -102,9 +107,11 @@ export async function deletePasskey(id: string) {
   const client = redis(); const credentials = await getCredentials(); const epoch = await getCredentialEpoch();
   if (!client || !credentials || epoch === null) return { deleted: false, reason: "Passkey storage unavailable" };
   if (!credentials.some((credential) => credential.id === id)) return { deleted: false, reason: "Passkey not found" };
+  const current = credentials.filter((credential) => credential.credentialEpoch === epoch);
+  if (current.length <= 1 && current.some((credential) => credential.id === id)) return { deleted: false, reason: "The final active passkey cannot be removed" };
   const next = credentials.filter((credential) => credential.id !== id);
-  const result = await client.eval("local epoch = redis.call('GET', KEYS[2]); if not epoch or epoch ~= ARGV[1] then return 0 end; local current = redis.call('GET', KEYS[1]); if not current or current ~= ARGV[2] then return 0 end; redis.call('SET', KEYS[1], ARGV[3]); return 1", [credentialsKey, epochKey], [String(epoch), JSON.stringify(credentials), JSON.stringify(next)]);
-  return Number(result) === 1 ? { deleted: true } : { deleted: false, reason: "Passkey changed; retry" };
+  const result = await client.eval("local epoch = redis.call('GET', KEYS[2]); if not epoch or epoch ~= ARGV[1] then return 0 end; local current = redis.call('GET', KEYS[1]); if not current or current ~= ARGV[2] then return 0 end; local parsed = cjson.decode(current); local active = 0; for _, item in ipairs(parsed) do if tostring(item.credentialEpoch) == ARGV[1] then active = active + 1 end end; if active <= 1 then return -2 end; redis.call('SET', KEYS[1], ARGV[3]); return 1", [credentialsKey, epochKey], [String(epoch), JSON.stringify(credentials), JSON.stringify(next)]);
+  return Number(result) === 1 ? { deleted: true } : { deleted: false, reason: Number(result) === -2 ? "The final active passkey cannot be removed" : "Passkey changed; retry" };
 }
 export async function registrationOptions(config: WebAuthnConfig) {
   const admin = await isAdmin();
@@ -131,7 +138,8 @@ export async function verifyRegistration(response: unknown, name: string, config
     if (!verification.verified || !verification.registrationInfo) return { error: "Passkey could not be verified" as const };
     const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
     const stored: StoredCredential = { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"), counter: credential.counter, deviceType: credentialDeviceType, backedUp: credentialBackedUp, name: name || "Unnamed passkey", credentialEpoch: record.credentialEpoch };
-    const result = await client.eval(registrationCommitScript, [credentialsKey, epochKey, challengeKey("registration", challenge)], [String(record.credentialEpoch), record.challenge, JSON.stringify(stored)]);
+    const result = await client.eval(registrationCommitScript, [credentialsKey, epochKey, challengeKey("registration", challenge)], [String(record.credentialEpoch), record.challenge, JSON.stringify(stored), admin ? "managed" : "initial"]);
+    if (Number(result) === -2) return { error: "Passkey enrollment is already complete" as const };
     return Number(result) === 1 ? { verified: true, credentialEpoch: record.credentialEpoch } : { error: "Passkey setup expired" as const };
   } catch { return { error: "Passkey could not be verified" as const }; }
 }
