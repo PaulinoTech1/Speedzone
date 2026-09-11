@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { revokeAllAdminSessions } from "@/lib/admin-auth";
-import { consumeRecoveryToken, replaceAdminPassword } from "@/lib/admin-recovery";
-import { revokeAllPasskeysAndChallenges } from "@/lib/admin-passkeys";
+import { resetAdminPasswordWithToken } from "@/lib/admin-recovery";
 
 export async function POST(request: Request) {
+  const client = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const limit = await checkAdminLoginRateLimit(`recovery-reset:${client}`);
+  if (!limit.configured) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  if (!limit.success) return NextResponse.json({ error: "Too many recovery attempts. Try again later." }, { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": String(limit.retryAfter) } });
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     return NextResponse.json({ error: "JSON request required" }, { status: 415, headers: { "Cache-Control": "no-store" } });
   }
@@ -15,20 +19,17 @@ export async function POST(request: Request) {
   const password = typeof body.password === "string" ? body.password : "";
   if (password.length < 12 || password.length > 128) return NextResponse.json({ error: "Password must be between 12 and 128 characters." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   if (!/\S/.test(password)) return NextResponse.json({ error: "Password cannot be blank." }, { status: 400, headers: { "Cache-Control": "no-store" } });
-  const consumption = await consumeRecoveryToken(token);
-  if (consumption.status === "invalid_or_expired") {
+  const commit = await resetAdminPasswordWithToken(token, password);
+  if (commit.status === "invalid_or_expired" || commit.status === "invalid") {
     return NextResponse.json({ error: "This recovery link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
-  if (consumption.status === "storage_unavailable") {
+  if (commit.status === "storage_unavailable") {
     return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
   try {
-    const saved = await replaceAdminPassword(password);
-    if (!saved || !(await revokeAllPasskeysAndChallenges())) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
     await revokeAllAdminSessions();
   } catch {
-    console.warn("[recovery] failed after token consumption");
-    return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    console.warn("[recovery] credential committed; session revocation needs reconciliation");
   }
   console.info("[recovery] password recovery completed");
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

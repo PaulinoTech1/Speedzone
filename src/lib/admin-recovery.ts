@@ -85,6 +85,19 @@ if tostring(record.epoch) ~= epoch then redis.call('DEL', KEYS[1]); return -1 en
 redis.call('DEL', KEYS[1])
 return 1
 `;
+const commitRecoveryScript = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local record = cjson.decode(raw)
+local epoch = redis.call('GET', KEYS[2]) or '0'
+if tostring(record.epoch) ~= epoch then redis.call('DEL', KEYS[1]); return -1 end
+local nextEpoch = tonumber(epoch) + 1
+redis.call('SET', KEYS[3], ARGV[1])
+redis.call('SET', KEYS[4], 'initialized')
+redis.call('SET', KEYS[2], tostring(nextEpoch))
+redis.call('DEL', KEYS[1])
+return nextEpoch
+`;
 
 export async function createRecoveryToken() {
   const redis = getRedis();
@@ -105,6 +118,17 @@ export async function consumeRecoveryToken(token: unknown) {
   try {
     const consumed = await redis.eval(consumeRecoveryTokenScript, [`${tokenPrefix}${hashToken(token)}`, epochKey], []);
     return Number(consumed) === 1 ? { status: "consumed" as const } : { status: "invalid_or_expired" as const };
+  } catch { return { status: "storage_unavailable" as const }; }
+}
+
+export async function resetAdminPasswordWithToken(token: unknown, password: string) {
+  if (typeof token !== "string" || token.length !== tokenLength || !/^[A-Za-z0-9_-]+$/.test(token) || password.length < 12 || password.length > 128) return { status: "invalid" as const };
+  const redis = getRedis(); if (!redis) return { status: "storage_unavailable" as const };
+  try {
+    const hash = await hashPassword(password);
+    const result = await redis.eval(commitRecoveryScript, [`${tokenPrefix}${hashToken(token)}`, epochKey, credentialKey, credentialStateKey], [hash]);
+    if (Number(result) === 0 || Number(result) === -1) return { status: "invalid_or_expired" as const };
+    return { status: "committed" as const, credentialEpoch: Number(result) };
   } catch { return { status: "storage_unavailable" as const }; }
 }
 async function hashPassword(password: string) { return argon2.hash(password, { type: argon2.argon2id }); }
