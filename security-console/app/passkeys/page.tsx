@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function PasskeysPage(){return <main><header><div><p className="eyebrow">Credential management</p><h1>Passkeys</h1><p className="muted">Recent-auth required. The final usable passkey cannot be removed.</p></div><Link href="/">Back to events</Link></header><section className="panel"><p className="danger">Passkey management is unavailable until the independent security session service is configured.</p></section></main>}
