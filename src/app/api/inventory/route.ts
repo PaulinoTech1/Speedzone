@@ -81,12 +81,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Selected photo does not belong to this listing" }, { status: 400 });
     }
     const updatedVehicle = { ...vehicle, photos: vehicle.photos.filter((photo) => !selectedPhotos.includes(photo)) };
-    await Promise.all(selectedPhotos.map((url) => del(url).catch(() => undefined)));
+    await Promise.all(selectedPhotos.filter(isInventoryPhotoBlobOriginUrl).map((url) => del(url).catch(() => undefined)));
     await writeInventory(vehicles.map((item) => item.id === vehicle.id ? updatedVehicle : item));
     return NextResponse.json(updatedVehicle);
   }
 
-  await Promise.all(vehicle.photos.map((url) => del(url).catch(() => undefined)));
+  await Promise.all(vehicle.photos.filter(isInventoryPhotoBlobOriginUrl).map((url) => del(url).catch(() => undefined)));
   await writeInventory(vehicles.filter((item) => item.id !== body.id));
   return NextResponse.json({ ok: true });
 }
