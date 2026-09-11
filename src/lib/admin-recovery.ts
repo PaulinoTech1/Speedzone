@@ -50,14 +50,18 @@ function parseSnapshot(value: unknown): CredentialSnapshot | null {
   if (!Array.isArray(value) || value.length !== 5) return null;
   return { current: value[0] == null ? null : String(value[0]), legacyOverride: value[1] == null ? null : String(value[1]), legacyCredential: value[2] == null ? null : String(value[2]), state: value[3] == null ? null : String(value[3]), epoch: value[4] == null ? null : String(value[4]) };
 }
-function validEpoch(value: string | null) { return value === null || /^(0|[1-9]\d*)$/.test(value); }
+function validEpoch(value: string | null): value is string {
+  if (value === null || !/^[1-9]\d*$/.test(value)) return false;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 && String(parsed) === value;
+}
 function classify(snapshot: CredentialSnapshot): CredentialState {
   const hasLegacy = Boolean(snapshot.legacyOverride || snapshot.legacyCredential);
-  if (!validEpoch(snapshot.epoch) || (snapshot.state !== null && snapshot.state !== "initialized" && snapshot.state !== "uninitialized")) return "corrupt";
+  if ((snapshot.state !== null && snapshot.state !== "initialized" && snapshot.state !== "uninitialized") || (snapshot.epoch !== null && !validEpoch(snapshot.epoch))) return "corrupt";
   if (snapshot.legacyOverride && snapshot.legacyCredential && snapshot.legacyOverride !== snapshot.legacyCredential) return "conflicting";
-  if (snapshot.current) return snapshot.state === "initialized" && snapshot.epoch && Number(snapshot.epoch) > 0 ? "current_complete" : "current_missing_metadata";
+  if (snapshot.current) return snapshot.state === "initialized" && snapshot.epoch !== null && validEpoch(snapshot.epoch) ? "current_complete" : "current_missing_metadata";
   if (hasLegacy) return "legacy";
-  return snapshot.state === "initialized" || (snapshot.epoch && Number(snapshot.epoch) > 0) ? "corrupt" : "fresh";
+  return snapshot.state === "initialized" || snapshot.epoch !== null ? "corrupt" : "fresh";
 }
 function keys() { return [credentialKey, legacyOverrideKey, legacyCredentialKey, credentialStateKey, epochKey]; }
 async function snapshot(redis: NonNullable<ReturnType<typeof getRedis>>) { return parseSnapshot(await redis.eval(snapshotScript, keys(), [])); }
@@ -74,6 +78,7 @@ export async function replaceAdminPassword(password: string) { const redis = get
 export async function getCredentialEpoch() { const redis = getRedis(); if (!redis) return null; const value = await redis.get<string>(epochKey); return value && validEpoch(value) ? Number(value) : null; }
 
 export async function verifyAdminPassword(password: string): Promise<PasswordVerification> {
+  if (typeof password !== "string" || password.length > 256) return { verified: false, reason: "invalid" };
   const redis = getRedis(); if (!redis) return { verified: false, reason: "unavailable" };
   try {
     const snap = await snapshot(redis); if (!snap) return { verified: false, reason: "unavailable" };
@@ -83,11 +88,11 @@ export async function verifyAdminPassword(password: string): Promise<PasswordVer
       if (!valid) return { verified: false, reason: "invalid" };
       if (state === "current_missing_metadata") {
         const result = await redis.eval(backfillScript, [credentialKey, credentialStateKey, epochKey], [snap.current!]);
-        if (Number(result) <= 0) { const after = await snapshot(redis); if (!after || after.current !== snap.current || classify(after) === "corrupt") return { verified: false, reason: "recovery_required" }; }
-        const persistedEpoch = Number(result) > 0 ? Number(result) : await getCredentialEpoch();
-        return persistedEpoch && persistedEpoch > 0 ? { verified: true, credentialEpoch: persistedEpoch } : { verified: false, reason: "recovery_required" };
+        if (Number(result) <= 0) return { verified: false, reason: "recovery_required" };
+        return { verified: true, credentialEpoch: Number(result) };
       }
-      const epoch = await getCredentialEpoch(); return epoch && epoch > 0 ? { verified: true, credentialEpoch: epoch } : { verified: false, reason: "recovery_required" };
+      if (!snap.epoch || !validEpoch(snap.epoch)) return { verified: false, reason: "recovery_required" };
+      return { verified: true, credentialEpoch: Number(snap.epoch) };
     }
     if (state === "legacy") {
       const selected = snap.legacyOverride ?? snap.legacyCredential; if (!selected || (snap.legacyOverride && snap.legacyCredential && snap.legacyOverride !== snap.legacyCredential) || selected !== password) return { verified: false, reason: "invalid" };
@@ -101,7 +106,6 @@ export async function verifyAdminPassword(password: string): Promise<PasswordVer
     const hash = await hashPassword(password);
     const result = await redis.eval(initializeScript, keys(), [hash]);
     if (Number(result) === 1) return { verified: true, credentialEpoch: 1 };
-    const after = await snapshot(redis); if (after?.current) { try { if (await argon2.verify(after.current, password)) { const epoch = validEpoch(after.epoch) && after.epoch ? Number(after.epoch) : null; if (epoch && epoch > 0) return { verified: true, credentialEpoch: epoch }; } } catch { /* fail closed */ } }
     return { verified: false, reason: "recovery_required" };
   } catch { return { verified: false, reason: "unavailable" }; }
 }
