@@ -4,7 +4,13 @@ import { consumeRecoveryToken, replaceAdminPassword } from "@/lib/admin-recovery
 import { revokeAllPasskeysAndChallenges } from "@/lib/admin-passkeys";
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({}));
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    return NextResponse.json({ error: "JSON request required" }, { status: 415, headers: { "Cache-Control": "no-store" } });
+  }
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid recovery request." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
   const token = typeof body.token === "string" ? body.token : "";
   const password = typeof body.password === "string" ? body.password : "";
   if (password.length < 12 || password.length > 128) return NextResponse.json({ error: "Password must be between 12 and 128 characters." }, { status: 400, headers: { "Cache-Control": "no-store" } });
