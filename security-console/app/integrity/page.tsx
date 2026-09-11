@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function IntegrityPage(){return <main><header><div><p className="eyebrow">Verification</p><h1>Integrity status</h1><p className="muted">Chain verification is reported conservatively.</p></div><Link href="/">Back to events</Link></header><section className="panel"><h2>Unavailable until archive is connected</h2><p className="danger">No provider, archive, or KMS verification configuration is present in this local surface. The console will not claim integrity success.</p></section></main>}

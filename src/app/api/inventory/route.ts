@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { appendVehiclePhotos, readInventory, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
 import { isAdmin } from "@/lib/admin-auth";
 import { isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
+import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
 export async function GET() {
   try {
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
     const vehicle = sanitizeVehicleInput(payload, photos);
     const vehicles = await readInventory();
     await writeInventory([vehicle, ...vehicles]);
+    await writeSecurityEvent({ ...securityRequestContext(request), event: "inventory.mutation", outcome: "allowed", actor: "admin", reason: "vehicle_created", metadata: { photo_count: photos.length } });
     return NextResponse.json(vehicle, { status: 201 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to save vehicle" }, { status: 400 }); }
 }

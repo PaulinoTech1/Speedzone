@@ -4,6 +4,7 @@ import { adminCookieOptions, clearAdminCookie, createAdminSession, revokeAdminSe
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { verifyAdminPassword } from "@/lib/admin-recovery";
 import { hasCurrentPasskey } from "@/lib/admin-passkeys";
+import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
 function getClientIdentifier(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
   const { password } = await request.json().catch(() => ({}));
   if (typeof password !== "string") return NextResponse.json({ error: "Invalid password" }, { status: 401 });
   const verification = await verifyAdminPassword(password);
+  const context = securityRequestContext(request);
+  await writeSecurityEvent({ ...context, event: "admin.login", outcome: verification.verified ? "allowed" : verification.reason === "unavailable" ? "unavailable" : "denied", actor: "anonymous", reason: verification.verified ? "password_verified" : verification.reason || "invalid_credentials" });
   if (!verification.verified) {
     return NextResponse.json({ error: verification.reason === "unavailable" ? "Admin authentication is temporarily unavailable" : "Invalid password" }, { status: verification.reason === "unavailable" ? 503 : 401 });
   }

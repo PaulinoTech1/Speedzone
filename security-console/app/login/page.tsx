@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function LoginPage(){return <main><header><div><p className="eyebrow">Independent trust boundary</p><h1>Security console</h1><p className="muted">Passkey-only access. Inventory admin cookies are not accepted.</p></div><Link href="/setup">Bootstrap setup</Link></header><section className="panel"><h2>Authentication is not configured in this local preview</h2><p className="danger">Configure the separate security Redis, WebAuthn origin/RP ID, and passkey session service before enabling access.</p></section></main>}

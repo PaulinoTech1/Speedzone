@@ -7,6 +7,7 @@ import {
   isInventoryPhotoPath,
   maxInventoryPhotoSize,
 } from "@/lib/inventory-photos";
+import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
 export async function POST(request: Request) {
   let parsedBody: unknown;
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
       }),
     });
 
+    await writeSecurityEvent({ ...securityRequestContext(request), event: "inventory.upload", outcome: "allowed", actor: "admin", reason: "upload_token_issued" });
     return NextResponse.json(response, { headers: privateResponseHeaders() });
   } catch (error) {
     console.error("[inventory] unable to issue photo upload token", error);

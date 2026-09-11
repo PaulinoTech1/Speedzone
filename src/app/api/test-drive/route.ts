@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 import { getRequestKeys, limitTestDriveSubmission } from "@/lib/test-drive-rate-limit";
 import { encryptTestDrivePayload } from "@/lib/test-drive-crypto";
+import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
 const privateToken = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN;
 
@@ -95,6 +96,7 @@ export async function POST(request: Request) {
       console.error("[v0] test-drive notification is not configured");
     }
 
+    await writeSecurityEvent({ ...securityRequestContext(request), event: "test-drive.submission", outcome: "allowed", actor: "anonymous", reason: "encrypted_submission_stored" });
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (error) {
     console.error("[v0] test-drive submission failed", error);

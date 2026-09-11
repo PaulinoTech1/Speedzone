@@ -1,0 +1,5 @@
+import { Redis } from "@upstash/redis";
+export type SecurityEvent = { id:string; occurredAt:string; event:string; outcome:string; actor:string; route:string; requestId:string; hash:string; reason?:string };
+export function securityRedis() { const url=process.env.SECURITY_KV_REST_API_URL; const token=process.env.SECURITY_KV_REST_API_TOKEN; return url && token ? new Redis({url,token}) : null; }
+export async function readEvents() { const redis=securityRedis(); if(!redis) throw new Error("SECURITY_KV_REST_API_URL and SECURITY_KV_REST_API_TOKEN are required"); const ids=await redis.lrange<string>("speedzone:security:event-index",0,99); const events=await Promise.all(ids.map(id=>redis.get<SecurityEvent>(`speedzone:security:event:${id}`))); return events.filter((event):event is SecurityEvent=>Boolean(event)); }
+export async function readEvent(id:string) { const redis=securityRedis(); if(!redis) throw new Error("Security store unavailable"); return redis.get<SecurityEvent>(`speedzone:security:event:${id}`); }
