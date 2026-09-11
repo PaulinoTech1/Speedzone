@@ -24,6 +24,9 @@ export async function POST(request: Request) {
   if (commit.status === "operation_conflict") {
     return NextResponse.json({ error: "This recovery operation was already used with a different password." }, { status: 409, headers: { "Cache-Control": "no-store" } });
   }
+  if (commit.status === "superseded") {
+    return NextResponse.json({ error: "A later credential change superseded this recovery operation. Sign in with the current password or request a new recovery link." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  }
   if (commit.status === "invalid_or_expired" || commit.status === "invalid") {
     return NextResponse.json({ error: "This recovery link is invalid or expired." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }

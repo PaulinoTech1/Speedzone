@@ -88,23 +88,41 @@ if tostring(record.epoch) ~= epoch then redis.call('DEL', KEYS[1]); return -1 en
 redis.call('DEL', KEYS[1])
 return 1
 `;
+const reconcileReceiptScript = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return -5 end
+local ok, saved = pcall(cjson.decode, raw)
+if not ok or saved.version ~= 2 or saved.operationId ~= ARGV[1] or saved.tokenHash ~= ARGV[2] then return -2 end
+if saved.expiresAt <= tonumber(ARGV[3]) then return -5 end
+local epoch = redis.call('GET', KEYS[2])
+if not epoch then return -5 end
+if epoch ~= tostring(saved.committedEpoch) then return -4 end
+return 1
+`;
 const commitRecoveryScript = `
 local receipt = redis.call('GET', KEYS[5])
 if receipt then
-  local saved = cjson.decode(receipt)
-  if saved.version == 2 and saved.operationId == ARGV[2] and saved.tokenHash == ARGV[3] then return -3 end
-  return -2
+  local ok, saved = pcall(cjson.decode, receipt)
+  if not ok or saved.version ~= 2 or type(saved.operationId) ~= 'string' or type(saved.tokenHash) ~= 'string' or type(saved.priorEpoch) ~= 'number' or type(saved.committedEpoch) ~= 'number' or type(saved.completedAt) ~= 'number' or type(saved.expiresAt) ~= 'number' then return -5 end
+  if saved.operationId ~= ARGV[2] or saved.tokenHash ~= ARGV[3] then return -2 end
+  if saved.expiresAt <= tonumber(ARGV[4]) then return -5 end
+  local currentEpoch = redis.call('GET', KEYS[2])
+  if not currentEpoch or currentEpoch ~= tostring(saved.committedEpoch) then return -4 end
+  return -3
 end
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end
 local record = cjson.decode(raw)
 local epoch = redis.call('GET', KEYS[2]) or '0'
 if tostring(record.epoch) ~= epoch or not string.match(epoch, '^[1-9]%d*$') then return -1 end
-local nextEpoch = tonumber(epoch) + 1
+local priorEpoch = tonumber(epoch)
+local nextEpoch = priorEpoch + 1
+local completedAt = tonumber(ARGV[4])
+local expiresAt = completedAt + tonumber(ARGV[5])
 redis.call('SET', KEYS[3], ARGV[1])
 redis.call('SET', KEYS[4], 'initialized')
 redis.call('SET', KEYS[2], tostring(nextEpoch))
-redis.call('SET', KEYS[5], cjson.encode({ version = 2, epoch = nextEpoch, operationId = ARGV[2], tokenHash = ARGV[3], createdAt = ARGV[4] }), 'EX', ARGV[3])
+redis.call('SET', KEYS[5], cjson.encode({ version = 2, operationId = ARGV[2], tokenHash = ARGV[3], priorEpoch = priorEpoch, committedEpoch = nextEpoch, completedAt = completedAt, expiresAt = expiresAt }), 'EX', ARGV[5])
 redis.call('DEL', KEYS[1])
 return nextEpoch
 `;
@@ -139,14 +157,21 @@ export async function resetAdminPasswordWithToken(token: unknown, password: stri
     const receiptKey = `${receiptPrefix}${hashToken(operationId)}`;
     const result = await redis.eval(commitRecoveryScript, [`${tokenPrefix}${hashToken(token)}`, epochKey, credentialKey, credentialStateKey, receiptKey], [hash, operationId, hashToken(token), String(Date.now()), recoveryReceiptTtlSeconds]);
     if (Number(result) === -2) return { status: "operation_conflict" as const };
+    if (Number(result) === -4) return { status: "superseded" as const };
+    if (Number(result) === -5) return { status: "storage_unavailable" as const };
     if (Number(result) === -3) {
-      const current = await redis.get<string>(credentialKey);
-      if (!current) return { status: "storage_unavailable" as const };
+      const snapshot = await redis.eval(snapshotScript, [credentialKey, legacyOverrideKey, legacyCredentialKey, credentialStateKey, epochKey], []);
+      const parsed = parseSnapshot(snapshot);
+      const currentEpoch = parsed?.epoch ? parseCredentialEpoch(parsed.epoch) : null;
+      if (!parsed?.current || !currentEpoch) return { status: "storage_unavailable" as const };
       let matches = false;
-      try { matches = await argon2.verify(current, password); } catch { return { status: "storage_unavailable" as const }; }
-      const currentEpoch = await getCredentialEpoch();
-      if (!currentEpoch) return { status: "storage_unavailable" as const };
-      return matches ? { status: "committed" as const, credentialEpoch: currentEpoch } : { status: "operation_conflict" as const };
+      try { matches = await argon2.verify(parsed.current, password); } catch { return { status: "storage_unavailable" as const }; }
+      if (!matches) return { status: "operation_conflict" as const };
+      const verified = await redis.eval(reconcileReceiptScript, [receiptKey, epochKey], [operationId, hashToken(token), String(Date.now())]);
+      if (Number(verified) === 1) return { status: "already_committed" as const, credentialEpoch: currentEpoch };
+      if (Number(verified) === -4) return { status: "superseded" as const };
+      if (Number(verified) === -2) return { status: "operation_conflict" as const };
+      return { status: "storage_unavailable" as const };
     }
     if (Number(result) === 0 || Number(result) === -1) return { status: "invalid_or_expired" as const };
     return { status: "committed" as const, credentialEpoch: Number(result) };
