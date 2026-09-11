@@ -8,7 +8,7 @@ const GENERATION_KEY = "speedzone:admin-session-generation";
 const CREDENTIAL_EPOCH_KEY = "speedzone:admin-credential-epoch";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
 const SESSION_IDLE_TTL_SECONDS = 60 * 30;
-type AdminSession = { createdAt: number; lastSeenAt: number; generation: string; credentialEpoch: number };
+type AdminSession = { createdAt: number; lastSeenAt: number; generation: string; credentialEpoch: number; purpose: "setup" | "passkey" };
 function sessionKey(token: string) { return `${SESSION_PREFIX}${createHash("sha256").update(token).digest("hex")}`; }
 async function getCookieToken(request?: Request) { if (request) return request.headers.get("cookie")?.match(/(?:^|;\s*)speedzone_admin=([^;]+)/)?.[1]; return (await cookies()).get(COOKIE_NAME)?.value; }
 async function generation() { const redis = getRedis(); if (!redis) return null; const current = await redis.get<string>(GENERATION_KEY); if (current) return current; const value = randomBytes(16).toString("hex"); const stored = await redis.set(GENERATION_KEY, value, { nx: true }); return stored ? value : redis.get<string>(GENERATION_KEY); }
@@ -25,7 +25,7 @@ local raw = redis.call('GET', KEYS[1])
 local current = redis.call('GET', KEYS[2])
 if not raw or not current then return 0 end
 local session = cjson.decode(raw)
-if session.generation ~= current or tostring(session.credentialEpoch) ~= redis.call('GET', KEYS[3]) then return 0 end
+if session.generation ~= current or tostring(session.credentialEpoch) ~= redis.call('GET', KEYS[3]) or session.purpose ~= ARGV[4] then return 0 end
 local now = tonumber(ARGV[1])
 local created = tonumber(session.createdAt)
 local lastSeen = tonumber(session.lastSeenAt)
@@ -39,13 +39,13 @@ redis.call('SET', KEYS[1], cjson.encode(session), 'EX', remaining)
 return 1
 `;
 
-export async function createAdminSession(credentialEpoch: number) {
+export async function createAdminSession(credentialEpoch: number, purpose: "setup" | "passkey") {
   const redis = getRedis();
   const current = await generation();
   if (!redis || !current) return null;
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
-  const created = JSON.stringify({ createdAt: now, lastSeenAt: now, generation: current, credentialEpoch } satisfies AdminSession);
+  const created = JSON.stringify({ createdAt: now, lastSeenAt: now, generation: current, credentialEpoch, purpose } satisfies AdminSession);
   try {
     const stored = await redis.eval(createSessionScript, [sessionKey(token), GENERATION_KEY, CREDENTIAL_EPOCH_KEY], [current, created, SESSION_TTL_SECONDS, credentialEpoch]);
     return Number(stored) === 1 ? token : null;
@@ -59,13 +59,23 @@ export async function isValidAdminSession(value: string | undefined) {
   const redis = getRedis();
   if (!redis) return false;
   try {
-    const result = await redis.eval(validateSessionScript, [sessionKey(value), GENERATION_KEY, CREDENTIAL_EPOCH_KEY], [Date.now(), SESSION_TTL_SECONDS * 1000, SESSION_IDLE_TTL_SECONDS * 1000]);
+    const result = await redis.eval(validateSessionScript, [sessionKey(value), GENERATION_KEY, CREDENTIAL_EPOCH_KEY], [Date.now(), SESSION_TTL_SECONDS * 1000, SESSION_IDLE_TTL_SECONDS * 1000, "passkey"]);
     return Number(result) === 1;
   } catch {
     return false;
   }
 }
-export async function isAdmin(request?: Request) { return isValidAdminSession(await getCookieToken(request)); }
+async function isValidSessionPurpose(value: string | undefined, purpose: "setup" | "passkey") {
+  if (!value || value.length !== 43 || !/^[A-Za-z0-9_-]+$/.test(value)) return false;
+  const redis = getRedis();
+  if (!redis) return false;
+  try {
+    const result = await redis.eval(validateSessionScript, [sessionKey(value), GENERATION_KEY, CREDENTIAL_EPOCH_KEY], [Date.now(), SESSION_TTL_SECONDS * 1000, SESSION_IDLE_TTL_SECONDS * 1000, purpose]);
+    return Number(result) === 1;
+  } catch { return false; }
+}
+export async function isAdmin(request?: Request) { return isValidSessionPurpose(await getCookieToken(request), "passkey"); }
+export async function isAdminSetup(request?: Request) { return isValidSessionPurpose(await getCookieToken(request), "setup"); }
 export async function revokeAdminSession(request?: Request) { const token = await getCookieToken(request); if (token) await getRedis()?.del(sessionKey(token)); }
 export async function revokeAllAdminSessions() { const redis = getRedis(); if (redis) await redis.set(GENERATION_KEY, randomBytes(16).toString("hex")); }
 export const adminCookie = { name: COOKIE_NAME, maxAge: SESSION_TTL_SECONDS };

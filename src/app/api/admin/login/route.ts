@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   if (!verification.verified) {
     return NextResponse.json({ error: verification.reason === "unavailable" ? "Admin authentication is temporarily unavailable" : "Invalid password" }, { status: verification.reason === "unavailable" ? 503 : 401 });
   }
-  const session = await createAdminSession(verification.credentialEpoch);
+  const session = await createAdminSession(verification.credentialEpoch, "setup");
   if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
   (await cookies()).set("speedzone_admin", session, adminCookieOptions());
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

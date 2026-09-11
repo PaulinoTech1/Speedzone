@@ -21,7 +21,12 @@ export async function POST(request: Request) {
   }
   if (action === "register") {
     const result = await verifyRegistration(body.response, typeof body.name === "string" ? body.name.trim().slice(0, 80) : "", webAuthnConfig);
-    return NextResponse.json(result, { status: result.error ? 400 : 200, headers: { "Cache-Control": "no-store" } });
+    if (!result.verified) return NextResponse.json(result, { status: 400, headers: { "Cache-Control": "no-store" } });
+    const session = await createAdminSession(result.credentialEpoch, "passkey");
+    if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    const response = NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    response.cookies.set("speedzone_admin", session, adminCookieOptions());
+    return response;
   }
   if (action === "authentication-options") {
     const limit = await admitAuthenticationOptions(clientAddress(request.headers));
@@ -39,7 +44,7 @@ export async function POST(request: Request) {
     if (!result.verified) return NextResponse.json(result, { status: 401, headers: { "Cache-Control": "no-store" } });
     const credentialEpoch = result.credentialEpoch;
     if (typeof credentialEpoch !== "number") return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
-    const session = await createAdminSession(credentialEpoch);
+    const session = await createAdminSession(credentialEpoch, "passkey");
     if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
     const response = NextResponse.json({ verified: true }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set("speedzone_admin", session, adminCookieOptions());
