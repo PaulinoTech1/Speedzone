@@ -2,6 +2,7 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { isAdmin, privateResponseHeaders } from "@/lib/admin-auth";
 import {
+  getInventoryBlobOrigin,
   inventoryPhotoContentTypes,
   isInventoryPhotoPath,
   maxInventoryPhotoSize,
@@ -52,6 +53,13 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Invalid photo path" },
       { status: 400, headers: privateResponseHeaders() },
+    );
+  }
+
+  if (!getInventoryBlobOrigin()) {
+    return NextResponse.json(
+      { error: "Inventory photo storage is not configured" },
+      { status: 503, headers: privateResponseHeaders() },
     );
   }
 

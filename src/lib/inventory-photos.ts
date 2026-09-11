@@ -71,10 +71,8 @@ export function isInventoryPhotoUrl(value: string) {
 }
 
 export function isInventoryPhotoBlobOriginUrl(value: string) {
-  if (!isInventoryPhotoUrl(value)) return false;
-
   const configuredOrigin = getInventoryBlobOrigin();
-  if (!configuredOrigin) return true;
+  if (!configuredOrigin || !isInventoryPhotoUrl(value)) return false;
 
   try {
     return new URL(value).origin === configuredOrigin;
