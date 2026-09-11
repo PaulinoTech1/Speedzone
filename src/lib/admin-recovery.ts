@@ -4,7 +4,7 @@ import { getRedis } from "@/lib/redis";
 
 export const recoveryEmail = "admin@speedzonemotorsports.com";
 export const recoveryTtlSeconds = 15 * 60;
-const tokenPrefix = "speedzone:admin-recovery:";
+const tokenPrefix = "speedzone:admin-recovery:v2:";
 const credentialKey = "speedzone:admin-credential:v2";
 const legacyOverrideKey = "speedzone:admin-password-override";
 const legacyCredentialKey = "speedzone:admin-credential";
@@ -67,11 +67,36 @@ function keys() { return [credentialKey, legacyOverrideKey, legacyCredentialKey,
 async function snapshot(redis: NonNullable<ReturnType<typeof getRedis>>) { return parseSnapshot(await redis.eval(snapshotScript, keys(), [])); }
 
 export function recoveryConfigured() { return Boolean(process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN); }
-export async function createRecoveryToken() { const redis = getRedis(); if (!redis) return null; const token = randomBytes(32).toString("base64url"); try { await redis.set(`${tokenPrefix}${hashToken(token)}`, "1", { ex: recoveryTtlSeconds, nx: true }); return token; } catch { return null; } }
+const consumeRecoveryTokenScript = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local record = cjson.decode(raw)
+local epoch = redis.call('GET', KEYS[2]) or '0'
+if tostring(record.epoch) ~= epoch then redis.call('DEL', KEYS[1]); return -1 end
+redis.call('DEL', KEYS[1])
+return 1
+`;
+
+export async function createRecoveryToken() {
+  const redis = getRedis();
+  if (!redis) return null;
+  const token = randomBytes(32).toString("base64url");
+  try {
+    const epoch = await getCredentialEpoch();
+    if (!epoch) return null;
+    const record = JSON.stringify({ version: 2, epoch, issuedAt: Date.now() });
+    await redis.set(`${tokenPrefix}${hashToken(token)}`, record, { ex: recoveryTtlSeconds, nx: true });
+    return token;
+  } catch { return null; }
+}
+
 export async function consumeRecoveryToken(token: unknown) {
   if (typeof token !== "string" || token.length !== tokenLength || !/^[A-Za-z0-9_-]+$/.test(token)) return { status: "invalid_or_expired" as const };
   const redis = getRedis(); if (!redis) return { status: "storage_unavailable" as const };
-  try { const deleted = await redis.eval("local value = redis.call('GET', KEYS[1]); if value then redis.call('DEL', KEYS[1]); return 1 else return 0 end", [`${tokenPrefix}${hashToken(token)}`], []); return Number(deleted) === 1 ? { status: "consumed" as const } : { status: "invalid_or_expired" as const }; } catch { return { status: "storage_unavailable" as const }; }
+  try {
+    const consumed = await redis.eval(consumeRecoveryTokenScript, [`${tokenPrefix}${hashToken(token)}`, epochKey], []);
+    return Number(consumed) === 1 ? { status: "consumed" as const } : { status: "invalid_or_expired" as const };
+  } catch { return { status: "storage_unavailable" as const }; }
 }
 async function hashPassword(password: string) { return argon2.hash(password, { type: argon2.argon2id }); }
 export async function replaceAdminPassword(password: string) { const redis = getRedis(); if (!redis || password.length < 12) return null; try { const hash = await hashPassword(password); const result = await redis.eval("local e = tonumber(redis.call('GET', KEYS[2]) or '0') + 1; redis.call('SET', KEYS[1], ARGV[1]); redis.call('SET', KEYS[3], 'initialized'); redis.call('SET', KEYS[2], tostring(e)); return e", [credentialKey, epochKey, credentialStateKey], [hash]); return Number(result) > 0 ? Number(result) : null; } catch { return null; } }
