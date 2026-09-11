@@ -6,128 +6,102 @@ export const recoveryEmail = "admin@speedzonemotorsports.com";
 export const recoveryTtlSeconds = 15 * 60;
 const tokenPrefix = "speedzone:admin-recovery:";
 const credentialKey = "speedzone:admin-credential:v2";
-const legacyCredentialKeys = ["speedzone:admin-password-override", "speedzone:admin-credential"];
+const legacyOverrideKey = "speedzone:admin-password-override";
+const legacyCredentialKey = "speedzone:admin-credential";
 const credentialStateKey = "speedzone:admin-credential-state:v1";
+const epochKey = "speedzone:admin-credential-epoch";
 const tokenLength = 43;
 
-type CredentialState = "uninitialized" | "initialized";
+type CredentialSnapshot = {
+  current: string | null;
+  legacyOverride: string | null;
+  legacyCredential: string | null;
+  state: string | null;
+  epoch: string | null;
+};
+export type CredentialState = "fresh" | "current_complete" | "current_missing_metadata" | "legacy" | "conflicting" | "corrupt" | "unavailable";
 export type PasswordVerification =
   | { verified: true; credentialEpoch: number }
-  | { verified: false; reason: "invalid" | "recovery_required" | "unavailable" }; 
-const epochKey = "speedzone:admin-credential-epoch";
-const commitCredentialScript = `
-local current = redis.call('GET', KEYS[1])
-local legacy = redis.call('GET', KEYS[2])
-local state = redis.call('GET', KEYS[3])
-local epoch = redis.call('GET', KEYS[4])
-if current or legacy or state == 'initialized' or (ARGV[1] ~= '' and epoch ~= ARGV[1]) then return 0 end
-local nextEpoch = tonumber(epoch or '0') + 1
-redis.call('SET', KEYS[1], ARGV[2])
-redis.call('SET', KEYS[3], 'initialized')
-redis.call('SET', KEYS[4], tostring(nextEpoch))
-return nextEpoch
+  | { verified: false; reason: "invalid" | "recovery_required" | "unavailable" };
+
+const snapshotScript = "return {redis.call('GET', KEYS[1]), redis.call('GET', KEYS[2]), redis.call('GET', KEYS[3]), redis.call('GET', KEYS[4]), redis.call('GET', KEYS[5])}";
+const initializeScript = `
+local current = redis.call('GET', KEYS[1]); local override = redis.call('GET', KEYS[2]); local legacy = redis.call('GET', KEYS[3]); local state = redis.call('GET', KEYS[4]); local epoch = redis.call('GET', KEYS[5])
+if current or override or legacy or state == 'initialized' or (state and state ~= 'uninitialized') or (epoch and epoch ~= '' and epoch ~= '0') then return 0 end
+redis.call('SET', KEYS[1], ARGV[1]); redis.call('SET', KEYS[4], 'initialized'); redis.call('SET', KEYS[5], '1'); return 1
 `;
-const replaceCredentialScript = `
-local nextEpoch = tonumber(redis.call('GET', KEYS[2]) or '0') + 1
-redis.call('SET', KEYS[1], ARGV[1])
-redis.call('SET', KEYS[3], 'initialized')
-redis.call('SET', KEYS[2], tostring(nextEpoch))
-return nextEpoch
+const migrateLegacyScript = `
+local current = redis.call('GET', KEYS[1]); local selected = redis.call('GET', KEYS[2]); local other = redis.call('GET', KEYS[3]); local state = redis.call('GET', KEYS[4]); local epoch = redis.call('GET', KEYS[5])
+if current or not selected or selected ~= ARGV[1] or (other and other ~= ARGV[1]) or state == 'initialized' or (state and state ~= 'uninitialized') or (epoch and epoch ~= '' and epoch ~= '0') then return 0 end
+redis.call('SET', KEYS[1], ARGV[2]); redis.call('SET', KEYS[4], 'initialized'); redis.call('SET', KEYS[5], '1'); redis.call('DEL', KEYS[2]); redis.call('DEL', KEYS[3]); return 1
+`;
+const backfillScript = `
+local current = redis.call('GET', KEYS[1]); local state = redis.call('GET', KEYS[2]); local epoch = redis.call('GET', KEYS[3])
+if current ~= ARGV[1] then return 0 end
+if epoch and epoch ~= '' and epoch ~= '0' and (not string.match(epoch, '^%d+$') or tonumber(epoch) < 0) then return 0 end
+if state and state ~= 'initialized' and state ~= 'uninitialized' then return 0 end
+if not epoch or epoch == '' or epoch == '0' then redis.call('SET', KEYS[3], '1'); epoch = '1' end
+if not state or state == 'uninitialized' then redis.call('SET', KEYS[2], 'initialized') end
+return tonumber(epoch)
 `;
 
 function hashToken(token: string) { return createHash("sha256").update(token).digest("hex"); }
-export function recoveryConfigured() { return Boolean(process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN); }
-
-export async function createRecoveryToken() {
-  const redis = getRedis();
-  if (!redis) return null;
-  const token = randomBytes(32).toString("base64url");
-  try {
-    await redis.set(`${tokenPrefix}${hashToken(token)}`, "1", { ex: recoveryTtlSeconds, nx: true });
-    return token;
-  } catch { return null; }
+function parseSnapshot(value: unknown): CredentialSnapshot | null {
+  if (!Array.isArray(value) || value.length !== 5) return null;
+  return { current: value[0] == null ? null : String(value[0]), legacyOverride: value[1] == null ? null : String(value[1]), legacyCredential: value[2] == null ? null : String(value[2]), state: value[3] == null ? null : String(value[3]), epoch: value[4] == null ? null : String(value[4]) };
 }
+function validEpoch(value: string | null) { return value === null || /^(0|[1-9]\d*)$/.test(value); }
+function classify(snapshot: CredentialSnapshot): CredentialState {
+  const hasLegacy = Boolean(snapshot.legacyOverride || snapshot.legacyCredential);
+  if (!validEpoch(snapshot.epoch) || (snapshot.state !== null && snapshot.state !== "initialized" && snapshot.state !== "uninitialized")) return "corrupt";
+  if (snapshot.legacyOverride && snapshot.legacyCredential && snapshot.legacyOverride !== snapshot.legacyCredential) return "conflicting";
+  if (snapshot.current) return snapshot.state === "initialized" && snapshot.epoch && Number(snapshot.epoch) > 0 ? "current_complete" : "current_missing_metadata";
+  if (hasLegacy) return "legacy";
+  return snapshot.state === "initialized" || (snapshot.epoch && Number(snapshot.epoch) > 0) ? "corrupt" : "fresh";
+}
+function keys() { return [credentialKey, legacyOverrideKey, legacyCredentialKey, credentialStateKey, epochKey]; }
+async function snapshot(redis: NonNullable<ReturnType<typeof getRedis>>) { return parseSnapshot(await redis.eval(snapshotScript, keys(), [])); }
 
+export function recoveryConfigured() { return Boolean(process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN); }
+export async function createRecoveryToken() { const redis = getRedis(); if (!redis) return null; const token = randomBytes(32).toString("base64url"); try { await redis.set(`${tokenPrefix}${hashToken(token)}`, "1", { ex: recoveryTtlSeconds, nx: true }); return token; } catch { return null; } }
 export async function consumeRecoveryToken(token: unknown) {
   if (typeof token !== "string" || token.length !== tokenLength || !/^[A-Za-z0-9_-]+$/.test(token)) return { status: "invalid_or_expired" as const };
-  const redis = getRedis();
-  if (!redis) return { status: "storage_unavailable" as const };
-  try {
-    const deleted = await redis.eval("local value = redis.call('GET', KEYS[1]); if value then redis.call('DEL', KEYS[1]); return 1 else return 0 end", [`${tokenPrefix}${hashToken(token)}`], []);
-    return Number(deleted) === 1 ? { status: "consumed" as const } : { status: "invalid_or_expired" as const };
-  } catch { return { status: "storage_unavailable" as const }; }
+  const redis = getRedis(); if (!redis) return { status: "storage_unavailable" as const };
+  try { const deleted = await redis.eval("local value = redis.call('GET', KEYS[1]); if value then redis.call('DEL', KEYS[1]); return 1 else return 0 end", [`${tokenPrefix}${hashToken(token)}`], []); return Number(deleted) === 1 ? { status: "consumed" as const } : { status: "invalid_or_expired" as const }; } catch { return { status: "storage_unavailable" as const }; }
 }
-
-async function hashPassword(password: string) {
-  return argon2.hash(password, { type: argon2.argon2id });
-}
-
-export async function setAdminPassword(password: string, expectedEpoch?: number) {
-  const redis = getRedis();
-  if (!redis || password.length < 12) return null;
-  try {
-    const hash = await hashPassword(password);
-    const keys = [credentialKey, legacyCredentialKeys[0]!, credentialStateKey, epochKey];
-    const args = [expectedEpoch === undefined ? "" : String(expectedEpoch), hash];
-    const result = await redis.eval(commitCredentialScript, keys, args);
-    return Number(result) > 0 ? Number(result) : null;
-  } catch { return null; }
-}
-
-export async function replaceAdminPassword(password: string) {
-  const redis = getRedis();
-  if (!redis || password.length < 12) return null;
-  try {
-    const hash = await hashPassword(password);
-    const result = await redis.eval(replaceCredentialScript, [credentialKey, epochKey, credentialStateKey], [hash]);
-    return Number(result) > 0 ? Number(result) : null;
-  } catch { return null; }
-}
-
-async function getStoredCredential(redis: NonNullable<ReturnType<typeof getRedis>>) {
-  const current = await redis.get<string>(credentialKey);
-  if (current) return current;
-  for (const key of legacyCredentialKeys) {
-    const legacy = await redis.get<string>(key);
-    if (legacy) return legacy;
-  }
-  return null;
-}
-
-export async function getCredentialEpoch() {
-  const redis = getRedis();
-  if (!redis) return null;
-  const value = await redis.get<string>(epochKey);
-  return value ? Number(value) : 0;
-}
+async function hashPassword(password: string) { return argon2.hash(password, { type: argon2.argon2id }); }
+export async function replaceAdminPassword(password: string) { const redis = getRedis(); if (!redis || password.length < 12) return null; try { const hash = await hashPassword(password); const result = await redis.eval("local e = tonumber(redis.call('GET', KEYS[2]) or '0') + 1; redis.call('SET', KEYS[1], ARGV[1]); redis.call('SET', KEYS[3], 'initialized'); redis.call('SET', KEYS[2], tostring(e)); return e", [credentialKey, epochKey, credentialStateKey], [hash]); return Number(result) > 0 ? Number(result) : null; } catch { return null; } }
+export async function getCredentialEpoch() { const redis = getRedis(); if (!redis) return null; const value = await redis.get<string>(epochKey); return value && validEpoch(value) ? Number(value) : null; }
 
 export async function verifyAdminPassword(password: string): Promise<PasswordVerification> {
-  const redis = getRedis();
-  if (!redis) return { verified: false, reason: "unavailable" };
+  const redis = getRedis(); if (!redis) return { verified: false, reason: "unavailable" };
   try {
-    const current = await redis.get<string>(credentialKey);
-    const state = await redis.get<CredentialState>(credentialStateKey);
-    const epoch = await getCredentialEpoch();
-    if (current) {
-      try {
-        return await argon2.verify(current, password)
-          ? { verified: true, credentialEpoch: epoch ?? 0 }
-          : { verified: false, reason: "invalid" };
-      } catch {
-        return { verified: false, reason: "recovery_required" };
+    const snap = await snapshot(redis); if (!snap) return { verified: false, reason: "unavailable" };
+    const state = classify(snap); if (state === "conflicting" || state === "corrupt") return { verified: false, reason: "recovery_required" };
+    if (state === "current_complete" || state === "current_missing_metadata") {
+      let valid = false; try { valid = await argon2.verify(snap.current!, password); } catch { return { verified: false, reason: "recovery_required" }; }
+      if (!valid) return { verified: false, reason: "invalid" };
+      if (state === "current_missing_metadata") {
+        const result = await redis.eval(backfillScript, [credentialKey, credentialStateKey, epochKey], [snap.current!]);
+        if (Number(result) <= 0) { const after = await snapshot(redis); if (!after || after.current !== snap.current || classify(after) === "corrupt") return { verified: false, reason: "recovery_required" }; }
+        const persistedEpoch = Number(result) > 0 ? Number(result) : await getCredentialEpoch();
+        return persistedEpoch && persistedEpoch > 0 ? { verified: true, credentialEpoch: persistedEpoch } : { verified: false, reason: "recovery_required" };
       }
+      const epoch = await getCredentialEpoch(); return epoch && epoch > 0 ? { verified: true, credentialEpoch: epoch } : { verified: false, reason: "recovery_required" };
     }
-    if (state === "initialized") return { verified: false, reason: "recovery_required" };
-    const legacy = await getStoredCredential(redis);
-    if (legacy && legacy === password) {
-      const migrated = await setAdminPassword(password, epoch ?? 0);
-      return migrated ? { verified: true, credentialEpoch: migrated } : { verified: false, reason: "invalid" };
+    if (state === "legacy") {
+      const selected = snap.legacyOverride ?? snap.legacyCredential; if (!selected || (snap.legacyOverride && snap.legacyCredential && snap.legacyOverride !== snap.legacyCredential) || selected !== password) return { verified: false, reason: "invalid" };
+      const hash = await hashPassword(password);
+      const other = snap.legacyOverride ? legacyCredentialKey : legacyOverrideKey;
+      const result = await redis.eval(migrateLegacyScript, [credentialKey, snap.legacyOverride ? legacyOverrideKey : legacyCredentialKey, other, credentialStateKey, epochKey], [selected, hash]);
+      if (Number(result) !== 1) return { verified: false, reason: "recovery_required" };
+      return { verified: true, credentialEpoch: 1 };
     }
-    const bootstrap = process.env.SPEEDZONE_ADMIN_PASSWORD;
-    if (!bootstrap || password !== bootstrap) return { verified: false, reason: "invalid" };
-    const migrated = await setAdminPassword(password, epoch ?? 0);
-    return migrated ? { verified: true, credentialEpoch: migrated } : { verified: false, reason: "invalid" };
-  } catch {
-    return { verified: false, reason: "unavailable" };
-  }
+    const bootstrap = process.env.SPEEDZONE_ADMIN_PASSWORD; if (!bootstrap || password !== bootstrap) return { verified: false, reason: "invalid" };
+    const hash = await hashPassword(password);
+    const result = await redis.eval(initializeScript, keys(), [hash]);
+    if (Number(result) === 1) return { verified: true, credentialEpoch: 1 };
+    const after = await snapshot(redis); if (after?.current) { try { if (await argon2.verify(after.current, password)) { const epoch = validEpoch(after.epoch) && after.epoch ? Number(after.epoch) : null; if (epoch && epoch > 0) return { verified: true, credentialEpoch: epoch }; } } catch { /* fail closed */ } }
+    return { verified: false, reason: "recovery_required" };
+  } catch { return { verified: false, reason: "unavailable" }; }
 }
