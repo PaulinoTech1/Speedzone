@@ -17,6 +17,7 @@ export async function POST(request: Request) {
   const token = typeof body.token === "string" ? body.token : "";
   const password = typeof body.password === "string" ? body.password : "";
   const operationId = typeof body.operationId === "string" ? body.operationId : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operationId)) return NextResponse.json({ error: "Invalid recovery operation identifier." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   if (password.length < 12 || password.length > 128) return NextResponse.json({ error: "Password must be between 12 and 128 characters." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   if (!/\S/.test(password)) return NextResponse.json({ error: "Password cannot be blank." }, { status: 400, headers: { "Cache-Control": "no-store" } });
   const commit = await resetAdminPasswordWithToken(token, password, operationId);
