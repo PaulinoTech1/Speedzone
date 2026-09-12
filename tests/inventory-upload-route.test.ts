@@ -26,16 +26,20 @@ function tokenRequest(pathname: string) {
 
 describe("inventory photo upload route", () => {
   const originalOrigin = process.env.INVENTORY_BLOB_ORIGIN;
+  const originalToken = process.env.BLOB_READ_WRITE_TOKEN;
 
   beforeEach(() => {
     mocks.handleUpload.mockReset();
     mocks.isAdmin.mockReset();
     process.env.INVENTORY_BLOB_ORIGIN = "https://speedzone.public.blob.vercel-storage.com";
+    process.env.BLOB_READ_WRITE_TOKEN = "test-read-write-token";
   });
 
   afterEach(() => {
     if (originalOrigin === undefined) delete process.env.INVENTORY_BLOB_ORIGIN;
     else process.env.INVENTORY_BLOB_ORIGIN = originalOrigin;
+    if (originalToken === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
+    else process.env.BLOB_READ_WRITE_TOKEN = originalToken;
   });
 
   it("does not issue an upload token without an admin session", async () => {
