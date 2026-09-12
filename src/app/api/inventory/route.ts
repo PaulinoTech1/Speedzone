@@ -2,7 +2,7 @@ import { del } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { appendVehiclePhotos, readInventory, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
-import { isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
+import { diagnoseInventoryPhotoUrl, isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
 export async function GET(request: Request) {
@@ -27,8 +27,12 @@ export async function POST(request: Request) {
     const payload = body.vehicle && typeof body.vehicle === "object"
       ? body.vehicle as Record<string, unknown>
       : {};
-    if (!Array.isArray(body.photos) || body.photos.length > maxInventoryPhotoCount || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoBlobOriginUrl(photo))) {
-      return NextResponse.json({ error: "One or more photo uploads are invalid" }, { status: 400 });
+    if (!Array.isArray(body.photos) || body.photos.length > maxInventoryPhotoCount) {
+      return NextResponse.json({ error: `Photo upload list is invalid: provide between 0 and ${maxInventoryPhotoCount} photo URLs.` }, { status: 400 });
+    }
+    const invalidPhoto = body.photos.map((photo, index) => ({ index, reason: diagnoseInventoryPhotoUrl(photo) })).find((photo) => photo.reason);
+    if (invalidPhoto?.reason) {
+      return NextResponse.json({ error: `Photo ${invalidPhoto.index + 1} is invalid: ${invalidPhoto.reason}` }, { status: 400 });
     }
     const photos = body.photos as string[];
     const vehicle = sanitizeVehicleInput(payload, photos);
@@ -55,8 +59,12 @@ export async function PATCH(request: Request) {
       await writeInventory(vehicles.map((item) => item.id === existing.id ? updatedVehicle : item));
       return NextResponse.json(updatedVehicle);
     }
-    if (!Array.isArray(body.photos) || body.photos.length === 0 || body.photos.some((photo) => typeof photo !== "string" || !isInventoryPhotoBlobOriginUrl(photo))) {
-      return NextResponse.json({ error: "One or more photo uploads are invalid" }, { status: 400 });
+    if (!Array.isArray(body.photos) || body.photos.length === 0) {
+      return NextResponse.json({ error: "Photo upload list is invalid: provide at least one photo URL." }, { status: 400 });
+    }
+    const invalidPhoto = body.photos.map((photo, index) => ({ index, reason: diagnoseInventoryPhotoUrl(photo) })).find((photo) => photo.reason);
+    if (invalidPhoto?.reason) {
+      return NextResponse.json({ error: `Photo ${invalidPhoto.index + 1} is invalid: ${invalidPhoto.reason}` }, { status: 400 });
     }
 
     const updated = appendVehiclePhotos(vehicles, body.id, body.photos as string[]);
