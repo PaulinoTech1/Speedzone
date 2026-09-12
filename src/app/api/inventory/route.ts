@@ -5,10 +5,10 @@ import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const inventory = await readInventory();
-    const adminRequest = await isAdminAuthenticated();
+    const adminRequest = await isAdminAuthenticated(request);
     return NextResponse.json(inventory, {
       headers: {
         "Cache-Control": adminRequest ? "private, no-store" : "public, max-age=60",
@@ -21,7 +21,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await isAdminAuthenticated(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const body = (await request.json()) as { vehicle?: unknown; photos?: unknown };
     const payload = body.vehicle && typeof body.vehicle === "object"
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await isAdminAuthenticated())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await isAdminAuthenticated(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const body = (await request.json()) as { id?: unknown; photos?: unknown } & Record<string, unknown>;
     if (typeof body.id !== "string" || !body.id) {
@@ -68,7 +68,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!(await isAdminAuthenticated())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await isAdminAuthenticated(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await request.json().catch(() => ({})) as { id?: unknown; photos?: unknown };
   const vehicles = await readInventory();
   const vehicle = vehicles.find((item) => item.id === body.id);

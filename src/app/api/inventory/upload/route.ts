@@ -19,8 +19,8 @@ function uploadConfigurationError() {
   return null;
 }
 
-export async function GET() {
-  if (!(await isAdminAuthenticated())) {
+export async function GET(request: Request) {
+  if (!(await isAdminAuthenticated(request))) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401, headers: privateResponseHeaders() },
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     { type: "blob.generate-client-token" }
   >;
 
-  if (!(await isAdminAuthenticated())) {
+  if (!(await isAdminAuthenticated(request))) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401, headers: privateResponseHeaders() },
