@@ -112,7 +112,7 @@ export function diagnoseInventoryPhotoUrl(value: unknown) {
 
   const configuredOrigin = getInventoryBlobOrigin();
   if (!configuredOrigin) return "inventory Blob origin could not be determined from the server configuration";
-  if (url.origin !== configuredOrigin) return `photo belongs to a different Blob store (received ${url.origin}; expected ${configuredOrigin})`;
+  if (url.origin.toLowerCase() !== configuredOrigin.toLowerCase()) return `photo belongs to a different Blob store (received ${url.origin}; expected ${configuredOrigin})`;
   return null;
 }
 
