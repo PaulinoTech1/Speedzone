@@ -77,7 +77,7 @@ export async function POST(request: Request) {
 
   if (!isInventoryPhotoPath(body.payload.pathname)) {
     return NextResponse.json(
-      { error: "Invalid photo path" },
+      { error: `Invalid photo path: ${body.payload.pathname.slice(0, 120)}` },
       { status: 400, headers: privateResponseHeaders() },
     );
   }

@@ -92,13 +92,30 @@ export function isInventoryPhotoUrl(value: string) {
   }
 }
 
-export function isInventoryPhotoBlobOriginUrl(value: string) {
-  const configuredOrigin = getInventoryBlobOrigin();
-  if (!configuredOrigin || !isInventoryPhotoUrl(value)) return false;
+export function diagnoseInventoryPhotoUrl(value: unknown) {
+  if (typeof value !== "string") return "photo value is not a string";
+  if (!value.trim()) return "photo URL is empty";
 
+  let url: URL;
   try {
-    return new URL(value).origin === configuredOrigin;
+    url = new URL(value);
   } catch {
-    return false;
+    return "photo URL is not a valid URL";
   }
+
+  if (url.protocol !== "https:") return `photo URL must use HTTPS (received ${url.protocol || "no protocol"})`;
+  if (!url.hostname.endsWith(publicBlobHostSuffix)) return `photo URL is not a Vercel public Blob URL (host: ${url.hostname})`;
+  if (url.username || url.password || url.port || url.search || url.hash) return "photo URL contains credentials, a port, query parameters, or a fragment";
+
+  const pathname = url.pathname.slice(1);
+  if (!isInventoryPhotoPath(pathname)) return `photo pathname is outside inventory/photos or is malformed (pathname: ${pathname.slice(0, 120)})`;
+
+  const configuredOrigin = getInventoryBlobOrigin();
+  if (!configuredOrigin) return "inventory Blob origin could not be determined from the server configuration";
+  if (url.origin !== configuredOrigin) return `photo belongs to a different Blob store (received ${url.origin}; expected ${configuredOrigin})`;
+  return null;
+}
+
+export function isInventoryPhotoBlobOriginUrl(value: string) {
+  return diagnoseInventoryPhotoUrl(value) === null;
 }
