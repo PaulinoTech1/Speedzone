@@ -17,11 +17,10 @@ const webpQuality = 0.82;
 
 function isSupportedPhoto(file: File) {
   const extension = file.name.split(".").pop()?.toLowerCase();
-  // Some Pixel browsers report a generic or alternate MIME type for JPEGs.
-  // The filename extension is still reliable, and the browser decoder below
-  // verifies that the selected file is actually readable before uploading.
+  // Android camera and gallery pickers can provide a generic or missing MIME
+  // type. The browser decoder below is the source of truth for image validity.
   if (["jpg", "jpeg", "png", "webp"].includes(extension ?? "")) return true;
-  return inventoryPhotoContentTypes.includes(file.type) || file.type === "image/jpg";
+  return file.type.startsWith("image/") && !["image/heic", "image/heif", "image/avif"].includes(file.type.toLowerCase());
 }
 
 async function compressPhoto(file: File): Promise<File> {
