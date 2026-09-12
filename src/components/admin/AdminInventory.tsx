@@ -73,6 +73,15 @@ async function uploadPhotosSequentially(
   photos: File[],
   onProgress: (current: number, total: number) => void,
 ) {
+  const readinessResponse = await fetch("/api/inventory/upload", {
+    credentials: "include",
+    cache: "no-store",
+  });
+  const readiness = await readinessResponse.json().catch(() => ({}));
+  if (!readinessResponse.ok) {
+    throw new Error(readiness.error || "Inventory photo storage is not ready. Check the Blob environment variables and redeploy.");
+  }
+
   const photoUrls: string[] = [];
   for (const [index, photo] of photos.entries()) {
     onProgress(index + 1, photos.length);

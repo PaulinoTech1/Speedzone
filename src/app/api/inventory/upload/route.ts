@@ -9,6 +9,31 @@ import {
 } from "@/lib/inventory-photos";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
+function uploadConfigurationError() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
+    return "Inventory photo storage is missing BLOB_READ_WRITE_TOKEN";
+  }
+  if (!getInventoryBlobOrigin()) {
+    return "Inventory photo storage has an invalid BLOB_STORE_ID or INVENTORY_BLOB_ORIGIN";
+  }
+  return null;
+}
+
+export async function GET() {
+  if (!(await isAdmin())) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: privateResponseHeaders() },
+    );
+  }
+
+  const error = uploadConfigurationError();
+  return NextResponse.json(
+    error ? { ready: false, error } : { ready: true },
+    { status: error ? 503 : 200, headers: privateResponseHeaders() },
+  );
+}
+
 export async function POST(request: Request) {
   let parsedBody: unknown;
 
@@ -57,9 +82,10 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!getInventoryBlobOrigin()) {
+  const configurationError = uploadConfigurationError();
+  if (configurationError) {
     return NextResponse.json(
-      { error: "Inventory photo storage is not configured" },
+      { error: configurationError },
       { status: 503, headers: privateResponseHeaders() },
     );
   }
