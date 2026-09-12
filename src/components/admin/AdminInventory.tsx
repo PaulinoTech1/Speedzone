@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
+import { put } from "@vercel/blob/client";
 import type { Vehicle } from "@/lib/inventory";
 import AdminPasskey from "@/components/admin/AdminPasskey";
 import {
@@ -85,10 +85,27 @@ async function uploadPhotosSequentially(
   const photoUrls: string[] = [];
   for (const [index, photo] of photos.entries()) {
     onProgress(index + 1, photos.length);
-    const blob = await upload(createInventoryPhotoPath(photo.name), photo, {
+    const tokenResponse = await fetch("/api/inventory/upload", {
+      credentials: "include",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "blob.generate-client-token",
+        payload: {
+          pathname: createInventoryPhotoPath(photo.name),
+          multipart: false,
+          clientPayload: null,
+        },
+      }),
+    });
+    const tokenResult = await tokenResponse.json().catch(() => ({}));
+    if (!tokenResponse.ok || typeof tokenResult.clientToken !== "string") {
+      throw new Error(tokenResult.error || "Unable to authorize photo upload.");
+    }
+    const blob = await put(createInventoryPhotoPath(photo.name), photo, {
       access: "public",
       contentType: photo.type,
-      handleUploadUrl: "/api/inventory/upload",
+      token: tokenResult.clientToken,
     });
     photoUrls.push(blob.url);
   }
