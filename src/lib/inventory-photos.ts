@@ -6,25 +6,29 @@ const inventoryPhotoPrefix = "inventory/photos/";
 const publicBlobHostSuffix = ".public.blob.vercel-storage.com";
 
 export function getInventoryBlobOrigin() {
-  const value = process.env.INVENTORY_BLOB_ORIGIN;
-  if (!value) return null;
-
-  try {
-    const url = new URL(value);
-    if (
-      url.protocol !== "https:" ||
-      url.username ||
-      url.password ||
-      url.port ||
-      url.pathname !== "/" ||
-      url.search ||
-      url.hash ||
-      !/^[a-z0-9-]+\.public\.blob\.vercel-storage\.com$/i.test(url.hostname)
-    ) return null;
-    return url.origin;
-  } catch {
-    return null;
+  const configuredOrigin = process.env.INVENTORY_BLOB_ORIGIN;
+  if (configuredOrigin) {
+    try {
+      const url = new URL(configuredOrigin);
+      if (
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        !url.port &&
+        url.pathname === "/" &&
+        !url.search &&
+        !url.hash &&
+        /^[a-z0-9-]+\.public\.blob\.vercel-storage\.com$/i.test(url.hostname)
+      ) return url.origin;
+    } catch {
+      return null;
+    }
   }
+
+  const storeId = process.env.BLOB_STORE_ID?.trim().replace(/^store_/, "");
+  return storeId && /^[a-z0-9-]+$/i.test(storeId)
+    ? `https://${storeId}.public.blob.vercel-storage.com`
+    : null;
 }
 
 export function createInventoryPhotoPath(fileName: string) {
