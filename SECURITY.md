@@ -4,9 +4,11 @@ SpeedZone Motorsports consists of a public Next.js application and a separately 
 
 ## Root application security model
 
-The root application uses an initial `SPEEDZONE_ADMIN_PASSWORD` bootstrap path when no current credential exists. It hashes the bootstrap password with Argon2id, stores authentication state in Upstash Redis, and uses credential epochs, randomized and hashed server-side sessions, idle and absolute session expiration, session-generation invalidation, rate limiting, and WebAuthn/passkeys with user verification required.
+The root application uses `SPEEDZONE_ADMIN_PASSWORD` as the password bootstrap path when no current credential exists. The password is hashed with Argon2id; authentication state, credential epochs, session generations, and server-side sessions are stored in Redis. Sessions use randomized tokens, hashed Redis keys, absolute and idle expiration, generation-based revocation, and route-level authorization checks. Login and recovery endpoints are rate limited. WebAuthn/passkeys are supported as an additional authentication method, but a passkey is not required for the password-authenticated admin to use inventory administration.
 
-Inventory mutations require admin authorization. Inventory photos use validated paths and an explicitly configured `INVENTORY_BLOB_ORIGIN`; image proxying validates the expected Blob origin and supported image formats. Test-drive submissions reach the server in plaintext, are validated and rate limited, then are encrypted server-side with AES-256-GCM using `TEST_DRIVE_ENCRYPTION_KEY` and stored in private Vercel Blob objects. Authenticated admin functionality decrypts them server-side. This is application-layer encryption at rest, not browser-only, zero-knowledge, or end-to-end encryption.
+Inventory reads, mutations, and photo uploads require an authenticated admin session. The inventory upload flow uses a short-lived Vercel Blob client token generated server-side, sends the HTTP-only admin cookie with the token request, and uploads only validated inventory photo paths. Accepted image formats are JPEG/JPG, PNG, and WebP, with size and count limits; returned Blob URLs are checked against the Blob store associated with `BLOB_READ_WRITE_TOKEN`, using case-insensitive hostname comparison. `BLOB_STORE_ID` is an identifier only and is not an upload credential. Inventory photo proxying validates the store, path, and image response before serving it.
+
+Test-drive submissions reach the server in plaintext, are validated and rate limited, then are encrypted server-side with AES-256-GCM using `TEST_DRIVE_ENCRYPTION_KEY` and stored in private Vercel Blob objects. Authenticated admin functionality decrypts them server-side. This is application-layer encryption at rest, not browser-only, zero-knowledge, or end-to-end encryption.
 
 If configured, Resend notification email may include test-drive information. Do not add service secrets to browser code or commit environment files.
 
@@ -47,9 +49,9 @@ External Vercel Drain, Axiom, S3 Object Lock, KMS signing, DNS, alerting, and re
 
 ## Configuration handling
 
-Keep confidential values server-side and rotate them through the deployment secret manager. Relevant root-application names include `TEST_DRIVE_ENCRYPTION_KEY`, `SPEEDZONE_ADMIN_PASSWORD`, `INVENTORY_BLOB_ORIGIN`, `SECURITY_LOG_PROVIDER`, `SECURITY_LOG_INGEST_URL`, `SECURITY_LOG_INGEST_TOKEN`, the root Redis variables, Blob tokens, Resend variables, and `WEBAUTHN_ORIGIN`/`WEBAUTHN_RP_ID`. The security console has separate Redis, WebAuthn, bootstrap, and provider configuration names.
+Keep confidential values server-side and rotate them through the deployment secret manager. Relevant root-application names include `TEST_DRIVE_ENCRYPTION_KEY`, `SPEEDZONE_ADMIN_PASSWORD`, `BLOB_READ_WRITE_TOKEN`, `TEST_DRIVE_BLOB_READ_WRITE_TOKEN`, `BLOB_STORE_ID`, `BLOB_WEBHOOK_PUBLIC_KEY`, `SECURITY_LOG_PROVIDER`, `SECURITY_LOG_INGEST_URL`, `SECURITY_LOG_INGEST_TOKEN`, the Redis variables, Resend variables, and `WEBAUTHN_ORIGIN`/`WEBAUTHN_RP_ID`. `INVENTORY_BLOB_ORIGIN` is retained only as a legacy fallback; the inventory upload store is derived from the store identifier embedded in `BLOB_READ_WRITE_TOKEN` when available. The security console has separate Redis, WebAuthn, bootstrap, and provider configuration names.
 
-RP IDs and origins are identifiers/configuration, not secrets. Redis tokens, Blob tokens, Resend API keys, ingest credentials, bootstrap tokens, and encryption keys are confidential. Never publish their values in source, issues, logs, screenshots, or documentation.
+RP IDs, origins, store IDs, and webhook public keys are identifiers or verification configuration, not upload credentials. Redis tokens, Blob read/write tokens, Resend API keys, ingest credentials, bootstrap tokens, and encryption keys are confidential. Never publish their values in source, issues, logs, screenshots, or documentation.
 
 ## Reporting
 
