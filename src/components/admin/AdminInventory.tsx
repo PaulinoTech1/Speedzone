@@ -15,6 +15,12 @@ const empty = { year: "", make: "", model: "", price: "", mileage: "", condition
 const maxPhotoDimension = 2400;
 const webpQuality = 0.82;
 
+function isSupportedPhoto(file: File) {
+  if (inventoryPhotoContentTypes.includes(file.type) || file.type === "image/jpg") return true;
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return !file.type && ["jpg", "jpeg", "png", "webp"].includes(extension ?? "");
+}
+
 async function compressPhoto(file: File): Promise<File> {
   const sourceUrl = URL.createObjectURL(file);
   try {
@@ -54,7 +60,7 @@ async function compressPhoto(file: File): Promise<File> {
 
 function photoSelectionError(selected: File[], existingCount: number) {
   if (existingCount + selected.length > maxInventoryPhotoCount) return `Add no more than ${maxInventoryPhotoCount} photos to one listing.`;
-  if (selected.some((file) => !inventoryPhotoContentTypes.includes(file.type))) return "Use JPG, PNG, or WebP photos. HEIC files need to be converted before uploading.";
+  if (selected.some((file) => !isSupportedPhoto(file))) return "Use JPG, PNG, or WebP photos. HEIC files need to be converted before uploading.";
   if (selected.some((file) => file.size > maxInventoryPhotoSize)) return "Each photo must be under 8MB before compression.";
   return null;
 }
