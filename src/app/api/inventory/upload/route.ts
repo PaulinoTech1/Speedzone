@@ -1,6 +1,6 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import { isAdmin, privateResponseHeaders } from "@/lib/admin-auth";
+import { isAdminAuthenticated, privateResponseHeaders } from "@/lib/admin-auth";
 import {
   getInventoryBlobOrigin,
   inventoryPhotoContentTypes,
@@ -20,7 +20,7 @@ function uploadConfigurationError() {
 }
 
 export async function GET() {
-  if (!(await isAdmin())) {
+  if (!(await isAdminAuthenticated())) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401, headers: privateResponseHeaders() },
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     { type: "blob.generate-client-token" }
   >;
 
-  if (!(await isAdmin())) {
+  if (!(await isAdminAuthenticated())) {
     return NextResponse.json(
       { error: "Unauthorized" },
       { status: 401, headers: privateResponseHeaders() },

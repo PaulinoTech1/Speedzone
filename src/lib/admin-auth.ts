@@ -76,6 +76,10 @@ async function isValidSessionPurpose(value: string | undefined, purpose: "setup"
 }
 export async function isAdmin(request?: Request) { return isValidSessionPurpose(await getCookieToken(request), "passkey"); }
 export async function isAdminSetup(request?: Request) { return isValidSessionPurpose(await getCookieToken(request), "setup"); }
+export async function isAdminAuthenticated(request?: Request) {
+  const token = await getCookieToken(request);
+  return isValidSessionPurpose(token, "passkey") || isValidSessionPurpose(token, "setup");
+}
 export async function revokeAdminSession(request?: Request) { const token = await getCookieToken(request); if (token) await getRedis()?.del(sessionKey(token)); }
 export async function revokeAllAdminSessions() { const redis = getRedis(); if (redis) await redis.set(GENERATION_KEY, randomBytes(16).toString("hex")); }
 export const adminCookie = { name: COOKIE_NAME, maxAge: SESSION_TTL_SECONDS };
