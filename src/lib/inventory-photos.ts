@@ -5,6 +5,18 @@ export const maxInventoryPhotoCount = 24;
 const inventoryPhotoPrefix = "inventory/photos/";
 const publicBlobHostSuffix = ".public.blob.vercel-storage.com";
 
+function storeIdFromReadWriteToken(token: string | undefined) {
+  // Read-write tokens are formatted as `vercel_blob_rw_<storeId>_<secret>`.
+  // The storeId segment is the authoritative source for the store's public
+  // hostname — it can drift out of sync with a separately-set BLOB_STORE_ID
+  // env var after the integration is reconnected or the store is rotated.
+  const parts = token?.trim().split("_");
+  const storeId = parts && parts.length >= 5 && parts[0] === "vercel" && parts[1] === "blob" && parts[2] === "rw"
+    ? parts[3]
+    : undefined;
+  return storeId && /^[a-z0-9-]+$/i.test(storeId) ? storeId : null;
+}
+
 export function getInventoryBlobOrigin() {
   const configuredOrigin = process.env.INVENTORY_BLOB_ORIGIN;
   if (configuredOrigin) {
@@ -24,6 +36,9 @@ export function getInventoryBlobOrigin() {
       return null;
     }
   }
+
+  const tokenStoreId = storeIdFromReadWriteToken(process.env.BLOB_READ_WRITE_TOKEN);
+  if (tokenStoreId) return `https://${tokenStoreId}.public.blob.vercel-storage.com`;
 
   const storeId = process.env.BLOB_STORE_ID?.trim().replace(/^store_/, "");
   return storeId && /^[a-z0-9-]+$/i.test(storeId)
