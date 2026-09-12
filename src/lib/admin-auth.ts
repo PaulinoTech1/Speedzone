@@ -10,7 +10,17 @@ const SESSION_TTL_SECONDS = 60 * 60 * 8;
 const SESSION_IDLE_TTL_SECONDS = 60 * 30;
 type AdminSession = { createdAt: number; lastSeenAt: number; generation: string; credentialEpoch: number; purpose: "setup" | "passkey" };
 function sessionKey(token: string) { return `${SESSION_PREFIX}${createHash("sha256").update(token).digest("hex")}`; }
-async function getCookieToken(request?: Request) { if (request) return request.headers.get("cookie")?.match(/(?:^|;\s*)speedzone_admin=([^;]+)/)?.[1]; return (await cookies()).get(COOKIE_NAME)?.value; }
+async function getCookieToken(request?: Request) {
+  const rawCookie = request?.headers.get("cookie");
+  const rawValue = rawCookie?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${COOKIE_NAME}=`))?.slice(COOKIE_NAME.length + 1);
+  const value = rawValue ?? (await cookies()).get(COOKIE_NAME)?.value;
+  if (!value) return undefined;
+  try {
+    return decodeURIComponent(value.replace(/^"|"$/g, ""));
+  } catch {
+    return undefined;
+  }
+}
 async function generation() { const redis = getRedis(); if (!redis) return null; const current = await redis.get<string>(GENERATION_KEY); if (current) return current; const value = randomBytes(16).toString("hex"); const stored = await redis.set(GENERATION_KEY, value, { nx: true }); return stored ? value : redis.get<string>(GENERATION_KEY); }
 const createSessionScript = `
 local current = redis.call('GET', KEYS[2])
