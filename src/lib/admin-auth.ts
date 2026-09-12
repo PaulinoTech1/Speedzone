@@ -35,7 +35,8 @@ local raw = redis.call('GET', KEYS[1])
 local current = redis.call('GET', KEYS[2])
 if not raw or not current then return 0 end
 local session = cjson.decode(raw)
-if session.generation ~= current or tostring(session.credentialEpoch) ~= redis.call('GET', KEYS[3]) or session.purpose ~= ARGV[4] then return 0 end
+local purposeMatches = session.purpose == ARGV[4] or (ARGV[4] == 'authenticated' and (session.purpose == 'setup' or session.purpose == 'passkey'))
+if session.generation ~= current or tostring(session.credentialEpoch) ~= redis.call('GET', KEYS[3]) or not purposeMatches then return 0 end
 local now = tonumber(ARGV[1])
 local created = tonumber(session.createdAt)
 local lastSeen = tonumber(session.lastSeenAt)
@@ -75,7 +76,7 @@ export async function isValidAdminSession(value: string | undefined) {
     return false;
   }
 }
-async function isValidSessionPurpose(value: string | undefined, purpose: "setup" | "passkey") {
+async function isValidSessionPurpose(value: string | undefined, purpose: "setup" | "passkey" | "authenticated") {
   if (!value || value.length !== 43 || !/^[A-Za-z0-9_-]+$/.test(value)) return false;
   const redis = getRedis();
   if (!redis) return false;
@@ -87,8 +88,7 @@ async function isValidSessionPurpose(value: string | undefined, purpose: "setup"
 export async function isAdmin(request?: Request) { return isValidSessionPurpose(await getCookieToken(request), "passkey"); }
 export async function isAdminSetup(request?: Request) { return isValidSessionPurpose(await getCookieToken(request), "setup"); }
 export async function isAdminAuthenticated(request?: Request) {
-  const token = await getCookieToken(request);
-  return isValidSessionPurpose(token, "passkey") || isValidSessionPurpose(token, "setup");
+  return isValidSessionPurpose(await getCookieToken(request), "authenticated");
 }
 export async function revokeAdminSession(request?: Request) { const token = await getCookieToken(request); if (token) await getRedis()?.del(sessionKey(token)); }
 export async function revokeAllAdminSessions() { const redis = getRedis(); if (redis) await redis.set(GENERATION_KEY, randomBytes(16).toString("hex")); }
