@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   handleUpload: vi.fn<(options: unknown) => Promise<unknown>>(),
-  isAdmin: vi.fn<() => Promise<boolean>>(),
+  isAdminAuthenticated: vi.fn<() => Promise<boolean>>(),
 }));
 
 vi.mock("@vercel/blob/client", () => ({ handleUpload: mocks.handleUpload }));
 vi.mock("@/lib/admin-auth", () => ({
-  isAdmin: mocks.isAdmin,
+  isAdminAuthenticated: mocks.isAdminAuthenticated,
   privateResponseHeaders: () => ({ "Cache-Control": "private, no-store, max-age=0" }),
 }));
 
@@ -30,7 +30,7 @@ describe("inventory photo upload route", () => {
 
   beforeEach(() => {
     mocks.handleUpload.mockReset();
-    mocks.isAdmin.mockReset();
+    mocks.isAdminAuthenticated.mockReset();
     process.env.INVENTORY_BLOB_ORIGIN = "https://speedzone.public.blob.vercel-storage.com";
     process.env.BLOB_READ_WRITE_TOKEN = "test-read-write-token";
   });
@@ -43,7 +43,7 @@ describe("inventory photo upload route", () => {
   });
 
   it("does not issue an upload token without an admin session", async () => {
-    mocks.isAdmin.mockResolvedValue(false);
+    mocks.isAdminAuthenticated.mockResolvedValue(false);
 
     const response = await POST(tokenRequest("inventory/photos/photo.webp"));
 
@@ -59,12 +59,12 @@ describe("inventory photo upload route", () => {
     }));
 
     expect(response.status).toBe(400);
-    expect(mocks.isAdmin).not.toHaveBeenCalled();
+    expect(mocks.isAdminAuthenticated).not.toHaveBeenCalled();
     expect(mocks.handleUpload).not.toHaveBeenCalled();
   });
 
   it("rejects paths outside the inventory photo namespace", async () => {
-    mocks.isAdmin.mockResolvedValue(true);
+    mocks.isAdminAuthenticated.mockResolvedValue(true);
 
     const response = await POST(tokenRequest("inventory/inventory.json"));
 
@@ -73,7 +73,7 @@ describe("inventory photo upload route", () => {
   });
 
   it("issues a constrained upload token to an authenticated admin", async () => {
-    mocks.isAdmin.mockResolvedValue(true);
+    mocks.isAdminAuthenticated.mockResolvedValue(true);
     mocks.handleUpload.mockResolvedValue({
       type: "blob.generate-client-token",
       clientToken: "test-token",
