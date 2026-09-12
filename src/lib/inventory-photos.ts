@@ -18,6 +18,12 @@ function storeIdFromReadWriteToken(token: string | undefined) {
 }
 
 export function getInventoryBlobOrigin() {
+  // The upload token controls the store that Blob actually writes to. Prefer
+  // its embedded store id so a stale INVENTORY_BLOB_ORIGIN cannot reject a
+  // valid upload after the Blob store or token has been rotated.
+  const tokenStoreId = storeIdFromReadWriteToken(process.env.BLOB_READ_WRITE_TOKEN);
+  if (tokenStoreId) return `https://${tokenStoreId}.public.blob.vercel-storage.com`;
+
   const configuredOrigin = process.env.INVENTORY_BLOB_ORIGIN;
   if (configuredOrigin) {
     try {
@@ -36,9 +42,6 @@ export function getInventoryBlobOrigin() {
       return null;
     }
   }
-
-  const tokenStoreId = storeIdFromReadWriteToken(process.env.BLOB_READ_WRITE_TOKEN);
-  if (tokenStoreId) return `https://${tokenStoreId}.public.blob.vercel-storage.com`;
 
   const storeId = process.env.BLOB_STORE_ID?.trim().replace(/^store_/, "");
   return storeId && /^[a-z0-9-]+$/i.test(storeId)
