@@ -85,6 +85,7 @@ async function uploadPhotosSequentially(
   const photoUrls: string[] = [];
   for (const [index, photo] of photos.entries()) {
     onProgress(index + 1, photos.length);
+    const pathname = createInventoryPhotoPath(photo.name);
     const tokenResponse = await fetch("/api/inventory/upload", {
       credentials: "include",
       method: "POST",
@@ -92,7 +93,7 @@ async function uploadPhotosSequentially(
       body: JSON.stringify({
         type: "blob.generate-client-token",
         payload: {
-          pathname: createInventoryPhotoPath(photo.name),
+          pathname,
           multipart: false,
           clientPayload: null,
         },
@@ -102,7 +103,7 @@ async function uploadPhotosSequentially(
     if (!tokenResponse.ok || typeof tokenResult.clientToken !== "string") {
       throw new Error(tokenResult.error || "Unable to authorize photo upload.");
     }
-    const blob = await put(createInventoryPhotoPath(photo.name), photo, {
+    const blob = await put(pathname, photo, {
       access: "public",
       contentType: photo.type,
       token: tokenResult.clientToken,
