@@ -16,9 +16,12 @@ const maxPhotoDimension = 2400;
 const webpQuality = 0.82;
 
 function isSupportedPhoto(file: File) {
-  if (inventoryPhotoContentTypes.includes(file.type) || file.type === "image/jpg") return true;
   const extension = file.name.split(".").pop()?.toLowerCase();
-  return !file.type && ["jpg", "jpeg", "png", "webp"].includes(extension ?? "");
+  // Some Pixel browsers report a generic or alternate MIME type for JPEGs.
+  // The filename extension is still reliable, and the browser decoder below
+  // verifies that the selected file is actually readable before uploading.
+  if (["jpg", "jpeg", "png", "webp"].includes(extension ?? "")) return true;
+  return inventoryPhotoContentTypes.includes(file.type) || file.type === "image/jpg";
 }
 
 async function compressPhoto(file: File): Promise<File> {
