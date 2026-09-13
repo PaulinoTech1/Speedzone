@@ -91,7 +91,7 @@ test("the Add photos button uploads sequentially and appends to an existing list
   await page.route("**/api/inventory/upload", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify({ clientToken: "vercel_blob_client_test_token" }),
+    body: JSON.stringify(route.request().method() === "GET" ? { ready: true } : { clientToken: "vercel_blob_client_test_token" }),
   }));
   await page.route("https://vercel.com/api/blob**", async (route) => {
     if (route.request().method() === "OPTIONS") {

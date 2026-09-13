@@ -1,12 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createInventoryPhotoPath,
+  getInventoryBlobOrigin,
+  diagnoseInventoryPhotoUrl,
   isInventoryPhotoPath,
   isInventoryPhotoUrl,
 } from "@/lib/inventory-photos";
 
 describe("inventory photo validation", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("uses the upload token store despite stale origin and store configuration", () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_CurrentStore_test");
+    vi.stubEnv("BLOB_STORE_ID", "store_old");
+    vi.stubEnv("INVENTORY_BLOB_ORIGIN", "https://old.public.blob.vercel-storage.com");
+    expect(getInventoryBlobOrigin()).toBe("https://CurrentStore.public.blob.vercel-storage.com");
+    expect(diagnoseInventoryPhotoUrl("https://currentstore.public.blob.vercel-storage.com/inventory/photos/car.webp")).toBeNull();
+    expect(diagnoseInventoryPhotoUrl("https://old.public.blob.vercel-storage.com/inventory/photos/car.webp")).toContain("different Blob store");
+  });
   it("creates a unique, sanitized inventory photo path", () => {
     vi.stubGlobal("crypto", { randomUUID: () => "photo-id" });
 
