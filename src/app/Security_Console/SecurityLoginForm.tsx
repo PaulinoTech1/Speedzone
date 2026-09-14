@@ -34,7 +34,7 @@ export default function SecurityLoginForm() {
       const verifyResponse = await fetch("/api/security-console-auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "authentication-verify", response }) });
       const verifyResult = await verifyResponse.json();
       if (!verifyResponse.ok || verifyResult.error || !verifyResult.authenticated) throw new Error(verifyResult.error || "Passkey could not be verified.");
-      window.location.assign("/Security_Console");
+        window.location.assign("/Security_Console?authenticated=1");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Passkey login failed.");
       setBusy(false);
