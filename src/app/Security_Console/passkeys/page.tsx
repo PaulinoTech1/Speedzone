@@ -1,2 +1,0 @@
-import Link from "next/link"; import { PasskeyManager } from "@/app/Security_Console/auth-client"; import { requirePasswordSession } from "@/lib/security-console/guards";
-export default async function PasskeysPage(){await requirePasswordSession();return <main><header><div><p className="eyebrow">Credential management</p><h1>Passkeys</h1><p className="muted">The final active passkey cannot be removed.</p></div><Link href="/Security_Console">Back to events</Link></header><section className="panel"><PasskeyManager/></section></main>}

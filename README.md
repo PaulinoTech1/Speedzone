@@ -1,6 +1,6 @@
 # SpeedZone Motorsports
 
-SpeedZone Motorsports is a Next.js 16 dealership application with a public-facing motorsports site and a security operations console. The console currently runs inside the primary application at `/Security_Console`; the separately deployable copy remains under `security-console/` for the later isolated rollout.
+SpeedZone Motorsports is a Next.js 16 dealership application with a public-facing motorsports site and a separately deployable security operations console in `security-console/`. The embedded `/Security_Console` pages and `/api/security-console` endpoints have been removed.
 
 The root application uses Next.js 16, React 19, Node.js 22, TypeScript, Vercel Blob, Upstash Redis, SimpleWebAuthn, Argon2id, Resend, Vitest, and Playwright. These services support the application architecture rather than representing a generic dependency list: Blob stores inventory and private test-drive objects, Redis stores authentication and rate-limit state, SimpleWebAuthn provides passkeys, Argon2id hashes the bootstrap password, Resend sends configured notifications and recovery messages, and Vitest/Playwright cover unit and browser behavior.
 
@@ -92,7 +92,7 @@ See [`docs/security-logging.md`](docs/security-logging.md) for additional archit
 
 ## Security console
 
-The authenticated console at `/Security_Console` and the separately deployable application in `security-console/` use the same independent security model: their own Redis database, password, passkeys, sessions, cookie, rate limits, audit records, security headers, and read-only operational UI. The embedded route is the active dashboard until the isolated project is deployed. It includes:
+The separately deployable application in `security-console/` is the only security console. It uses its own Redis database, password, passkeys, sessions, cookie, rate limits, audit records, security headers, and read-only operational UI. It includes:
 
 - Risk-focused overview metrics
 - Administrator access and credential history
@@ -117,11 +117,9 @@ ADMIN_SECURITY_KV_REST_API_TOKEN
 
 `SECURITY_KV_REST_API_URL` and `SECURITY_KV_REST_API_TOKEN` remain supported aliases. The writable REST token is required because console credentials, sessions, WebAuthn challenges, audit records, and rate-limit counters require writes. Provider-generated read-only and TCP variables do not replace this pair.
 
-While the console is hosted at `www.speedzonems.com/Security_Console`, set `NEXT_PUBLIC_SECURITY_CONSOLE_URL=/Security_Console`, `EMBEDDED_SECURITY_WEBAUTHN_ORIGIN=https://www.speedzonems.com`, and `EMBEDDED_SECURITY_WEBAUTHN_RP_ID=www.speedzonems.com` on the primary Vercel project. The embedded WebAuthn names take precedence only in the primary application, so the standalone project can retain its future `logs.speedzonems.com` WebAuthn settings.
+The public footer points to `https://www.speedzonems.com/Security_Console`. Routing that path to the preserved separate console is pending; the embedded implementation has been removed. The previously proposed `logs.speedzonems.com` hostname is not provisioned. The primary application retains the signed internal report and delivery-test endpoints used by the console.
 
 The one-time `SECURITY_BOOTSTRAP_TOKEN` initializes an Argon2id password in the console Redis. A password-authenticated session must be upgraded with the console's independent WebAuthn passkey before operational pages and APIs can be read. Console sessions have four-hour absolute and fifteen-minute idle expiry and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory-admin cookie and credentials are never accepted by the console.
-
-The embedded login recognizes the original `speedzone:security-console:password` credential. After that password is verified, it atomically writes the versioned credential record with the current Argon2id parameters and preserves the legacy record for the standalone console. Passkeys enrolled specifically for `logs.speedzonems.com` remain bound to that WebAuthn relying party and must be enrolled again for `www.speedzonems.com`.
 
 Private bug reports remain encrypted in the primary application's Redis. The console reads them through a narrow server-to-server endpoint authenticated with a timestamped HMAC using `SECURITY_CONSOLE_SERVICE_SECRET`. The shared secret stays server-side, report responses are non-cacheable, and inventory mutation is not exposed through this bridge.
 

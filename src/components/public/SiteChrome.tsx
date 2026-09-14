@@ -14,8 +14,7 @@ type SiteChromeProps = {
 const directionsUrl =
   "https://maps.google.com/?q=1094+Main+St+Worcester+MA+01603";
 const securityConsoleUrl =
-  process.env.NEXT_PUBLIC_SECURITY_CONSOLE_URL ||
-  "/Security_Console";
+  "https://www.speedzonems.com/Security_Console";
 
 export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
   const onHome = currentPage === "home";
