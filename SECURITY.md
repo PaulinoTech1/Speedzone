@@ -33,9 +33,9 @@ SECURITY_KV_REST_API_URL
 SECURITY_KV_REST_API_TOKEN
 ```
 
-The current login, setup, and passkey pages explicitly state that security-console authentication is not yet operational. The console is not currently protected by an independent WebAuthn passkey. The separate application boundary and variable names alone do not establish cryptographic isolation from inventory-admin credentials.
+The security console now has an independent Argon2id password, passkey registration and authentication, session cookie, credential epoch, Redis namespace, and WebAuthn RP configuration. It does not read inventory-admin cookies, credentials, passkeys, or Redis keys. Event pages and the event API require the security-console session.
 
-The intended variables `SECURITY_WEBAUTHN_RP_ID`, `SECURITY_WEBAUTHN_ORIGIN`, and `SECURITY_BOOTSTRAP_TOKEN` do not represent a completed WebAuthn/session/bootstrap implementation in the current source. Do not expose the console publicly until that independent authentication and authorization layer is completed and verified. The event API must not be treated as authenticated merely because it resides under a separate deployment.
+Configure `SECURITY_WEBAUTHN_RP_ID`, `SECURITY_WEBAUTHN_ORIGIN`, and `SECURITY_BOOTSTRAP_TOKEN` only in the security-console deployment. Complete one-time bootstrap and register a security-console passkey before treating the deployment as operational.
 
 ## Target deployment boundary
 

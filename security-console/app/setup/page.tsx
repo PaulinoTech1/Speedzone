@@ -1,2 +1,19 @@
 import Link from "next/link";
-export default function SetupPage(){return <main><header><div><p className="eyebrow">One-time bootstrap</p><h1>Enroll security passkey</h1></div><Link href="/login">Back to login</Link></header><section className="panel"><p className="danger">Bootstrap enrollment requires SECURITY_BOOTSTRAP_TOKEN and a separate passkey service. This page is intentionally non-operational until those controls are configured.</p></section></main>}
+
+import SetupForm from "./SetupForm";
+
+export default function SetupPage() {
+	return (
+		<main>
+			<header>
+				<div>
+					<p className="eyebrow">One-time bootstrap</p>
+					<h1>Initialize security access</h1>
+					<p className="muted">The bootstrap token is accepted once and is never stored as a password.</p>
+				</div>
+				<Link href="/login">Back to login</Link>
+			</header>
+			<SetupForm />
+		</main>
+	);
+}
