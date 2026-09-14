@@ -1082,9 +1082,8 @@ h1 em::after {
 .admin-card { padding: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .admin-login { max-width: 30rem; margin: 8rem auto; }
 .admin-login h1 { margin: .5rem 0; }
-.password-field { display: flex; align-items: stretch; gap: .5rem; }
-.password-field input { flex: 1; min-width: 0; }
-.password-toggle { flex: 0 0 auto; }
+.password-input { display: flex; gap: .5rem; align-items: stretch; }
+.password-input input { flex: 1; min-width: 0; }
 .admin-grid { display: grid; gap: 2rem; }
 .vehicle-form, .vehicle-form label { display: grid; gap: .55rem; }
 .vehicle-form { gap: 1rem; }
