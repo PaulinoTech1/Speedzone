@@ -121,6 +121,8 @@ While the console is hosted at `www.speedzonems.com/Security_Console`, set `NEXT
 
 The one-time `SECURITY_BOOTSTRAP_TOKEN` initializes an Argon2id password in the console Redis. A password-authenticated session must be upgraded with the console's independent WebAuthn passkey before operational pages and APIs can be read. Console sessions have four-hour absolute and fifteen-minute idle expiry and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory-admin cookie and credentials are never accepted by the console.
 
+The embedded login recognizes the original `speedzone:security-console:password` credential. After that password is verified, it atomically writes the versioned credential record with the current Argon2id parameters and preserves the legacy record for the standalone console. Passkeys enrolled specifically for `logs.speedzonems.com` remain bound to that WebAuthn relying party and must be enrolled again for `www.speedzonems.com`.
+
 Private bug reports remain encrypted in the primary application's Redis. The console reads them through a narrow server-to-server endpoint authenticated with a timestamped HMAC using `SECURITY_CONSOLE_SERVICE_SECRET`. The shared secret stays server-side, report responses are non-cacheable, and inventory mutation is not exposed through this bridge.
 
 ## Target architecture
