@@ -1,6 +1,6 @@
 # Security
 
-SpeedZone Motorsports consists of a public Next.js application and a separately deployable `security-console/` application. The root application includes admin authentication, inventory mutations, test-drive submissions, uploads, rate limiting, and security-event logging. The security console uses an independent password, WebAuthn passkeys, Redis sessions, rate-limit namespace, and host-only cookie.
+SpeedZone Motorsports consists of a public Next.js application and a security console that is currently mounted at `/Security_Console`. A separately deployable copy remains in `security-console/` for the planned isolated rollout. The root application includes admin authentication, inventory mutations, test-drive submissions, uploads, rate limiting, and security-event logging. In either location, the security console uses an independent password, WebAuthn passkeys, Redis sessions, rate-limit namespace, and host-only cookie.
 
 ## Root application security model
 
@@ -26,7 +26,7 @@ See [`docs/security-logging.md`](docs/security-logging.md) for the current loggi
 
 ## Security console status
 
-`security-console/` is an independent security and operations control plane. It has separate Redis configuration, password credentials, WebAuthn passkeys, sessions, cookie, rate-limit namespace, console audit records, and security headers. It exposes read-only views for administrator access, credential history, inventory activity, customer-request delivery, event integrity, configuration status, active console sessions, and encrypted bug reports. It fails closed when authentication storage or a required provider cannot be read.
+`/Security_Console` is the current security and operations control plane, with `security-console/` retaining the deployable equivalent. It has separate Redis configuration, password credentials, WebAuthn passkeys, sessions, cookie, rate-limit namespace, console audit records, and security headers. It exposes read-only views for administrator access, credential history, inventory activity, customer-request delivery, event integrity, configuration status, active console sessions, and encrypted bug reports. It fails closed when authentication storage or a required provider cannot be read.
 
 Its independent Redis configuration is:
 
@@ -36,6 +36,8 @@ ADMIN_SECURITY_KV_REST_API_TOKEN
 ```
 
 The console uses the writable `ADMIN_SECURITY_KV_REST_API_URL` and `ADMIN_SECURITY_KV_REST_API_TOKEN` pair. Provider-created read-only and TCP connection variables are not used because credentials, sessions, challenges, audit records, replay records, and rate-limit counters require writes. The one-time setup exchanges `SECURITY_BOOTSTRAP_TOKEN` for an Argon2id password record in the console Redis. A password session can enroll or authenticate a passkey; operational pages and APIs require the upgraded MFA session. Sessions have four-hour absolute and fifteen-minute idle expiry, support revocation, are indexed for authenticated visibility, and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory cookie is not inspected or accepted.
+
+For the embedded route, `EMBEDDED_SECURITY_WEBAUTHN_ORIGIN=https://www.speedzonems.com` and `EMBEDDED_SECURITY_WEBAUTHN_RP_ID=www.speedzonems.com` override the standalone WebAuthn values. Keep `NEXT_PUBLIC_SECURITY_CONSOLE_URL=/Security_Console` until the isolated console is deployed. The primary Vercel project must also have the console Redis, bootstrap, provider-query, delivery-test, and console IP-hash variables because the embedded server routes consume them directly.
 
 The event reader uses the configured external provider query API. Console Redis is used for console credentials, sessions, challenges, audit records, and rate limits. Delivery testing is server-to-server, signed with `SECURITY_CONSOLE_TEST_SECRET`, replay protected, and limited to two attempts per fifteen minutes. No ingest, query, Redis, bootstrap, or HMAC secret reaches the browser.
 

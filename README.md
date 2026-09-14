@@ -1,6 +1,6 @@
 # SpeedZone Motorsports
 
-SpeedZone Motorsports is a Next.js 16 dealership application with a public-facing motorsports site and a separately deployable security-console application under `security-console/`.
+SpeedZone Motorsports is a Next.js 16 dealership application with a public-facing motorsports site and a security operations console. The console currently runs inside the primary application at `/Security_Console`; the separately deployable copy remains under `security-console/` for the later isolated rollout.
 
 The root application uses Next.js 16, React 19, Node.js 22, TypeScript, Vercel Blob, Upstash Redis, SimpleWebAuthn, Argon2id, Resend, Vitest, and Playwright. These services support the application architecture rather than representing a generic dependency list: Blob stores inventory and private test-drive objects, Redis stores authentication and rate-limit state, SimpleWebAuthn provides passkeys, Argon2id hashes the bootstrap password, Resend sends configured notifications and recovery messages, and Vitest/Playwright cover unit and browser behavior.
 
@@ -92,7 +92,7 @@ See [`docs/security-logging.md`](docs/security-logging.md) for additional archit
 
 ## Security console
 
-`security-console/` is a separately deployable Next.js application with its own package manifest, Redis database, password, passkeys, sessions, cookie, rate limits, audit records, security headers, and read-only operational UI. It includes:
+The authenticated console at `/Security_Console` and the separately deployable application in `security-console/` use the same independent security model: their own Redis database, password, passkeys, sessions, cookie, rate limits, audit records, security headers, and read-only operational UI. The embedded route is the active dashboard until the isolated project is deployed. It includes:
 
 - Risk-focused overview metrics
 - Administrator access and credential history
@@ -116,6 +116,8 @@ ADMIN_SECURITY_KV_REST_API_TOKEN
 ```
 
 `SECURITY_KV_REST_API_URL` and `SECURITY_KV_REST_API_TOKEN` remain supported aliases. The writable REST token is required because console credentials, sessions, WebAuthn challenges, audit records, and rate-limit counters require writes. Provider-generated read-only and TCP variables do not replace this pair.
+
+While the console is hosted at `www.speedzonems.com/Security_Console`, set `NEXT_PUBLIC_SECURITY_CONSOLE_URL=/Security_Console`, `EMBEDDED_SECURITY_WEBAUTHN_ORIGIN=https://www.speedzonems.com`, and `EMBEDDED_SECURITY_WEBAUTHN_RP_ID=www.speedzonems.com` on the primary Vercel project. The embedded WebAuthn names take precedence only in the primary application, so the standalone project can retain its future `logs.speedzonems.com` WebAuthn settings.
 
 The one-time `SECURITY_BOOTSTRAP_TOKEN` initializes an Argon2id password in the console Redis. A password-authenticated session must be upgraded with the console's independent WebAuthn passkey before operational pages and APIs can be read. Console sessions have four-hour absolute and fifteen-minute idle expiry and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory-admin cookie and credentials are never accepted by the console.
 
