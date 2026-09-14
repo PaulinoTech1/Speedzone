@@ -34,7 +34,7 @@ type StoredCredential = {
   name: string;
 };
 type ChallengeRecord = { challenge: string; createdAt: number };
-type SessionRecord = { createdAt: number; lastSeenAt: number; generation: string; credentialEpoch: number };
+type SessionRecord = { createdAt: number; lastSeenAt: number; generation: string; credentialEpoch: number; factor: "password" | "mfa" };
 export type WebAuthnConfig = { rpID: string; origin: string };
 
 function sessionKey(token: string) { return `${sessionPrefix}${createHash("sha256").update(token).digest("hex")}`; }
@@ -87,7 +87,7 @@ export async function loginWithSecurityPassword(password: string) {
   try { return await argon2.verify(hash, password) ? { authenticated: true } : { error: "Invalid password" as const }; } catch { return { error: "Invalid password" as const }; }
 }
 
-export async function createSecuritySession() {
+export async function createSecuritySession(factor: "password" | "mfa" = "mfa") {
   const redis = configuredRedis();
   const epoch = await credentialEpoch();
   if (!redis || epoch === null) return null;
@@ -95,11 +95,19 @@ export async function createSecuritySession() {
   if (!generation) { generation = randomBytes(16).toString("hex"); await redis.set(generationKey, generation, { nx: true }); generation = await redis.get<string>(generationKey) || generation; }
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
-  await redis.set(sessionKey(token), { createdAt: now, lastSeenAt: now, generation, credentialEpoch: epoch } satisfies SessionRecord, { ex: SESSION_TTL_SECONDS });
+  await redis.set(sessionKey(token), { createdAt: now, lastSeenAt: now, generation, credentialEpoch: epoch, factor } satisfies SessionRecord, { ex: SESSION_TTL_SECONDS });
   return token;
 }
 
 export async function isSecurityAuthenticated() {
+  return isSecuritySession("mfa");
+}
+
+export async function isSecurityPasswordAuthenticated() {
+  return isSecuritySession("password", "mfa");
+}
+
+async function isSecuritySession(...factors: SessionRecord["factor"][]) {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return false;
   const redis = configuredRedis();
@@ -107,7 +115,7 @@ export async function isSecurityAuthenticated() {
   if (!redis || epoch === null) return false;
   const session = await redis.get<SessionRecord>(sessionKey(token));
   const generation = await redis.get<string>(generationKey);
-  if (!session || !generation || session.generation !== generation || session.credentialEpoch !== epoch) return false;
+  if (!session || !generation || session.generation !== generation || session.credentialEpoch !== epoch || !factors.includes(session.factor)) return false;
   const now = Date.now();
   if (now - session.createdAt >= SESSION_TTL_SECONDS * 1000 || now - session.lastSeenAt >= SESSION_IDLE_TTL_SECONDS * 1000) { await redis.del(sessionKey(token)); return false; }
   session.lastSeenAt = now;
@@ -154,6 +162,7 @@ export async function verifyRegistration(response: unknown, name: string, config
 }
 
 export async function authenticationOptions(config: WebAuthnConfig) {
+  if (!(await isSecurityPasswordAuthenticated())) return { error: "Enter the security-console password before using a passkey" as const };
   const redis = configuredRedis();
   const current = await credentials();
   if (!redis || !current?.length) return { error: "Passkey login is not configured" as const };
@@ -163,6 +172,7 @@ export async function authenticationOptions(config: WebAuthnConfig) {
 }
 
 export async function verifyAuthentication(response: unknown, config: WebAuthnConfig) {
+  if (!(await isSecurityPasswordAuthenticated())) return { error: "Enter the security-console password before using a passkey" as const };
   const redis = configuredRedis();
   const current = await credentials();
   if (!redis || !current?.length) return { error: "Passkey login is not configured" as const };

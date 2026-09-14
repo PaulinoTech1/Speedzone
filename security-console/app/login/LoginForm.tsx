@@ -5,6 +5,7 @@ import { useState } from "react";
 
 export default function LoginForm() {
   const [password, setPassword] = useState("");
+  const [passwordStep, setPasswordStep] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -14,15 +15,19 @@ export default function LoginForm() {
     setMessage("");
     const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "password-login", password }) });
     const result = await response.json();
-    if (response.ok) window.location.assign("/");
+    if (response.ok) {
+      setPasswordStep(true);
+      await loginWithPasskey(true);
+    }
     else setMessage(result.error || "Unable to sign in.");
     setBusy(false);
   }
 
-  async function loginWithPasskey() {
+  async function loginWithPasskey(passwordJustVerified = false) {
     setBusy(true);
     setMessage("");
     try {
+      if (!passwordStep && !passwordJustVerified) throw new Error("Enter the security-console password first.");
       const optionsResponse = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "authentication-options" }) });
       const optionsResult = await optionsResponse.json();
       if (!optionsResponse.ok) throw new Error(optionsResult.error || "Passkey login is unavailable.");
@@ -45,7 +50,7 @@ export default function LoginForm() {
         <input id="security-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
         <button className="button button-primary" disabled={busy} type="submit">Sign in with password</button>
       </form>
-      <button className="button button-ghost" disabled={busy} onClick={loginWithPasskey} type="button">Sign in with passkey</button>
+      <button className="button button-ghost" disabled={busy || !passwordStep} onClick={() => loginWithPasskey()} type="button">Continue with passkey</button>
       {message && <p className="danger">{message}</p>}
     </>
   );

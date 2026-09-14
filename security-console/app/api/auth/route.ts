@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   if (body.action === "bootstrap") {
     const result = await bootstrapSecurityPassword(body.password || "", body.bootstrapToken || "");
     if (!("authenticated" in result)) return NextResponse.json(result, { status: 400 });
-    const token = await createSecuritySession();
+    const token = await createSecuritySession("mfa");
     if (!token) return NextResponse.json({ error: "Security session could not be created" }, { status: 503 });
     return NextResponse.json({ authenticated: true }, { headers: { "Set-Cookie": `${securitySessionCookie(token).name}=${securitySessionCookie(token).value}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}` } });
   }
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   if (body.action === "password-login") {
     const result = await loginWithSecurityPassword(body.password || "");
     if (!("authenticated" in result)) return NextResponse.json(result, { status: 401 });
-    const token = await createSecuritySession();
+    const token = await createSecuritySession("password");
     if (!token) return NextResponse.json({ error: "Security session could not be created" }, { status: 503 });
     return NextResponse.json({ authenticated: true }, { headers: { "Set-Cookie": `${securitySessionCookie(token).name}=${securitySessionCookie(token).value}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}` } });
   }
