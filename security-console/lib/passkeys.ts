@@ -115,9 +115,7 @@ export async function deletePasskey(id: string) {
   return Number(result) === 1 ? { deleted: true } : { deleted: false, reason: Number(result) === -2 ? "The final active passkey cannot be removed" : "Passkey changed; retry" };
 }
 export async function registrationOptions(config: WebAuthnConfig) {
-  const admin = await validateSecuritySession(undefined, "mfa");
-  if (!admin && !(await validateSecuritySession(undefined, "password"))) return { error: "Unauthorized" as const };
-  if (!admin && await hasCurrentPasskey()) return { error: "Passkey enrollment is already complete" as const };
+  if (!await validateSecuritySession(undefined, "mfa")) return { error: "Verify your established passkey first" as const };
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey storage is not configured" as const };
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "security@speedzonemotorsports", userDisplayName: "SpeedZone security operator", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: credentials.filter((item) => item.credentialEpoch === epoch).map((item) => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
@@ -125,9 +123,7 @@ export async function registrationOptions(config: WebAuthnConfig) {
   return { options };
 }
 export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig) {
-  const admin = await validateSecuritySession(undefined, "mfa");
-  if (!admin && !(await validateSecuritySession(undefined, "password"))) return { error: "Unauthorized" as const };
-  if (!admin && await hasCurrentPasskey()) return { error: "Passkey enrollment is already complete" as const };
+  if (!await validateSecuritySession(undefined, "mfa")) return { error: "Verify your established passkey first" as const };
   const client = redis(); if (!client) return { error: "Passkey storage is not configured" as const };
   try {
     const clientData = (response as { response?: { clientDataJSON?: string } }).response?.clientDataJSON;
@@ -135,11 +131,11 @@ export async function verifyRegistration(response: unknown, name: string, config
     const challenge = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge as string;
     const record = await getChallenge("registration", challenge);
     if (!record) return { error: "Passkey setup expired" as const };
-    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: config.origin, expectedRPID: config.rpID });
+    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, requireUserVerification: true });
     if (!verification.verified || !verification.registrationInfo) return { error: "Passkey could not be verified" as const };
     const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
     const stored: StoredCredential = { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"), counter: credential.counter, deviceType: credentialDeviceType, backedUp: credentialBackedUp, name: name || "Unnamed passkey", credentialEpoch: record.credentialEpoch };
-    const result = await client.eval(registrationCommitScript, [credentialsKey, epochKey, challengeKey("registration", challenge)], [String(record.credentialEpoch), record.challenge, JSON.stringify(stored), admin ? "managed" : "initial"]);
+    const result = await client.eval(registrationCommitScript, [credentialsKey, epochKey, challengeKey("registration", challenge)], [String(record.credentialEpoch), record.challenge, JSON.stringify(stored), "managed"]);
     if (Number(result) === -2) return { error: "Passkey enrollment is already complete" as const };
     return Number(result) === 1 ? { verified: true, credentialEpoch: record.credentialEpoch } : { error: "Passkey setup expired" as const };
   } catch { return { error: "Passkey could not be verified" as const }; }
@@ -147,7 +143,9 @@ export async function verifyRegistration(response: unknown, name: string, config
 export async function authenticationOptions(config: WebAuthnConfig) {
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey login is not configured" as const };
-  const options = await generateAuthenticationOptions({ rpID: config.rpID, allowCredentials: credentials.filter((item) => item.credentialEpoch === epoch).map((item) => ({ id: item.id, transports: item.transports })), userVerification: "required" });
+  const active = credentials.filter((item) => item.credentialEpoch === epoch);
+  if (!active.length) return { error: "No established security passkey is available. Contact the operator to restore access." as const };
+  const options = await generateAuthenticationOptions({ rpID: config.rpID, allowCredentials: active.map((item) => ({ id: item.id, transports: item.transports })), userVerification: "required" });
   await client.set(challengeKey("authentication", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now() } satisfies ChallengeRecord, { ex: challengeTtl });
   return { options };
 }
@@ -162,7 +160,7 @@ export async function verifyAuthentication(response: unknown, config: WebAuthnCo
     const challenge = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge as string;
     const record = await getChallenge("authentication", challenge);
     if (!record || record.credentialEpoch !== epoch) return { error: "Passkey login expired" as const };
-    const verification = await verifyAuthenticationResponse({ response: response as Parameters<typeof verifyAuthenticationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, "base64url"), counter: credential.counter, transports: credential.transports } });
+    const verification = await verifyAuthenticationResponse({ response: response as Parameters<typeof verifyAuthenticationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, requireUserVerification: true, credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, "base64url"), counter: credential.counter, transports: credential.transports } });
     if (!verification.verified) return { error: "Passkey could not be verified" as const };
     const result = await client.eval(counterCommitScript, [credentialsKey, epochKey, challengeKey("authentication", challenge)], [String(epoch), record.challenge, credential.id, String(credential.counter), String(verification.authenticationInfo.newCounter)]);
     return Number(result) === 1 ? { verified: true, credentialEpoch: epoch } : { error: "Passkey login expired" as const };

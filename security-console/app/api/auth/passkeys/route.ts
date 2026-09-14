@@ -14,13 +14,16 @@ export async function POST(request: Request) {
   if (!rate.allowed) { await recordConsoleAudit(request,"console.passkey","denied","rate_limited"); return NextResponse.json({ error: "Too many attempts" }, { status: 429, headers: { ...privateHeaders, "Retry-After": String(rate.retryAfter) } }); }
   const body = await request.json().catch(() => ({})) as { action?: string; response?: unknown; name?: string };
   const config = getWebAuthnConfig(await headers());
-  if (body.action === "registration-options") return NextResponse.json(await registrationOptions(config), { headers: privateHeaders });
+  if (body.action === "registration-options") {
+    if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Verify your established passkey first" }, { status: 401, headers: privateHeaders });
+    return NextResponse.json(await registrationOptions(config), { headers: privateHeaders });
+  }
   if (body.action === "register") {
+    if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Verify your established passkey first" }, { status: 401, headers: privateHeaders });
     const verified = await verifyRegistration(body.response, String(body.name ?? "Security passkey").slice(0, 80), config);
-    if (!("verified" in verified)) return NextResponse.json(verified, { status: 400, headers: privateHeaders });
-    const session = await upgradeSecuritySession(request); if (!session) return NextResponse.json({ error: "Session storage unavailable" }, { status: 503, headers: privateHeaders });
+    if (!("verified" in verified) || verified.verified !== true) return NextResponse.json(verified, { status: 400, headers: privateHeaders });
     await recordConsoleAudit(request,"console.passkey","allowed","registered");
-    const response = NextResponse.json({ verified: true }, { headers: privateHeaders }); response.cookies.set(SECURITY_COOKIE, session, securityCookieOptions); return response;
+    return NextResponse.json({ verified: true }, { headers: privateHeaders });
   }
   if (body.action === "authentication-options") {
     if (!await validateSecuritySession(request, "password")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
@@ -29,8 +32,8 @@ export async function POST(request: Request) {
   if (body.action === "authenticate") {
     if (!await validateSecuritySession(request, "password")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
     const verified = await verifyAuthentication(body.response, config);
-    if (!("verified" in verified)) return NextResponse.json(verified, { status: 401, headers: privateHeaders });
-    const session = await upgradeSecuritySession(request); if (!session) return NextResponse.json({ error: "Session storage unavailable" }, { status: 503, headers: privateHeaders });
+    if (!("verified" in verified) || verified.verified !== true) return NextResponse.json(verified, { status: 401, headers: privateHeaders });
+    const session = await upgradeSecuritySession(request, verified.credentialEpoch); if (!session) return NextResponse.json({ error: "Your login expired. Enter your password and verify your passkey again." }, { status: 401, headers: privateHeaders });
     await recordConsoleAudit(request,"console.login","allowed","passkey_verified");
     const response = NextResponse.json({ verified: true }, { headers: privateHeaders }); response.cookies.set(SECURITY_COOKIE, session, securityCookieOptions); return response;
   }

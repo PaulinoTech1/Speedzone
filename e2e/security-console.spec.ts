@@ -11,9 +11,9 @@ test("console entry redirects to its own login and renders the form", async ({ p
   await expect(page.getByRole("heading", { name: "Security console", exact: true })).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue to passkey" })).toBeVisible();
-  await page.getByRole("link", { name: "First-time setup" }).click();
-  await expect(page).toHaveURL(new RegExp(`${base}/setup$`));
-  await expect(page.getByRole("heading", { name: "Initialize security credentials" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "First-time setup" })).toHaveCount(0);
+  expect((await request.get(`${base}/setup`)).status()).toBe(404);
+  expect((await request.post(`${base}/api/auth/setup`, { data: {} })).status()).toBe(404);
 });
 
 test("admin cookies do not unlock console pages or APIs", async ({ request }) => {

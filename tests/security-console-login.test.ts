@@ -1,14 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ verify: vi.fn(), session: vi.fn(), hasPasskey: vi.fn() }));
+const mocks = vi.hoisted(() => ({ verify: vi.fn(), session: vi.fn(), revoke: vi.fn() }));
 vi.mock("../security-console/lib/password", () => ({ verifyPassword: mocks.verify }));
 vi.mock("../security-console/lib/auth", () => ({
   createSecuritySession: mocks.session,
+  revokeSecuritySession: mocks.revoke,
   SECURITY_COOKIE: "__Host-speedzone_security",
   securityCookieOptions: { httpOnly: true, secure: true, sameSite: "strict", path: "/" },
   privateHeaders: { "Cache-Control": "private, no-store" },
 }));
-vi.mock("../security-console/lib/passkeys", () => ({ hasCurrentPasskey: mocks.hasPasskey }));
 vi.mock("../security-console/lib/rate-limit", () => ({ enforceRateLimit: async () => ({ allowed: true }) }));
 vi.mock("../security-console/lib/console-audit", () => ({ recordConsoleAudit: vi.fn() }));
 
@@ -25,13 +25,13 @@ function request() {
   });
 }
 
-it.each([[true, "/login/passkey"], [false, "/passkeys"]])("routes a verified password to the correct passkey step (%s)", async (hasPasskey, next) => {
+it("always routes a verified password to passkey verification, revoking any prior session", async () => {
   mocks.verify.mockResolvedValue({ ok: true, epoch: 3 });
   mocks.session.mockResolvedValue("s".repeat(43));
-  mocks.hasPasskey.mockResolvedValue(hasPasskey);
   const response = await POST(request());
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ ok: true, next: `/Security_Console${next}` });
+  expect(await response.json()).toEqual({ ok: true, next: "/Security_Console/login/passkey" });
+  expect(mocks.revoke).toHaveBeenCalledOnce();
   expect(mocks.session).toHaveBeenCalledWith(3, "password");
   const cookie = response.headers.get("set-cookie");
   expect(cookie).toContain("__Host-speedzone_security=");

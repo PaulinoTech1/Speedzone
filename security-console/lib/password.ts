@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import argon2 from "argon2";
 import { getSecurityRedis } from "./redis";
+import { migrateLegacyPasskeys } from "./legacy-passkeys";
 
 const CREDENTIAL_KEY = "speedzone:security-console:credential:v1";
 const EPOCH_KEY = "speedzone:security-console:credential-epoch:v1";
@@ -36,7 +37,11 @@ export async function verifyPassword(password: string): Promise<PasswordResult> 
   const [hash, rawEpoch] = await Promise.all([redis.get<string>(CREDENTIAL_KEY), redis.get<string>(EPOCH_KEY)]);
   const epoch = Number(rawEpoch);
   try {
-    if (hash && Number.isSafeInteger(epoch) && epoch > 0) return await argon2.verify(hash, password) ? { ok: true, epoch } : { ok: false, reason: "invalid" };
+    if (hash && Number.isSafeInteger(epoch) && epoch > 0) {
+      if (!await argon2.verify(hash, password)) return { ok: false, reason: "invalid" };
+      await migrateLegacyPasskeys(password, epoch, hash);
+      return { ok: true, epoch };
+    }
 
     const [legacyHash, rawLegacyEpoch] = await Promise.all([redis.get<string>(LEGACY_CREDENTIAL_KEY), redis.get<string>(LEGACY_EPOCH_KEY)]);
     const legacyEpoch = Number(rawLegacyEpoch);
@@ -48,7 +53,9 @@ export async function verifyPassword(password: string): Promise<PasswordResult> 
       [CREDENTIAL_KEY, EPOCH_KEY, LEGACY_CREDENTIAL_KEY],
       [legacyHash, upgradedHash, String(legacyEpoch)],
     ));
-    return Number.isSafeInteger(migratedEpoch) && migratedEpoch > 0 ? { ok: true, epoch: migratedEpoch, migrated: true } : { ok: false, reason: "unavailable" };
+    if (!Number.isSafeInteger(migratedEpoch) || migratedEpoch < 1) return { ok: false, reason: "unavailable" };
+    await migrateLegacyPasskeys(password, migratedEpoch, upgradedHash);
+    return { ok: true, epoch: migratedEpoch, migrated: true };
   }
   catch { return { ok: false, reason: "unavailable" }; }
 }

@@ -105,7 +105,7 @@ The console at `/Security_Console` uses the shared implementation in `security-c
 - Read-only recent-event and individual-event views
 - Individual event viewing
 - Integrity checks and a controlled delivery test
-- Independent password, setup, passkey, and MFA session flows
+- Independent password and established-passkey login, plus MFA-protected passkey management
 - Fail-closed behavior when the security event store cannot be read
 
 The console uses independent Redis configuration variables:
@@ -117,9 +117,9 @@ ADMIN_SECURITY_KV_REST_API_TOKEN
 
 `SECURITY_KV_REST_API_URL` and `SECURITY_KV_REST_API_TOKEN` remain supported aliases. The writable REST token is required because console credentials, sessions, WebAuthn challenges, audit records, and rate-limit counters require writes. Provider-generated read-only and TCP variables do not replace this pair.
 
-The public footer points to `https://www.speedzonems.com/Security_Console`. Pages and browser APIs are mounted below `/Security_Console`; the deleted `/api/security-console` APIs remain absent. Set the console Redis and WebAuthn variables on the primary project. `EMBEDDED_SECURITY_WEBAUTHN_ORIGIN=https://www.speedzonems.com` and `EMBEDDED_SECURITY_WEBAUTHN_RP_ID=www.speedzonems.com` are supported mount-specific overrides; standalone builds continue to use `SECURITY_WEBAUTHN_ORIGIN` and `SECURITY_WEBAUTHN_RP_ID`. Existing console credentials and stored sessions are retained. Legacy passwords are migrated only after successful verification. The internal signed report and delivery-test endpoints remain available.
+The public footer points to `https://www.speedzonems.com/Security_Console`. Pages and browser APIs are mounted below `/Security_Console`; the deleted `/api/security-console` APIs remain absent. Set the console Redis and WebAuthn variables on the primary project. `EMBEDDED_SECURITY_WEBAUTHN_ORIGIN=https://www.speedzonems.com` and `EMBEDDED_SECURITY_WEBAUTHN_RP_ID=www.speedzonems.com` are supported mount-specific overrides; standalone builds continue to use `SECURITY_WEBAUTHN_ORIGIN` and `SECURITY_WEBAUTHN_RP_ID`. Existing console credentials are retained; old MFA sessions without assertion evidence must sign in again. Legacy passwords are migrated only after successful verification. The internal signed report and delivery-test endpoints remain available.
 
-The one-time `SECURITY_BOOTSTRAP_TOKEN` initializes an Argon2id password in the console Redis. A password-authenticated session must be upgraded with the console's independent WebAuthn passkey before operational pages and APIs can be read. Console sessions have four-hour absolute and fifteen-minute idle expiry and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory-admin cookie and credentials are never accepted by the console.
+Public first-time setup is disabled. Every login requires the existing console password followed by an assertion from an established passkey. Password-only sessions cannot view the dashboard or enroll replacement passkeys. Existing legacy passkeys are preserved and migrated only after matching password and credential-epoch checks. Console sessions have four-hour absolute and fifteen-minute idle expiry and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory-admin cookie and credentials are never accepted by the console.
 
 Private bug reports remain encrypted in the primary application's Redis. The console reads them through a narrow server-to-server endpoint authenticated with a timestamped HMAC using `SECURITY_CONSOLE_SERVICE_SECRET`. The shared secret stays server-side, report responses are non-cacheable, and inventory mutation is not exposed through this bridge.
 
