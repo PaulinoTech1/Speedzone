@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { getSecurityRedis } from "@/lib/redis";
 import { currentCredentialEpoch } from "@/lib/password";
@@ -6,10 +6,14 @@ import { currentCredentialEpoch } from "@/lib/password";
 export const SECURITY_COOKIE = "__Host-speedzone_security";
 const PREFIX = "speedzone:security-console:session:v1:";
 const GENERATION_KEY = "speedzone:security-console:session-generation:v1";
+const SESSION_INDEX_KEY = "speedzone:security-console:session-index:v1";
+const SESSION_MAP_KEY = "speedzone:security-console:session-map:v1";
 const ABSOLUTE_SECONDS = 60 * 60 * 4;
 const IDLE_SECONDS = 15 * 60;
 export type SessionLevel = "password" | "mfa";
-type Session = { createdAt: number; lastSeenAt: number; epoch: number; generation: string; level: SessionLevel };
+type Session = { id:string;createdAt: number; lastSeenAt: number; epoch: number; generation: string; level: SessionLevel };
+export type VisibleSecuritySession={id:string;createdAt:number;lastSeenAt:number;level:SessionLevel;current:boolean};
+const createIndexedSessionScript=`redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]);redis.call('ZADD',KEYS[2],ARGV[3],ARGV[4]);redis.call('HSET',KEYS[3],ARGV[4],KEYS[1]);redis.call('EXPIRE',KEYS[2],ARGV[2]);redis.call('EXPIRE',KEYS[3],ARGV[2]);return 1`;
 
 const validateScript = `
 local raw=redis.call('GET',KEYS[1]); local generation=redis.call('GET',KEYS[2]); local epoch=redis.call('GET',KEYS[3]);
@@ -36,9 +40,9 @@ async function token(request?: Request) { return tokenFromRequest(request) ?? (a
 export async function createSecuritySession(epoch: number, level: SessionLevel) {
   const redis = getSecurityRedis(); const current = await generation();
   if (!redis || !current) return null;
-  const value = randomBytes(32).toString("base64url"); const now = Date.now();
-  const record: Session = { createdAt: now, lastSeenAt: now, epoch, generation: current, level };
-  await redis.set(key(value), record, { ex: ABSOLUTE_SECONDS });
+  const value = randomBytes(32).toString("base64url"); const now = Date.now(); const id=randomUUID();
+  const record: Session = { id,createdAt: now, lastSeenAt: now, epoch, generation: current, level };
+  await redis.eval(createIndexedSessionScript,[key(value),SESSION_INDEX_KEY,SESSION_MAP_KEY],[JSON.stringify(record),ABSOLUTE_SECONDS,now,id]);
   return value;
 }
 export async function validateSecuritySession(request?: Request, required: SessionLevel = "mfa") {
@@ -50,5 +54,11 @@ export async function validateSecuritySession(request?: Request, required: Sessi
 export async function revokeSecuritySession(request?: Request) { const value = await token(request); if (value) await getSecurityRedis()?.del(key(value)); }
 export async function revokeAllSecuritySessions() { await getSecurityRedis()?.set(GENERATION_KEY, randomBytes(16).toString("hex")); }
 export async function upgradeSecuritySession(request?: Request) { await revokeSecuritySession(request); const epoch = await currentCredentialEpoch(); return epoch ? createSecuritySession(epoch, "mfa") : null; }
+export async function listSecuritySessions(request?:Request):Promise<VisibleSecuritySession[]>{
+  const redis=getSecurityRedis();if(!redis)return[];const currentToken=await token(request);const currentKey=currentToken?key(currentToken):"";
+  const [ids,currentGeneration,currentEpoch]=await Promise.all([redis.zrange<string[]>(SESSION_INDEX_KEY,0,-1,{rev:true}),redis.get<string>(GENERATION_KEY),redis.get<string>("speedzone:security-console:credential-epoch:v1")]);const visible:VisibleSecuritySession[]=[];const now=Date.now();
+  for(const id of ids.slice(0,100)){const storedKey=await redis.hget<string>(SESSION_MAP_KEY,id);if(!storedKey)continue;const session=await redis.get<Session>(storedKey);if(!session||session.generation!==currentGeneration||String(session.epoch)!==currentEpoch||now-session.createdAt>=ABSOLUTE_SECONDS*1000||now-session.lastSeenAt>=IDLE_SECONDS*1000)continue;visible.push({id:session.id,createdAt:session.createdAt,lastSeenAt:session.lastSeenAt,level:session.level,current:storedKey===currentKey})}
+  return visible;
+}
 export const securityCookieOptions = { httpOnly: true, secure: true, sameSite: "strict" as const, path: "/", maxAge: ABSOLUTE_SECONDS, priority: "high" as const };
 export const privateHeaders = { "Cache-Control": "private, no-store, max-age=0", "X-Robots-Tag": "noindex, nofollow, noarchive" };

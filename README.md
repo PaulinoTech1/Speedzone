@@ -65,7 +65,7 @@ When Resend notification configuration is enabled, the application may also incl
 
 ## Security event logging
 
-`src/lib/security-events.ts` defines the current security event system. It provides:
+`src/lib/security-events.ts` defines the versioned security event system. It provides:
 
 - Typed security-event categories
 - Generated event IDs
@@ -73,6 +73,9 @@ When Resend notification configuration is enabled, the application may also incl
 - ISO timestamps
 - Outcome and actor classification
 - Route and method information
+- Privacy-safe administrator network fingerprints
+- Approximate Vercel country/region context
+- Sanitized browser and operating-system families
 - Bounded metadata
 - Prohibited-field filtering
 - Deterministic canonical serialization
@@ -81,30 +84,42 @@ When Resend notification configuration is enabled, the application may also incl
 
 The event structure has an optional `previousHash` field, but the current application does not implement a globally serialized hash chain or automatically populate a trustworthy previous hash for every event. The repository does not establish Merkle roots, AWS KMS signing, S3 Object Lock, a WORM archive, or a provisioned Vercel Drain.
 
-`writeSecurityEvent()` supports best-effort Axiom-style HTTP ingestion when `SECURITY_LOG_PROVIDER=axiom` and the ingest URL and token are configured. The delivery path is fail-open with respect to the business request: logging failures do not block the request. Not every possible security decision is necessarily instrumented yet.
+Raw IP addresses and complete user-agent strings are not written to application security events. Network context is added only to administrator and inventory-security events, using a keyed HMAC supplied through `SECURITY_IP_HASH_SECRET`. Public test-drive and bug-report events do not receive this client fingerprint.
+
+`writeSecurityEvent()` supports best-effort Axiom-style HTTP ingestion when `SECURITY_LOG_PROVIDER=axiom` and the ingest URL and token are configured. The delivery path is fail-open with respect to the business request: logging failures do not block the request. Authentication, credential, inventory, report-receipt, customer-request, and notification-delivery outcomes are instrumented.
 
 See [`docs/security-logging.md`](docs/security-logging.md) for additional architectural notes.
 
 ## Security console
 
-`security-console/` is a separately deployable Next.js application with its own package manifest, security Redis configuration names, security headers, and read-only security-event UI. It currently includes:
+`security-console/` is a separately deployable Next.js application with its own package manifest, Redis database, password, passkeys, sessions, cookie, rate limits, audit records, security headers, and read-only operational UI. It includes:
 
-- Read-only recent-event UI
+- Risk-focused overview metrics
+- Administrator access and credential history
+- Inventory activity and catalog revision visibility
+- Customer-request and notification-delivery health
+- Privacy-safe network and client context
+- Independent console-login history and active-session visibility
+- Paginated encrypted bug and security reports
+- Configuration health reported only as `SET` or `MISSING`
+- Read-only recent-event and individual-event views
 - Individual event viewing
-- Integrity-status page
-- Login, setup, and passkey UI surfaces
+- Integrity checks and a controlled delivery test
+- Independent password, setup, passkey, and MFA session flows
 - Fail-closed behavior when the security event store cannot be read
 
 The console uses independent Redis configuration variables:
 
 ```text
-SECURITY_KV_REST_API_URL
-SECURITY_KV_REST_API_TOKEN
+ADMIN_SECURITY_KV_REST_API_URL
+ADMIN_SECURITY_KV_REST_API_TOKEN
 ```
 
-The current login, setup, and passkey pages explicitly state that security-console authentication is not yet operational. The console is not currently protected by an independent WebAuthn passkey, and the repository does not establish cryptographic isolation from inventory-admin credentials merely by having separate application code or variable names.
+`SECURITY_KV_REST_API_URL` and `SECURITY_KV_REST_API_TOKEN` remain supported aliases. The writable REST token is required because console credentials, sessions, WebAuthn challenges, audit records, and rate-limit counters require writes. Provider-generated read-only and TCP variables do not replace this pair.
 
-The intended security-console configuration uses `SECURITY_WEBAUTHN_RP_ID`, `SECURITY_WEBAUTHN_ORIGIN`, and `SECURITY_BOOTSTRAP_TOKEN`, but the complete WebAuthn, session, and bootstrap authentication flow has not been implemented in the current source. Do not expose the security console publicly until that independent authentication and authorization layer has been completed and verified. Its event API must not be treated as authenticated merely because it is served by a separate application.
+The one-time `SECURITY_BOOTSTRAP_TOKEN` initializes an Argon2id password in the console Redis. A password-authenticated session must be upgraded with the console's independent WebAuthn passkey before operational pages and APIs can be read. Console sessions have four-hour absolute and fifteen-minute idle expiry and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory-admin cookie and credentials are never accepted by the console.
+
+Private bug reports remain encrypted in the primary application's Redis. The console reads them through a narrow server-to-server endpoint authenticated with a timestamped HMAC using `SECURITY_CONSOLE_SERVICE_SECRET`. The shared secret stays server-side, report responses are non-cacheable, and inventory mutation is not exposed through this bridge.
 
 ## Target architecture
 
@@ -149,6 +164,8 @@ INVENTORY_BLOB_ORIGIN
 SECURITY_LOG_PROVIDER
 SECURITY_LOG_INGEST_URL
 SECURITY_LOG_INGEST_TOKEN
+SECURITY_IP_HASH_SECRET
+SECURITY_CONSOLE_SERVICE_SECRET
 ```
 
 The root application also consumes or supports the following service variables:
@@ -163,8 +180,13 @@ BLOB_READ_WRITE_TOKEN
 RESEND_API_KEY
 RESEND_EMAIL_DOMAIN
 RESEND_PASSWORD_RESET_API_KEY
+TEST_DRIVE_NOTIFICATION_EMAIL
+ADMIN_RECOVERY_EMAIL
 WEBAUTHN_ORIGIN
 WEBAUTHN_RP_ID
+BUG_REPORT_ORIGIN
+BUG_REPORT_ENCRYPTION_KEY
+BUG_REPORT_RATE_LIMIT_SECRET
 SPEEDZONE_E2E
 INVENTORY_E2E_FIXTURE
 ```
@@ -176,16 +198,34 @@ The `KV_REST_API_*` variables are the canonical Redis names in the root applicat
 The separately deployable console references or is intended to use:
 
 ```text
-SECURITY_KV_REST_API_URL
-SECURITY_KV_REST_API_TOKEN
+ADMIN_SECURITY_KV_REST_API_URL
+ADMIN_SECURITY_KV_REST_API_TOKEN
 SECURITY_WEBAUTHN_ORIGIN
 SECURITY_WEBAUTHN_RP_ID
 SECURITY_BOOTSTRAP_TOKEN
-SECURITY_LOG_PROVIDER_URL
-SECURITY_LOG_PROVIDER_TOKEN
+SECURITY_LOG_PROVIDER
+SECURITY_LOG_QUERY_URL
+SECURITY_LOG_QUERY_TOKEN
+SECURITY_TEST_TARGET_URL
+SECURITY_CONSOLE_TEST_SECRET
+SECURITY_CONSOLE_SERVICE_SECRET
+SPEEDZONE_SOURCE_URL
+SECURITY_CONSOLE_IP_HASH_SECRET
 ```
 
-`SECURITY_WEBAUTHN_RP_ID` and the origin are identifiers/configuration values. Redis tokens, bootstrap tokens, provider tokens, and other credentials are confidential and must remain server-side.
+`SECURITY_WEBAUTHN_RP_ID`, `SECURITY_WEBAUTHN_ORIGIN`, and `SPEEDZONE_SOURCE_URL` are configuration values. Redis tokens, bootstrap tokens, provider tokens, shared HMAC secrets, and hashing keys are confidential and must remain server-side.
+
+### Generating Base64URL secrets
+
+These secrets are generated application values, not Marketplace integrations. Generate each value in PowerShell:
+
+```powershell
+$bytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+[Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
+```
+
+Use separate generated values for `SECURITY_IP_HASH_SECRET` and `SECURITY_CONSOLE_IP_HASH_SECRET`. Generate `SECURITY_CONSOLE_SERVICE_SECRET` once and place the identical value in the primary and Security Console Vercel projects for the corresponding environment. Preview and Production should use separate values. Changing an IP-hashing secret breaks continuity between earlier and later network fingerprints.
 
 ## Development
 
@@ -221,7 +261,7 @@ The root `npm run check` script runs linting, type checking, tests, and a produc
 
 ## Deployment
 
-Deploy the root directory as a Next.js project on Vercel using the repository's npm lockfile and `npm run build`. Deploy `security-console/` as a separate Next.js project only after its independent authentication and authorization layer is implemented and verified.
+Deploy the root directory as one Next.js project on Vercel using the repository's npm lockfile and `npm run build`. Deploy `security-console/` as a separate Next.js project with its Root Directory set to `security-console`. Configure Preview first, enroll an independent console password and passkey, verify every protected page and API, run the controlled delivery test, and confirm report access before configuring `logs.speedzonems.com` for Production.
 
 ## Repository layout
 

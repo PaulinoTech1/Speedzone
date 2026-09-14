@@ -1,18 +1,31 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 
 export type SecurityEventOutcome = "allowed" | "denied" | "failed" | "unavailable";
 export type SecurityEventName =
   | "admin.logout"
   | "admin.login"
+  | "admin.login.rate_limited"
+  | "admin.session.created"
+  | "admin.password.changed"
   | "admin.passkey"
   | "admin.recovery"
   | "inventory.read"
   | "inventory.mutation"
   | "inventory.upload"
-  | "test-drive.submission";
+  | "test-drive.submission"
+  | "test-drive.notification"
+  | "bug-report.submission";
+
+export type SecurityClientContext = {
+  networkFingerprint?: string;
+  country?: string;
+  region?: string;
+  userAgentFamily?: string;
+};
 
 export type SecurityEvent = {
-  version: 1;
+  version: 1 | 2;
   id: string;
   requestId: string;
   occurredAt: string;
@@ -23,6 +36,7 @@ export type SecurityEvent = {
   method: string;
   status?: number;
   reason?: string;
+  client?: SecurityClientContext;
   metadata?: Record<string, string | number | boolean | null>;
   previousHash?: string;
   hash: string;
@@ -47,6 +61,35 @@ export function sanitizeMetadata(input: unknown): Record<string, string | number
   return Object.keys(output).length ? output : undefined;
 }
 
+function trustedClientIp(request: Request) {
+  if (!process.env.VERCEL) return "local";
+  const value = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim().toLowerCase();
+  return value && isIP(value) ? value : "unknown";
+}
+
+function boundedHeader(value: string | null, pattern: RegExp, maxLength: number) {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length <= maxLength && pattern.test(trimmed) ? trimmed : undefined;
+}
+
+export function userAgentFamily(value: string | null) {
+  if (!value) return undefined;
+  const browser = /Edg\//.test(value) ? "Edge" : /Chrome\//.test(value) ? "Chrome" : /Firefox\//.test(value) ? "Firefox" : /Safari\//.test(value) ? "Safari" : "Other browser";
+  const platform = /Windows/.test(value) ? "Windows" : /Android/.test(value) ? "Android" : /iPhone|iPad/.test(value) ? "iOS" : /Macintosh|Mac OS X/.test(value) ? "macOS" : /Linux/.test(value) ? "Linux" : "Other platform";
+  return `${browser} / ${platform}`;
+}
+
+export function securityClientContext(request: Request): SecurityClientContext | undefined {
+  const secret = process.env.SECURITY_IP_HASH_SECRET?.trim();
+  const networkFingerprint = secret && secret.length >= 32
+    ? createHmac("sha256", secret).update(trustedClientIp(request)).digest("hex").slice(0, 24)
+    : undefined;
+  const country = boundedHeader(request.headers.get("x-vercel-ip-country"), /^[A-Za-z]{2}$/, 2)?.toUpperCase();
+  const region = boundedHeader(request.headers.get("x-vercel-ip-country-region"), /^[A-Za-z0-9-]+$/, 32);
+  const family = userAgentFamily(request.headers.get("user-agent"));
+  return networkFingerprint || country || region || family ? { networkFingerprint, country, region, userAgentFamily: family } : undefined;
+}
+
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -58,12 +101,12 @@ export function hashSecurityEvent(event: Omit<SecurityEvent, "hash">) {
 }
 
 export function createSecurityEvent(input: Omit<SecurityEvent, "version" | "id" | "occurredAt" | "hash"> & { requestId?: string }) {
-  const event = { version: 1 as const, id: randomUUID(), occurredAt: new Date().toISOString(), ...input, requestId: requestId(input.requestId), metadata: sanitizeMetadata(input.metadata) };
+  const event = { version: 2 as const, id: randomUUID(), occurredAt: new Date().toISOString(), ...input, requestId: requestId(input.requestId), metadata: sanitizeMetadata(input.metadata) };
   return { ...event, hash: hashSecurityEvent(event) };
 }
 
 export function verifySecurityEvent(event: SecurityEvent) {
-  return event.version === 1 && event.hash === hashSecurityEvent(event);
+  return (event.version === 1 || event.version === 2) && event.hash === hashSecurityEvent(event);
 }
 
 export async function writeSecurityEvent(input: Parameters<typeof createSecurityEvent>[0]) {
@@ -84,8 +127,8 @@ export async function deliverSecurityEvent(event: SecurityEvent) {
   return { delivered: false as const, status: null, reason: "unsupported" as const };
 }
 
-export function securityRequestContext(request: Request) {
-  return { requestId: requestId(request.headers.get("x-request-id")), route: new URL(request.url).pathname, method: request.method };
+export function securityRequestContext(request: Request, includeClient=false) {
+  return { requestId: requestId(request.headers.get("x-request-id")), route: new URL(request.url).pathname, method: request.method, ...(includeClient?{client:securityClientContext(request)}:{}) };
 }
 
 export function securityHeaders(requestIdValue: string) {
@@ -99,7 +142,7 @@ export function safeSecurityError(error: unknown) {
 export { canonical };
 
 export async function auditRoute(request: Request, event: SecurityEventName, handler: () => Promise<Response>, reason?: string, successActor: SecurityEvent["actor"] = "anonymous") {
-  const context = securityRequestContext(request);
+  const context = securityRequestContext(request,event.startsWith("admin.")||event.startsWith("inventory."));
   try {
     const response = await handler();
     await writeSecurityEvent({ ...context, event, actor: response.ok ? successActor : "anonymous", status: response.status, outcome: response.ok ? "allowed" : response.status >= 500 ? "failed" : "denied", reason });

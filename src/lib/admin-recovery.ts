@@ -24,7 +24,7 @@ type CredentialSnapshot = {
 };
 export type CredentialState = "fresh" | "current_complete" | "current_missing_metadata" | "legacy" | "conflicting" | "corrupt" | "unavailable";
 export type PasswordVerification =
-  | { verified: true; credentialEpoch: number }
+  | { verified: true; credentialEpoch: number; credentialChange?: "enrolled" | "legacy_migrated" | "metadata_repaired" }
   | { verified: false; reason: "invalid" | "recovery_required" | "unavailable" };
 
 const snapshotScript = "return {redis.call('GET', KEYS[1]), redis.call('GET', KEYS[2]), redis.call('GET', KEYS[3]), redis.call('GET', KEYS[4]), redis.call('GET', KEYS[5])}";
@@ -197,7 +197,7 @@ export async function verifyAdminPassword(password: string): Promise<PasswordVer
       if (state === "current_missing_metadata") {
         const result = await redis.eval(backfillScript, [credentialKey, credentialStateKey, epochKey], [snap.current!]);
         if (Number(result) <= 0) return { verified: false, reason: "recovery_required" };
-        return { verified: true, credentialEpoch: Number(result) };
+        return { verified: true, credentialEpoch: Number(result), credentialChange: "metadata_repaired" };
       }
       if (!snap.epoch || !validEpoch(snap.epoch)) return { verified: false, reason: "recovery_required" };
       return { verified: true, credentialEpoch: Number(snap.epoch) };
@@ -208,12 +208,12 @@ export async function verifyAdminPassword(password: string): Promise<PasswordVer
       const other = snap.legacyOverride ? legacyCredentialKey : legacyOverrideKey;
       const result = await redis.eval(migrateLegacyScript, [credentialKey, snap.legacyOverride ? legacyOverrideKey : legacyCredentialKey, other, credentialStateKey, epochKey], [selected, hash]);
       if (Number(result) !== 1) return { verified: false, reason: "recovery_required" };
-      return { verified: true, credentialEpoch: 1 };
+      return { verified: true, credentialEpoch: 1, credentialChange: "legacy_migrated" };
     }
     const bootstrap = process.env.SPEEDZONE_ADMIN_PASSWORD; if (!bootstrap || password !== bootstrap) return { verified: false, reason: "invalid" };
     const hash = await hashPassword(password);
     const result = await redis.eval(initializeScript, keys(), [hash]);
-    if (Number(result) === 1) return { verified: true, credentialEpoch: 1 };
+    if (Number(result) === 1) return { verified: true, credentialEpoch: 1, credentialChange: "enrolled" };
     return { verified: false, reason: "recovery_required" };
   } catch { return { verified: false, reason: "unavailable" }; }
 }

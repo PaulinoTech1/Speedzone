@@ -1,5 +1,5 @@
 import { withDiagnostics } from "@/lib/diagnostics";
-import { auditRoute } from "@/lib/security-events";
+import { auditRoute, securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 import { NextResponse } from "next/server";
 import { adminCookieOptions, createAdminSession, isAdmin } from "@/lib/admin-auth";
 import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, verifyAuthentication, verifyRegistration } from "@/lib/admin-passkeys";
@@ -28,6 +28,7 @@ async function handlePOST(request: Request) {
     if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503, headers: { "Cache-Control": "no-store" } });
     const response = NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set("speedzone_admin", session, adminCookieOptions());
+    await writeSecurityEvent({ ...securityRequestContext(request,true), event: "admin.session.created", outcome: "allowed", actor: "admin", reason: "passkey_registration_session_created", metadata: { auth_factor: "passkey", credential_epoch: result.credentialEpoch } });
     return response;
   }
   if (action === "authentication-options") {
@@ -50,6 +51,7 @@ async function handlePOST(request: Request) {
     if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
     const response = NextResponse.json({ verified: true }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set("speedzone_admin", session, adminCookieOptions());
+    await writeSecurityEvent({ ...securityRequestContext(request,true), event: "admin.session.created", outcome: "allowed", actor: "admin", reason: "passkey_session_created", metadata: { auth_factor: "passkey", credential_epoch: credentialEpoch } });
     return response;
   }
   if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

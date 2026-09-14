@@ -1,5 +1,6 @@
 import { admitBugReport, readReportBody, storeBugReport, validReportOrigin, validateBugReport } from "@/lib/bug-reports";
 import { withDiagnostics } from "@/lib/diagnostics";
+import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
     const report = validateBugReport(body);
     if (!report) return Response.json({ error: "Check the report fields and their length limits." }, { status: 400 });
     const reference = await storeBugReport(report);
+    await writeSecurityEvent({ ...securityRequestContext(request), event: "bug-report.submission", outcome: "allowed", actor: "anonymous", reason: "encrypted_report_stored", metadata: { report_category: report.category } });
     return Response.json({ ok: true, reference }, { status: 201, headers: { "Cache-Control": "no-store" } });
   });
 }

@@ -86,12 +86,13 @@ export async function storeBugReport(input: Omit<BugReport, "id" | "createdAt">)
   await redis.eval(`redis.call('SET', KEYS[1], ARGV[1], 'EX', 2592000); redis.call('LPUSH', KEYS[2], KEYS[1]); redis.call('LTRIM', KEYS[2], 0, 199); redis.call('EXPIRE', KEYS[2], 2592000); return 1`, [`speedzone:bug-report:${report.id}`, "speedzone:bug-report:index"], [encrypted]);
   return report.id;
 }
-export async function readBugReports() {
+export async function readBugReportsPage(cursor=0,limit=100) {
   const redis = getRedis(); if (!redis) throw new Error("Reports unavailable");
-  const keys = await redis.lrange<string>("speedzone:bug-report:index", 0, 99);
-  if (!keys.length) return [];
+  const offset=Number.isSafeInteger(cursor)&&cursor>=0?cursor:0;const size=Math.min(Math.max(limit,1),100);
+  const keys = await redis.lrange<string>("speedzone:bug-report:index", offset, offset+size-1);
+  if (!keys.length) return {reports:[],nextCursor:null as number|null};
   const values = await redis.mget<(string | null)[]>(...keys);
-  return values.flatMap<BugReport | { id: string; unreadable: true }>((value, index) => {
+  const reports=values.flatMap<BugReport | { id: string; unreadable: true }>((value, index) => {
     if (!value) return [];
     try {
       const [version, iv, tag, ciphertext] = value.split(".");
@@ -101,4 +102,6 @@ export async function readBugReports() {
       return [JSON.parse(Buffer.concat([decipher.update(Buffer.from(ciphertext, "base64url")), decipher.final()]).toString("utf8")) as BugReport];
     } catch { return [{ id: keys[index]?.split(":").pop() || "unreadable", unreadable: true }]; }
   });
+  return {reports,nextCursor:keys.length===size?offset+size:null};
 }
+export async function readBugReports(){return (await readBugReportsPage()).reports}

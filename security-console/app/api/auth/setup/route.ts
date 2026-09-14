@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { initializePassword } from "@/lib/password";
 import { createSecuritySession, privateHeaders, SECURITY_COOKIE, securityCookieOptions } from "@/lib/auth";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { recordConsoleAudit } from "@/lib/console-audit";
 
 export async function POST(request: Request) {
   const rate = await enforceRateLimit(request, "setup", 3, 900);
@@ -12,5 +13,6 @@ export async function POST(request: Request) {
   const session = await createSecuritySession(result.epoch, "password");
   if (!session) return NextResponse.json({ error: "Session storage unavailable" }, { status: 503, headers: privateHeaders });
   const response = NextResponse.json({ ok: true, next: "/passkeys" }, { headers: privateHeaders });
+  await recordConsoleAudit(request,"console.password.enrolled","allowed","bootstrap_completed");
   response.cookies.set(SECURITY_COOKIE, session, securityCookieOptions); return response;
 }

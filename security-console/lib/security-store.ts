@@ -1,4 +1,4 @@
-export type SecurityEvent = { version?:number; id:string; occurredAt:string; event:string; outcome:string; actor:string; route:string; method?:string; requestId:string; hash:string; reason?:string; metadata?:Record<string,unknown> };
+export type SecurityEvent = { version?:number; id:string; occurredAt:string; event:string; outcome:string; actor:string; route:string; method?:string; requestId:string; hash:string; reason?:string; client?:{networkFingerprint?:string;country?:string;region?:string;userAgentFamily?:string};metadata?:Record<string,unknown> };
 
 export interface SecurityEventProvider { list(limit: number): Promise<SecurityEvent[]>; find(id: string): Promise<SecurityEvent | null>; }
 
@@ -31,5 +31,5 @@ export function securityEventProvider(): SecurityEventProvider {
   if(provider==="axiom") return new AxiomProvider();
   throw new Error("Unsupported security event provider");
 }
-export function readEvents(){return securityEventProvider().list(100)}
+export function readEvents(limit=500){return securityEventProvider().list(limit)}
 export function readEvent(id:string){return securityEventProvider().find(id)}

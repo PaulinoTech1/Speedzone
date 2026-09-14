@@ -1,5 +1,5 @@
 import { withDiagnostics } from "@/lib/diagnostics";
-import { auditRoute } from "@/lib/security-events";
+import { auditRoute, securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 import { NextResponse } from "next/server";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { resetAdminPasswordWithToken } from "@/lib/admin-recovery";
@@ -36,6 +36,7 @@ async function handlePOST(request: Request) {
     return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
   console.info("[recovery] password recovery committed; credential epoch invalidates prior sessions");
+  await writeSecurityEvent({ ...securityRequestContext(request,true), event: "admin.password.changed", outcome: "allowed", actor: "admin", reason: commit.status === "already_committed" ? "recovery_reconciled" : "recovery_completed", metadata: { credential_epoch: commit.credentialEpoch, prior_sessions_revoked: true } });
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
 

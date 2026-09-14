@@ -107,13 +107,20 @@ async function diagnosedPOST(request: Request) {
         },
         { idempotencyKey: `test-drive-submission/${submission.id}` },
       );
-      if (error) await recordDiagnostic("CUSTOMER_REQUEST_EMAIL_NOTIFY", 502);
+      if (error) {
+        await recordDiagnostic("CUSTOMER_REQUEST_EMAIL_NOTIFY", 502);
+        await writeSecurityEvent({ ...securityRequestContext(request), event: "test-drive.notification", outcome: "failed", actor: "anonymous", reason: "provider_rejected", metadata: { submission_reference: submission.id } });
+      } else {
+        await writeSecurityEvent({ ...securityRequestContext(request), event: "test-drive.notification", outcome: "allowed", actor: "anonymous", reason: "provider_accepted", metadata: { submission_reference: submission.id } });
+      }
     } else {
       await recordDiagnostic("CUSTOMER_REQUEST_EMAIL_NOTIFY", 503);
+      await writeSecurityEvent({ ...securityRequestContext(request), event: "test-drive.notification", outcome: "unavailable", actor: "anonymous", reason: "provider_not_configured", metadata: { submission_reference: submission.id } });
     }
 
   } catch {
     await recordDiagnostic("CUSTOMER_REQUEST_EMAIL_NOTIFY", 502);
+    await writeSecurityEvent({ ...securityRequestContext(request), event: "test-drive.notification", outcome: "failed", actor: "anonymous", reason: "provider_unavailable", metadata: { submission_reference: submission.id } });
   }
 
   await writeSecurityEvent({ ...securityRequestContext(request), event: "test-drive.submission", outcome: "allowed", actor: "anonymous", reason: "encrypted_submission_stored" });

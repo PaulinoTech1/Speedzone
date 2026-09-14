@@ -104,7 +104,7 @@ async function diagnosedPOST(request: Request) {
       }),
     });
 
-    await writeSecurityEvent({ ...securityRequestContext(request), event: "inventory.upload", outcome: "allowed", actor: "admin", reason: "upload_token_issued" });
+    await writeSecurityEvent({ ...securityRequestContext(request,true), event: "inventory.upload", outcome: "allowed", actor: "admin", reason: "upload_token_issued" });
     return NextResponse.json(response, { headers: privateResponseHeaders() });
   } catch (error) {
     console.error("[inventory] unable to issue photo upload token", error);
