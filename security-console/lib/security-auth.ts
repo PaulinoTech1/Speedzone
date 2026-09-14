@@ -21,6 +21,8 @@ const credentialsKey = "speedzone:security-console:passkeys";
 const sessionPrefix = "speedzone:security-console:session:";
 const challengePrefix = "speedzone:security-console:challenge:";
 const challengeTtlSeconds = 120;
+const PASSWORD_ATTEMPT_LIMIT = 5;
+const PASSWORD_ATTEMPT_WINDOW_SECONDS = 15 * 60;
 const userId = "speedzone-security-console";
 const rpName = "SpeedZone Security Console";
 
@@ -40,6 +42,17 @@ export type WebAuthnConfig = { rpID: string; origin: string };
 function sessionKey(token: string) { return `${sessionPrefix}${createHash("sha256").update(token).digest("hex")}`; }
 function challengeKey(kind: "registration" | "authentication", challenge: string) { return `${challengePrefix}${kind}:${challenge}`; }
 function configuredRedis() { return securityRedis(); }
+
+export function securityLoginIdentifier(headers: Headers) {
+  return headers.get("x-real-ip")?.trim() || headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-client";
+}
+
+function passwordAttemptKey(identifier: string) { return `speedzone:security-console:password-attempts:${createHash("sha256").update(identifier).digest("hex")}`; }
+
+async function allowPasswordAttempt(redis: NonNullable<ReturnType<typeof configuredRedis>>, identifier: string) {
+  const result = await redis.eval("local count = tonumber(redis.call('GET', KEYS[1]) or '0'); if count >= tonumber(ARGV[1]) then return -(redis.call('TTL', KEYS[1]) or ARGV[2]) end; count = redis.call('INCR', KEYS[1]); if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end; return count", [passwordAttemptKey(identifier)], [String(PASSWORD_ATTEMPT_LIMIT), String(PASSWORD_ATTEMPT_WINDOW_SECONDS)]);
+  return Number(result);
+}
 
 export function securityWebAuthnConfig(headers: Headers): WebAuthnConfig {
   const host = headers.get("x-forwarded-host")?.split(",")[0]?.trim() || headers.get("host")?.trim() || "localhost:4190";
@@ -104,12 +117,20 @@ export async function bootstrapSecurityPassword(password: string, bootstrapToken
   return Number(result) === 1 ? { authenticated: true } : { error: "Security password is already configured" as const };
 }
 
-export async function loginWithSecurityPassword(password: string) {
+export async function loginWithSecurityPassword(password: string, identifier = "unknown-client") {
   const redis = configuredRedis();
   if (!redis) return { error: "Security Redis is not configured" as const };
+  const attempt = await allowPasswordAttempt(redis, identifier);
+  if (attempt < 0) return { error: "Too many password attempts. Try again later." as const, retryAfter: Math.max(1, Math.abs(attempt)) };
   const hash = await redis.get<string>(passwordKey);
   if (!hash) return { error: "Security password is not configured" as const };
-  try { return await argon2.verify(hash, password) ? { authenticated: true } : { error: "Invalid password" as const }; } catch { return { error: "Invalid password" as const }; }
+  try {
+    if (await argon2.verify(hash, password)) {
+      await redis.del(passwordAttemptKey(identifier));
+      return { authenticated: true };
+    }
+    return { error: "Invalid password" as const };
+  } catch { return { error: "Invalid password" as const }; }
 }
 
 export async function createSecuritySession(factor: "password" | "mfa" = "mfa") {

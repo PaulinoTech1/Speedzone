@@ -9,6 +9,7 @@ import {
   listSecurityPasskeys,
   registrationOptions,
   securitySessionCookie,
+  securityLoginIdentifier,
   securityWebAuthnConfig,
   verifyAuthentication,
   verifyRegistration,
@@ -26,7 +27,8 @@ export async function POST(request: Request) {
   const config = securityWebAuthnConfig(request.headers);
 
   if (body.action === "password-login") {
-    const result = await loginWithSecurityPassword(body.password || "");
+    const result = await loginWithSecurityPassword(body.password || "", securityLoginIdentifier(request.headers));
+    if ("retryAfter" in result) return NextResponse.json(result, { status: 429, headers: { "Retry-After": String(result.retryAfter) } });
     if (!("authenticated" in result)) return NextResponse.json(result, { status: 401 });
     const token = await createSecuritySession("password");
     if (!token) return NextResponse.json({ error: "Security session could not be created" }, { status: 503 });
