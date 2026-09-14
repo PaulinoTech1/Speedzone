@@ -62,6 +62,21 @@ async function credentials() {
   return value === null ? [] : Array.isArray(value) ? value : null;
 }
 
+export type SecurityPasskeySummary = { id: string; name: string; deviceType: string; backedUp: boolean };
+
+export async function listSecurityPasskeys() {
+  if (!(await isSecurityAuthenticated())) return { error: "Unauthorized" as const };
+  return { passkeys: (await credentials() || []).map(({ id, name, deviceType, backedUp }) => ({ id, name, deviceType, backedUp })) };
+}
+
+export async function deleteSecurityPasskey(id: string) {
+  if (!(await isSecurityAuthenticated())) return { error: "Unauthorized" as const };
+  const redis = configuredRedis();
+  if (!redis) return { error: "Security Redis is not configured" as const };
+  const result = await redis.eval("local raw = redis.call('GET', KEYS[1]); if not raw then return 0 end; local current = cjson.decode(raw); local next = {}; local removed = 0; for _, item in ipairs(current) do if item.id == ARGV[1] then removed = 1 else table.insert(next, item) end end; if removed == 1 then redis.call('SET', KEYS[1], cjson.encode(next)) end; return removed", [credentialsKey], [id]);
+  return Number(result) === 1 ? { deleted: true } : { error: "Passkey not found" as const };
+}
+
 export async function hasSecurityPassword() {
   const redis = configuredRedis();
   return Boolean(redis && await redis.exists(passwordKey));

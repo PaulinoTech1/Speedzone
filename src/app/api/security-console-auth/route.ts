@@ -4,7 +4,9 @@ import {
   authenticationOptions,
   clearSecuritySessionCookie,
   createSecuritySession,
+  deleteSecurityPasskey,
   loginWithSecurityPassword,
+  listSecurityPasskeys,
   registrationOptions,
   securitySessionCookie,
   securityWebAuthnConfig,
@@ -20,7 +22,7 @@ function sessionHeaders(token: string) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({})) as { action?: string; password?: string; name?: string; response?: unknown };
+  const body = await request.json().catch(() => ({})) as { action?: string; password?: string; name?: string; id?: string; response?: unknown };
   const config = securityWebAuthnConfig(request.headers);
 
   if (body.action === "password-login") {
@@ -53,6 +55,14 @@ export async function POST(request: Request) {
     const token = await createSecuritySession("mfa");
     if (!token) return NextResponse.json({ error: "Security session could not be created" }, { status: 503 });
     return NextResponse.json({ authenticated: true, verified: true }, { headers: sessionHeaders(token) });
+  }
+  if (body.action === "passkeys") {
+    const result = await listSecurityPasskeys();
+    return "passkeys" in result ? NextResponse.json(result) : NextResponse.json(result, { status: 401 });
+  }
+  if (body.action === "delete-passkey") {
+    const result = await deleteSecurityPasskey(body.id || "");
+    return "deleted" in result ? NextResponse.json(result) : NextResponse.json(result, { status: 401 });
   }
   if (body.action === "logout") {
     const cookie = clearSecuritySessionCookie();

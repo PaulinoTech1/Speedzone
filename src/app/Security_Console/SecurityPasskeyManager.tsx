@@ -1,12 +1,23 @@
 "use client";
 
 import { startRegistration } from "@simplewebauthn/browser";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+type Passkey = { id: string; name: string; deviceType: string; backedUp: boolean };
 
 export default function SecurityPasskeyManager() {
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
+  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
   const [busy, setBusy] = useState(false);
+
+  async function loadPasskeys() {
+    const response = await fetch("/api/security-console-auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "passkeys" }) });
+    const result = await response.json();
+    if (response.ok) setPasskeys(result.passkeys || []);
+  }
+
+  useEffect(() => { void loadPasskeys(); }, []);
 
   async function addPasskey(event: React.FormEvent) {
     event.preventDefault();
@@ -22,11 +33,25 @@ export default function SecurityPasskeyManager() {
       if (!verifyResponse.ok || verifyResult.error) throw new Error(verifyResult.error || "Passkey registration failed.");
       setName("");
       setMessage("Passkey added to the security console.");
+      await loadPasskeys();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Passkey registration failed.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function deletePasskey(id: string) {
+    if (!window.confirm("Delete this security-console passkey?")) return;
+    setBusy(true);
+    setMessage("");
+    const response = await fetch("/api/security-console-auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "delete-passkey", id }) });
+    const result = await response.json();
+    if (response.ok) {
+      setMessage("Passkey deleted. Add a new passkey before the next sign-in.");
+      await loadPasskeys();
+    } else setMessage(result.error || "Passkey could not be deleted.");
+    setBusy(false);
   }
 
   return (
@@ -36,6 +61,7 @@ export default function SecurityPasskeyManager() {
       <input id="security-passkey-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Security key or device" required />
       <button className="button button-primary" disabled={busy} type="submit">Add passkey</button>
       {message && <p className="muted">{message}</p>}
+      {passkeys.length > 0 && <div><h3>Registered passkeys</h3>{passkeys.map((passkey) => <p key={passkey.id}>{passkey.name} <button className="button button-ghost" disabled={busy} onClick={() => void deletePasskey(passkey.id)} type="button">Delete</button></p>)}</div>}
     </form>
   );
 }
