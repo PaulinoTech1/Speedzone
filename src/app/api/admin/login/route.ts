@@ -1,3 +1,4 @@
+import { withDiagnostics } from "@/lib/diagnostics";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { adminCookieOptions, clearAdminCookie, createAdminSession, revokeAdminSession } from "@/lib/admin-auth";
@@ -11,7 +12,7 @@ function getClientIdentifier(request: Request) {
   return forwardedFor?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
 }
 
-export async function POST(request: Request) {
+async function diagnosedPOST(request: Request) {
   const rateLimit = await checkAdminLoginRateLimit(`ip:${getClientIdentifier(request)}`);
   if (!rateLimit.configured) {
     return NextResponse.json(
@@ -49,10 +50,15 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
 
-export async function DELETE(request: Request) {
+async function diagnosedDELETE(request: Request) {
   await revokeAdminSession(request);
+  await writeSecurityEvent({ ...securityRequestContext(request), event: "admin.logout", outcome: "allowed", actor: "anonymous", reason: "session_revoked" });
   const response = NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   const cookie = clearAdminCookie();
-  response.cookies.set(cookie.name, cookie.value, adminCookieOptions());
+  response.cookies.set(cookie.name, cookie.value, { ...adminCookieOptions(), maxAge: 0 });
   return response;
 }
+
+export async function POST(request: Request) { return withDiagnostics("ADMIN_PASSWORD_BOOTSTRAP", () => diagnosedPOST(request)); }
+
+export async function DELETE(request: Request) { return withDiagnostics("ADMIN_SESSION_LOGOUT", () => diagnosedDELETE(request)); }

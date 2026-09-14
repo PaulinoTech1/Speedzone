@@ -2,7 +2,7 @@ import { randomBytes, createHash } from "node:crypto";
 import argon2 from "argon2";
 import { getRedis } from "@/lib/redis";
 
-export const recoveryEmail = "admin@speedzonemotorsports.com";
+export const recoveryEmail = process.env.ADMIN_RECOVERY_EMAIL?.trim().toLowerCase() || "";
 export const recoveryTtlSeconds = 15 * 60;
 const tokenPrefix = "speedzone:admin-recovery:v2:";
 const credentialKey = "speedzone:admin-credential:v2";
@@ -78,7 +78,7 @@ function classify(snapshot: CredentialSnapshot): CredentialState {
 function keys() { return [credentialKey, legacyOverrideKey, legacyCredentialKey, credentialStateKey, epochKey]; }
 async function snapshot(redis: NonNullable<ReturnType<typeof getRedis>>) { return parseSnapshot(await redis.eval(snapshotScript, keys(), [])); }
 
-export function recoveryConfigured() { return Boolean(process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN); }
+export function recoveryConfigured() { return Boolean(recoveryEmail && process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN); }
 const consumeRecoveryTokenScript = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end

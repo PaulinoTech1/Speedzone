@@ -11,28 +11,17 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <LegalPageShell title="Privacy" counterpart="terms">
-      <p>
-        This website is designed to help you learn about SpeedZone Motorsports
-        and contact us directly. This version of the site does not include an
-        account system, online purchase flow, advertising tracker, or analytics
-        script.
-      </p>
-
-      <h2>Information you choose to share</h2>
-      <p>
-        If you call or email us, we receive the information you choose to
-        provide through your phone or email service. Please do not send
-        sensitive financial information by ordinary email.
-      </p>
-
-      <h2>Hosting and basic technical data</h2>
-      <p>
-        Our hosting provider may process basic request informationâ€”such as an IP
-        address, browser type, requested page, and timestampâ€”to deliver and
-        secure the website. That processing is controlled by the providerâ€™s own
-        terms and privacy practices.
-      </p>
+    <LegalPageShell title="Privacy" counterpart="terms" updated="September 12, 2026">
+      <p>This website provides vehicle information and lets you request a test drive. It does not accept online vehicle purchases or provide customer accounts.</p>
+      <h2>Test-drive requests and direct contact</h2>
+      <p>The request form collects your name, email, phone number, vehicle of interest, preferred appointment date and time, and any notes you provide. We use these details to respond and arrange your visit. Please do not include payment details, identity documents, or sensitive financial information.</p>
+      <p>Requests are encrypted by the application and stored in private Vercel Blob storage. Authorized staff access requests through a passkey-protected admin area. Email notifications sent through Resend contain a request reference; staff view contact details in the admin inbox. Information you send by phone or email is also processed by those services.</p>
+      <h2>Technical information and admin sessions</h2>
+      <p>Vercel processes requests to host and secure the website. Redis stores access-control and rate-limit data. The application uses keyed identifiers derived from IP and contact information for test-drive rate limiting. Admin sign-in uses an essential session cookie and passkeys. Security events record operations and outcomes without including customer form contents; configured logging providers may receive those events.</p>
+      <h2>Website problem reports</h2>
+      <p>If you report a problem, we collect the text you submit and an optional reply address. Reports are encrypted, accessible to administrators, and expire from application storage after 30 days. Rate limiting uses a keyed identifier derived from the client IP; raw IPs are not stored by this reporting feature. Diagnostic records contain operation codes, timestamps and random references rather than form contents, and expire after 7 days. Hosting providers may retain separate operational records.</p>
+      <h2>Retention and privacy requests</h2>
+      <p>Customer requests are retained for staff follow-up; the application does not currently delete them automatically. Contact us below to ask about access, correction, or deletion of information you submitted. Hosting, email, and security providers may retain separate operational records.</p>
 
       <h2>Links to other services</h2>
       <p>

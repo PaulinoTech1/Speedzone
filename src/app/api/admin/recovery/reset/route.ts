@@ -1,8 +1,10 @@
+import { withDiagnostics } from "@/lib/diagnostics";
+import { auditRoute } from "@/lib/security-events";
 import { NextResponse } from "next/server";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { resetAdminPasswordWithToken } from "@/lib/admin-recovery";
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const client = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const limit = await checkAdminLoginRateLimit(`recovery-reset:${client}`);
   if (!limit.configured) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
@@ -36,3 +38,7 @@ export async function POST(request: Request) {
   console.info("[recovery] password recovery committed; credential epoch invalidates prior sessions");
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
+
+async function diagnosedPOST(request: Request) { return auditRoute(request, "admin.recovery", () => handlePOST(request), "post"); }
+
+export async function POST(request: Request) { return withDiagnostics("ADMIN_RECOVERY_RESET", () => diagnosedPOST(request)); }

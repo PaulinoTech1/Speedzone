@@ -197,6 +197,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
           <div>
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
+            <a href="/report-a-problem">Report a problem</a>
             <a href="/admin">Admin inventory</a>
           </div>
         </div>

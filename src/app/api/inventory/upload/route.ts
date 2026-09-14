@@ -1,3 +1,4 @@
+import { recordDiagnostic, withDiagnostics } from "@/lib/diagnostics";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { isAdminAuthenticated, privateResponseHeaders } from "@/lib/admin-auth";
@@ -28,13 +29,14 @@ export async function GET(request: Request) {
   }
 
   const error = uploadConfigurationError();
+  if (error) await recordDiagnostic("INVENTORY_PHOTO_UPLOAD_AUTHORIZE", 503);
   return NextResponse.json(
     error ? { ready: false, error } : { ready: true },
     { status: error ? 503 : 200, headers: privateResponseHeaders() },
   );
 }
 
-export async function POST(request: Request) {
+async function diagnosedPOST(request: Request) {
   let parsedBody: unknown;
 
   try {
@@ -112,3 +114,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function POST(request: Request) { return withDiagnostics("INVENTORY_PHOTO_UPLOAD_AUTHORIZE", () => diagnosedPOST(request)); }

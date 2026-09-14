@@ -1,3 +1,5 @@
+import { withDiagnostics } from "@/lib/diagnostics";
+import { auditRoute } from "@/lib/security-events";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
@@ -9,7 +11,7 @@ function clientKey(request: Request) {
 
 const noStore = { "Cache-Control": "no-store" };
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   let limit;
   try {
     limit = await checkAdminLoginRateLimit(`recovery:${clientKey(request)}`);
@@ -40,3 +42,7 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: "Unable to send recovery email" }, { status: 502, headers: noStore });
   return NextResponse.json({ ok: true, message: `If recovery is available, a link was sent to ${recoveryEmail}.` }, { headers: noStore });
 }
+
+async function diagnosedPOST(request: Request) { return auditRoute(request, "admin.recovery", () => handlePOST(request), "post"); }
+
+export async function POST(request: Request) { return withDiagnostics("ADMIN_RECOVERY_REQUEST", () => diagnosedPOST(request)); }

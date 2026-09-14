@@ -1,24 +1,9 @@
-# Security logging and console
+# Security logging: implemented behavior
 
-## Trust boundaries
+The main website emits sanitized events for password login, logout, passkey routes, recovery routes, inventory updates/removal/uploads and accepted customer requests. Route events record outcome/status and a safe operation label. Actor fields identify a class, not a verified individual employee; successful authenticated inventory/passkey operations use the admin class; unauthenticated or denied requests use anonymous. Shared admin access does not provide individual accountability.
 
-The public SpeedZone application may emit sanitized, hash-linked security events. It never accepts security-console cookies and never shares inventory Redis/session namespaces with the console. The independent `security-console/` deployment is the only reader for the dedicated security Redis and provider APIs.
+Set SECURITY_LOG_PROVIDER=axiom, SECURITY_LOG_INGEST_URL and SECURITY_LOG_INGEST_TOKEN to enable best-effort HTTP delivery. The endpoint must accept the application's single JSON event format; configure an adapter if the provider expects another envelope. Non-success responses and network failures produce a local diagnostic without changing the business response. Configure alerts on those diagnostics in the provider. Disabled logging does not deliver or durably queue events.
 
-```text
-Public app -> sanitized event ingest -> provider/archive -> security console
-   inventory Redis/session                     security Redis/passkey session
-```
+Events omit request bodies and passkey assertions. Metadata excludes credential and customer contact keys. Event hashes are unkeyed checksums, not signatures, a chained archive, or proof against an attacker who can rewrite records. Retention, access control, archive integrity and alerting require separately configured provider controls.
 
-## Configuration
-
-Set `SECURITY_LOG_PROVIDER=axiom`, an allowlisted ingest URL, and a short-lived ingest credential only in the public app. Configure `SECURITY_KV_REST_API_URL`, `SECURITY_KV_REST_API_TOKEN`, `SECURITY_WEBAUTHN_ORIGIN`, `SECURITY_WEBAUTHN_RP_ID`, and `SECURITY_BOOTSTRAP_TOKEN` only in the security-console deployment. Do not reuse `speedzone_admin` cookies, Redis keys, or the inventory WebAuthn RP ID.
-
-The application does not provision Vercel Drains, Axiom datasets, S3 Object Lock, KMS retention, DNS, alerting, or backups. Those are external operational controls and must be configured and verified independently.
-
-## Event rules
-
-Events contain request IDs, route/method, outcome, actor class, reason codes, and bounded metadata. Passwords, tokens, assertions, credentials, cookies, authorization headers, customer contact fields, vehicle descriptions, and blob URLs are prohibited. Provider/archive unavailability is reported as unavailable; it is never represented as an empty verified log.
-
-## Recovery and residual risk
-
-Rotate ingest credentials and bootstrap tokens through the deployment secret manager. Revoke security-console sessions by advancing its independent session generation. Review provider retention and immutable archive configuration after every deployment. Best-effort telemetry can be lost during an outage; the business request path remains fail-open for telemetry while the console fails closed for reads.
+There is no implemented bridge from these HTTP events to the dedicated Redis store read by security-console. The console's independent passkey screens are placeholders and its reads have not been authenticated. Do not expose that application publicly. Use restricted provider tooling until the console is secured and tested.

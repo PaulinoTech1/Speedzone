@@ -16,6 +16,7 @@ const photoFiles = [
 ];
 
 async function mockAdminSession(page: Page) {
+  await page.route("**/api/admin/session", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: "authenticated" }) }));
   await page.route("**/api/admin/login", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -35,8 +36,7 @@ async function mockAdminSession(page: Page) {
 
 async function signIn(page: Page) {
   await page.goto("/admin");
-  await page.getByLabel("Password").fill("test-password");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 }
 
 test("an admin can read and preview JPEG, PNG, and WebP photos", async ({ page }) => {

@@ -10,7 +10,8 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: "SPEEDZONE_E2E=1 INVENTORY_E2E_FIXTURE=listing node node_modules/next/dist/bin/next start --hostname localhost --port 4183",
+    command: "node node_modules/next/dist/bin/next start --hostname localhost --port 4183",
+    env: { SPEEDZONE_E2E: "1", INVENTORY_E2E_FIXTURE: "listing" },
     url: "http://localhost:4183", reuseExistingServer: false,
   },
 });

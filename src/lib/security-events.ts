@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 export type SecurityEventOutcome = "allowed" | "denied" | "failed" | "unavailable";
 export type SecurityEventName =
+  | "admin.logout"
   | "admin.login"
   | "admin.passkey"
   | "admin.recovery"
@@ -72,8 +73,8 @@ export async function writeSecurityEvent(input: Parameters<typeof createSecurity
   if (provider === "axiom") {
     const endpoint = process.env.SECURITY_LOG_INGEST_URL;
     const token = process.env.SECURITY_LOG_INGEST_TOKEN;
-    if (!endpoint || !token) return event;
-    try { await fetch(endpoint, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(event), signal: AbortSignal.timeout(1500) }); } catch { /* telemetry must never change request behavior */ }
+    if (!endpoint || !token) { console.error("[security] logging configuration incomplete"); return event; }
+    try { const response = await fetch(endpoint, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(event), signal: AbortSignal.timeout(1500) }); if (!response.ok) console.error("[security] log delivery rejected", response.status); } catch { console.error("[security] log delivery unavailable"); }
   }
   return event;
 }
@@ -91,3 +92,15 @@ export function safeSecurityError(error: unknown) {
 }
 
 export { canonical };
+
+export async function auditRoute(request: Request, event: SecurityEventName, handler: () => Promise<Response>, reason?: string, successActor: SecurityEvent["actor"] = "anonymous") {
+  const context = securityRequestContext(request);
+  try {
+    const response = await handler();
+    await writeSecurityEvent({ ...context, event, actor: response.ok ? successActor : "anonymous", status: response.status, outcome: response.ok ? "allowed" : response.status >= 500 ? "failed" : "denied", reason });
+    return response;
+  } catch (error) {
+    await writeSecurityEvent({ ...context, event, actor: "anonymous", status: 500, outcome: "failed", reason });
+    throw error;
+  }
+}

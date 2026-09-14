@@ -1,3 +1,4 @@
+import { withDiagnostics } from "@/lib/diagnostics";
 import { NextRequest, NextResponse } from "next/server";
 import { getInventoryBlobOrigin, isInventoryPhotoPath } from "@/lib/inventory-photos";
 
@@ -42,7 +43,7 @@ async function readBoundedBody(body: ReadableStream<Uint8Array>) {
   }
 }
 
-export async function GET(request: NextRequest) {
+async function diagnosedGET(request: NextRequest) {
   const origin = getInventoryBlobOrigin();
   if (!origin) return new NextResponse("Image service unavailable", { status: 500 });
 
@@ -82,3 +83,5 @@ export async function GET(request: NextRequest) {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 35;
+
+export async function GET(request: NextRequest) { return withDiagnostics("INVENTORY_PHOTO_FETCH", () => diagnosedGET(request)); }
