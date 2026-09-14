@@ -198,7 +198,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
             <a href="/admin">Admin inventory</a>
-            <a href="https://logs.speedzonems.com" target="_blank" rel="noopener">
+            <a href="https://www.speedzonems.com/Security_Console" target="_blank" rel="noopener">
               Security console
             </a>
           </div>
