@@ -43,9 +43,19 @@ function configuredRedis() { return securityRedis(); }
 
 export function securityWebAuthnConfig(headers: Headers): WebAuthnConfig {
   const host = headers.get("x-forwarded-host")?.split(",")[0]?.trim() || headers.get("host")?.trim() || "localhost:4190";
-  const rpID = process.env.SECURITY_WEBAUTHN_RP_ID?.trim() || host.split(":")[0] || "localhost";
-  const protocol = process.env.SECURITY_WEBAUTHN_ORIGIN?.trim() ? undefined : (headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || (host.startsWith("localhost") ? "http" : "https"));
-  return { rpID, origin: process.env.SECURITY_WEBAUTHN_ORIGIN?.trim() || `${protocol}://${host}` };
+  const hostname = host.split(":")[0] || "localhost";
+  const configuredRpID = process.env.SECURITY_WEBAUTHN_RP_ID?.trim();
+  const rpID = configuredRpID && (hostname === configuredRpID || hostname.endsWith(`.${configuredRpID}`)) ? configuredRpID : hostname;
+  const forwardedProtocol = headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || (host.startsWith("localhost") ? "http" : "https");
+  const fallbackOrigin = `${forwardedProtocol}://${host}`;
+  const configuredOrigin = process.env.SECURITY_WEBAUTHN_ORIGIN?.trim();
+  let origin = fallbackOrigin;
+  try {
+    if (configuredOrigin && new URL(configuredOrigin).hostname === hostname) origin = new URL(configuredOrigin).origin;
+  } catch {
+    origin = fallbackOrigin;
+  }
+  return { rpID, origin };
 }
 
 async function credentialEpoch() {
