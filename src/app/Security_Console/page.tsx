@@ -1,4 +1,6 @@
 import SecurityLoginForm from "./SecurityLoginForm";
+import SecuritySessionPanel from "./SecuritySessionPanel";
+import { isSecurityAuthenticated } from "../../../security-console/lib/security-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +10,8 @@ export const metadata = {
 };
 
 export default async function SecurityConsolePage() {
+  const authenticated = await isSecurityAuthenticated();
+
   return (
     <main className="shell security-console-page">
       <header>
@@ -15,7 +19,7 @@ export default async function SecurityConsolePage() {
         <h1>Security Console</h1>
         <p>Use the dedicated security-console password or passkey. Inventory-admin credentials are not accepted here.</p>
       </header>
-      <SecurityLoginForm />
+      {authenticated ? <SecuritySessionPanel /> : <SecurityLoginForm />}
     </main>
   );
 }

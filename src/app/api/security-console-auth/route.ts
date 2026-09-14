@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   authenticationOptions,
   bootstrapSecurityPassword,
+  clearSecuritySessionCookie,
   createSecuritySession,
   loginWithSecurityPassword,
   registrationOptions,
@@ -50,6 +51,10 @@ export async function POST(request: Request) {
 
   if (body.action === "registration-options") return NextResponse.json(await registrationOptions(config));
   if (body.action === "registration-verify") return NextResponse.json(await verifyRegistration(body.response, body.name || "", config));
+  if (body.action === "logout") {
+    const cookie = clearSecuritySessionCookie();
+    return NextResponse.json({ authenticated: false }, { headers: { "Set-Cookie": `${cookie.name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${cookie.secure ? "; Secure" : ""}` } });
+  }
 
   return NextResponse.json({ error: "Unknown authentication action" }, { status: 400 });
 }
