@@ -5,6 +5,7 @@ import { useState } from "react";
 
 export default function SecurityLoginForm() {
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [passwordStep, setPasswordStep] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,7 +47,8 @@ export default function SecurityLoginForm() {
       <form className="panel" onSubmit={loginWithPassword}>
         <h2>Security-console password</h2>
         <label htmlFor="security-console-password">Password</label>
-        <input id="security-console-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+        <input id="security-console-password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+        <button className="button button-ghost" type="button" aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? "Hide password" : "Show password"}</button>
         <button className="button button-primary" disabled={busy} type="submit">Sign in with password</button>
       </form>
       <button className="button button-ghost" disabled={busy || !passwordStep} onClick={() => loginWithPasskey()} type="button">Continue with passkey</button>
