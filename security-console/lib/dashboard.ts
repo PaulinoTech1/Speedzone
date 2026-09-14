@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SecurityEvent } from "@/lib/security-store";
+import type { SecurityEvent } from "./security-store";
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -32,7 +32,11 @@ export function dashboardSummary(events: SecurityEvent[]) {
   const unsupportedVersions = events.filter(event => event.version !== 1 && event.version !== 2).length;
   const sorted = [...events].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
   let largestGapMs = 0;
-  for (let index = 1; index < sorted.length; index++) largestGapMs = Math.max(largestGapMs, Date.parse(sorted[index].occurredAt) - Date.parse(sorted[index - 1].occurredAt));
+  for (let index = 1; index < sorted.length; index++) {
+    const current = sorted[index];
+    const previous = sorted[index - 1];
+    if (current && previous) largestGapMs = Math.max(largestGapMs, Date.parse(current.occurredAt) - Date.parse(previous.occurredAt));
+  }
   return {
     successfulLogins: recent.filter(event => event.event === "admin.login" && event.outcome === "allowed").length,
     failedLogins: recent.filter(event => event.event === "admin.login" && event.outcome !== "allowed").length,

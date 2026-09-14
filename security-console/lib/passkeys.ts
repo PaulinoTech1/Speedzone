@@ -6,9 +6,9 @@ import {
   type AuthenticatorTransport,
   type CredentialDeviceType,
 } from "@simplewebauthn/server";
-import { validateSecuritySession } from "@/lib/auth";
-import { currentCredentialEpoch } from "@/lib/password";
-import { getSecurityRedis } from "@/lib/redis";
+import { validateSecuritySession } from "./auth";
+import { currentCredentialEpoch } from "./password";
+import { getSecurityRedis } from "./redis";
 
 const rpName = "SpeedZone Security Console";
 export type WebAuthnConfig = { rpID: string; origin: string };
@@ -22,8 +22,9 @@ type StoredCredential = { id: string; publicKey: string; counter: number; transp
 type ChallengeRecord = { challenge: string; credentialEpoch: number; createdAt: number };
 
 export function getWebAuthnConfig(headers: Headers): WebAuthnConfig {
-  const configuredRpID = process.env.SECURITY_WEBAUTHN_RP_ID?.trim();
-  const configuredOrigin = process.env.SECURITY_WEBAUTHN_ORIGIN?.trim();
+  const mounted = process.env.NEXT_PUBLIC_SECURITY_CONSOLE_BASE_PATH === "/Security_Console";
+  const configuredRpID = ((mounted && process.env.EMBEDDED_SECURITY_WEBAUTHN_RP_ID) || process.env.SECURITY_WEBAUTHN_RP_ID)?.trim();
+  const configuredOrigin = ((mounted && process.env.EMBEDDED_SECURITY_WEBAUTHN_ORIGIN) || process.env.SECURITY_WEBAUTHN_ORIGIN)?.trim();
   const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const host = forwardedHost || headers.get("host")?.trim() || "localhost:3000";
   const rpID = configuredRpID || host.split(":")[0] || "localhost";

@@ -1,9 +1,9 @@
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { privateHeaders, SECURITY_COOKIE, securityCookieOptions, upgradeSecuritySession, validateSecuritySession } from "@/lib/auth";
-import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, verifyAuthentication, verifyRegistration } from "@/lib/passkeys";
-import { enforceRateLimit } from "@/lib/rate-limit";
-import { recordConsoleAudit } from "@/lib/console-audit";
+import { privateHeaders, SECURITY_COOKIE, securityCookieOptions, upgradeSecuritySession, validateSecuritySession } from "../../../../lib/auth";
+import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, verifyAuthentication, verifyRegistration } from "../../../../lib/passkeys";
+import { enforceRateLimit } from "../../../../lib/rate-limit";
+import { recordConsoleAudit } from "../../../../lib/console-audit";
 
 export async function GET(request: Request) {
   if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });

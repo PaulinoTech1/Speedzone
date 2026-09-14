@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
-import { getSecurityRedis } from "@/lib/redis";
-import { currentCredentialEpoch } from "@/lib/password";
+import { getSecurityRedis } from "./redis";
+import { currentCredentialEpoch } from "./password";
 
 export const SECURITY_COOKIE = "__Host-speedzone_security";
 const PREFIX = "speedzone:security-console:session:v1:";

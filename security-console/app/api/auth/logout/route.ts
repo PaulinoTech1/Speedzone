@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { privateHeaders, revokeSecuritySession, SECURITY_COOKIE, securityCookieOptions } from "@/lib/auth";
-import { recordConsoleAudit } from "@/lib/console-audit";
+import { privateHeaders, revokeSecuritySession, SECURITY_COOKIE, securityCookieOptions } from "../../../../lib/auth";
+import { recordConsoleAudit } from "../../../../lib/console-audit";
 
 export async function POST(request: Request) {
   await revokeSecuritySession(request);

@@ -1,2 +1,3 @@
-import Link from "next/link"; import { PasskeyManager } from "@/app/auth-client"; import { requirePasswordSession } from "@/lib/guards";
-export default async function PasskeysPage(){await requirePasswordSession();return <main><header><div><p className="eyebrow">Credential management</p><h1>Passkeys</h1><p className="muted">The final active passkey cannot be removed.</p></div><Link href="/">Back to events</Link></header><section className="panel"><PasskeyManager/></section></main>}
+import { consolePath } from "../../lib/paths";
+import Link from "next/link"; import { PasskeyManager } from "../auth-client"; import { requirePasswordSession } from "../../lib/guards";
+export default async function PasskeysPage(){await requirePasswordSession();return <main><header><div><p className="eyebrow">Credential management</p><h1>Passkeys</h1><p className="muted">The final active passkey cannot be removed.</p></div><Link href={consolePath("/")}>Back to events</Link></header><section className="panel"><PasskeyManager/></section></main>}

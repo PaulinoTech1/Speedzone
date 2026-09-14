@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { getSecurityRedis } from "@/lib/redis";
+import { getSecurityRedis } from "./redis";
 
 export async function enforceRateLimit(request: Request, bucket: string, limit: number, windowSeconds: number) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";

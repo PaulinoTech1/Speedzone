@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { privateHeaders, validateSecuritySession } from "@/lib/auth";
-import { enforceRateLimit } from "@/lib/rate-limit";
+import { privateHeaders, validateSecuritySession } from "../../../lib/auth";
+import { enforceRateLimit } from "../../../lib/rate-limit";
 
 export async function POST(request:Request){
   if(!await validateSecuritySession(request))return NextResponse.json({error:"Unauthorized"},{status:401,headers:privateHeaders});

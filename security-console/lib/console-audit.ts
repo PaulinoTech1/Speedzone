@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
-import { getSecurityRedis } from "@/lib/redis";
+import { getSecurityRedis } from "./redis";
 
 const INDEX_KEY="speedzone:security-console:audit:v1";
 export type ConsoleAuditEvent={id:string;occurredAt:string;event:string;outcome:"allowed"|"denied"|"unavailable";reason:string;networkFingerprint?:string;country?:string;userAgentFamily?:string};
