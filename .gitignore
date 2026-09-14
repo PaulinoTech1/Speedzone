@@ -14,3 +14,6 @@ playwright/.auth/
 Thumbs.db
 npm-debug.log*
 debug.log
+.vercel
+.env*
+security-console/.npm-cache/

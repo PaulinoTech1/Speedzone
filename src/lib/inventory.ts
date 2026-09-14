@@ -1,4 +1,4 @@
-import { list, put } from "@vercel/blob";
+import { get, put } from "@vercel/blob";
 import { maxInventoryPhotoCount } from "@/lib/inventory-photos";
 
 export type Vehicle = {
@@ -40,24 +40,31 @@ function readBrowserFixture(): Vehicle[] | null {
 }
 
 export async function readInventory(): Promise<Vehicle[]> {
-  const fixture = readBrowserFixture();
-  if (fixture) return fixture;
-
-  const { blobs } = await list({ prefix: catalogPath, limit: 1 });
-  const catalog = blobs.find((blob) => blob.pathname === catalogPath);
-  if (!catalog) return [];
-  const response = await fetch(catalog.url, { cache: "no-store" });
-  if (!response.ok) throw new Error("Unable to read inventory catalog");
-  const data = await response.json();
-  return Array.isArray(data) ? (data as Vehicle[]) : [];
+  return (await readInventorySnapshot()).vehicles;
 }
 
-export async function writeInventory(vehicles: Vehicle[]) {
+export async function readInventorySnapshot(): Promise<{ vehicles: Vehicle[]; revision: string }> {
+  const fixture = readBrowserFixture();
+  if (fixture) return { vehicles: fixture, revision: "fixture" };
+  const result = await get(catalogPath, { access: "public" });
+  if (!result) return { vehicles: [], revision: "absent" };
+  if (result.statusCode !== 200 || !result.blob.etag) throw new Error("Unable to read inventory catalog");
+  const data: unknown = await new Response(result.stream).json();
+  if (!Array.isArray(data) || data.some(item => !item || typeof item.id !== "string" || !Array.isArray(item.photos))) {
+    throw new Error("Invalid inventory catalog; refusing to overwrite it");
+  }
+  return { vehicles: data as Vehicle[], revision: result.blob.etag };
+}
+
+export async function writeInventory(vehicles: Vehicle[], revision: string) {
+  if (!revision) throw new Error("Inventory revision is required");
   return put(catalogPath, JSON.stringify(vehicles, null, 2), {
     access: "public",
     addRandomSuffix: false,
     contentType: "application/json",
-    allowOverwrite: true,
+    cacheControlMaxAge: 60,
+    allowOverwrite: revision !== "absent",
+    ...(revision === "absent" ? {} : { ifMatch: revision }),
   });
 }
 

@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function SetupForm() {
+  const router = useRouter();
   const [password, setPassword] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
   const [message, setMessage] = useState("");
@@ -14,7 +16,7 @@ export default function SetupForm() {
     setMessage("");
     const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "bootstrap", password, bootstrapToken }) });
     const result = await response.json();
-    if (response.ok) window.location.assign("/passkeys");
+    if (response.ok) router.push("/passkeys");
     else setMessage(result.error || "Unable to initialize security authentication.");
     setBusy(false);
   }

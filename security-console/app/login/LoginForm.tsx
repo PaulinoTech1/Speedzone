@@ -1,9 +1,11 @@
 "use client";
 
 import { startAuthentication } from "@simplewebauthn/browser";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function LoginForm() {
+  const router = useRouter();
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [passwordStep, setPasswordStep] = useState(false);
@@ -36,7 +38,7 @@ export default function LoginForm() {
       const verifyResponse = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "authentication-verify", response }) });
       const verifyResult = await verifyResponse.json();
       if (!verifyResponse.ok || verifyResult.error || !verifyResult.authenticated) throw new Error(verifyResult.error || "Passkey could not be verified.");
-      window.location.assign("/");
+      router.push("/");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Passkey login failed.");
       setBusy(false);

@@ -68,7 +68,7 @@ test.describe("mobile public site", () => {
     await page.goto("/inventory");
 
     await expect(page.getByRole("heading", { level: 1, name: "Current inventory" })).toBeVisible();
-    await expect(page.getByText("Call us for current vehicle availability and pricing.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "2022 Honda Civic" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 });

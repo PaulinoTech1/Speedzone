@@ -1,3 +1,4 @@
 import Link from "next/link";
-import { isSecurityAuthenticated } from "../../lib/security-auth";
-export default async function IntegrityPage(){if(!(await isSecurityAuthenticated()))return <main><p className="danger">Sign in is required.</p><Link href="/login">Go to login</Link></main>;return <main><header><div><p className="eyebrow">Verification</p><h1>Integrity status</h1><p className="muted">Chain verification is reported conservatively.</p></div><Link href="/">Back to events</Link></header><section className="panel"><h2>Unavailable until archive is connected</h2><p className="danger">No provider, archive, or KMS verification configuration is present in this local surface. The console will not claim integrity success.</p></section></main>}
+import { requireMfa } from "@/lib/guards";
+import { DeliveryTest } from "@/app/auth-client";
+export default async function IntegrityPage(){await requireMfa();return <main><header><div><p className="eyebrow">Verification</p><h1>Integrity status</h1><p className="muted">Provider delivery is tested with a fixed synthetic event.</p></div><Link href="/">Back to events</Link></header><section className="panel"><h2>Provider acceptance</h2><p className="muted">Limited to two attempts per 15 minutes. No ingest token reaches the browser.</p><DeliveryTest/></section></main>}

@@ -123,6 +123,27 @@ async function uploadPhotosSequentially(
 
 export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authenticated: boolean) => void }) {
   const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [showPassword, setShowPassword] = useState(false); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null); const [editForms, setEditForms] = useState<Record<string, Record<string, string>>>({}); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [selectedPhotos, setSelectedPhotos] = useState<Record<string, string[]>>({}); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [preparingPhotos, setPreparingPhotos] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [deletingPhotosVehicleId, setDeletingPhotosVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false); const [recoverySubmitting, setRecoverySubmitting] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
+  const revision = useRef("");
+  useEffect(() => {
+    let active = true;
+    async function resolveSession(initial = false) {
+      try {
+        const response = await fetch("/api/admin/session", { credentials: "include", cache: "no-store" });
+        if (!response.ok) throw new Error("Session unavailable");
+        const { state } = await response.json();
+        if (!active) return;
+        const authenticated = state === "authenticated";
+        const inventoryAuthorized = authenticated || state === "setup";
+        setLoggedIn(inventoryAuthorized); setSetupRequired(state === "setup"); onAuthChange?.(authenticated);
+        if (!inventoryAuthorized) { setVehicles([]); setEditForms({}); setSelectedPhotos({}); }
+        else if (initial) { const inventory = await fetch("/api/inventory", { credentials: "include", cache: "no-store" }); if (inventory.ok && active) { revision.current = inventory.headers.get("etag") || ""; setVehicles(await inventory.json()); } }
+      } catch { if (active) { setLoggedIn(false); setVehicles([]); onAuthChange?.(false); } }
+    }
+    void resolveSession(true);
+    const timer = window.setInterval(() => void resolveSession(), 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [onAuthChange]);
   const previewUrls = useRef<string[]>([]);
   const inventoryOperation = useRef(false);
   const recoveryOperation = useRef<{ token: string; password: string; operationId: string } | null>(null);
@@ -168,10 +189,14 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
     }
   }
   const load = async () => {
+    if (inventoryOperation.current) return;
     const response = await fetch("/api/inventory", { credentials: "include", cache: "no-store" });
-    if (response.ok) setVehicles(await response.json());
+    if (!response.ok) throw new Error("Unable to load inventory.");
+    revision.current = response.headers.get("etag") || "";
+    setVehicles(await response.json());
+    setEditForms({}); setEditingVehicleId(null);
   };
-  async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setLoggedIn(true); onAuthChange?.(true); await load(); setMessage(""); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
+  async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setPassword(""); setLoggedIn(true); setSetupRequired(true); onAuthChange?.(false); await load(); setMessage(""); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
   async function requestRecovery(event: FormEvent) { event.preventDefault(); setRecoveryMessage("Processing request…"); const response = await fetch("/api/admin/recovery", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: recoveryEmailInput }) }); const result = await response.json().catch(() => ({})); setRecoveryMessage(result.message || result.error || "Unable to request recovery."); if (response.ok) setRecoverySent(true); }
   async function resetPassword(event: FormEvent) {
     event.preventDefault();
@@ -226,11 +251,12 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       const response = await fetch("/api/inventory", {
         credentials: "include",
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "if-match": revision.current },
         body: JSON.stringify({ vehicle: form, photos: photoUrls }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Unable to save listing.");
+      revision.current = response.headers.get("etag") || "";
       setVehicles((current) => [result, ...current]);
       setForm(empty);
       clearPhotoSelection();
@@ -267,11 +293,12 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       const response = await fetch("/api/inventory", {
         credentials: "include",
         method: "PATCH",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "if-match": revision.current },
         body: JSON.stringify({ id: vehicle.id, photos: photoUrls }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Unable to update listing.");
+      revision.current = response.headers.get("etag") || "";
       setVehicles((current) => current.map((item) => item.id === vehicle.id ? result : item));
       setInventoryMessage(`${photoUrls.length} photo${photoUrls.length === 1 ? "" : "s"} added to ${vehicle.year} ${vehicle.make} ${vehicle.model}.`);
     } catch (error) {
@@ -304,11 +331,12 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       const response = await fetch("/api/inventory", {
         credentials: "include",
         method: "DELETE",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "if-match": revision.current },
         body: JSON.stringify({ id: vehicle.id, photos: photosToDelete }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Unable to delete selected photos.");
+      revision.current = response.headers.get("etag") || "";
       setVehicles((current) => current.map((item) => item.id === vehicle.id ? result : item));
       setSelectedPhotos((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== vehicle.id)));
       setInventoryMessage("Selected photos deleted.");
@@ -332,9 +360,10 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
     setUpdatingVehicleId(vehicle.id);
     setInventoryMessage(`Saving ${vehicle.year} ${vehicle.make} ${vehicle.model}…`);
     try {
-      const response = await fetch("/api/inventory", { credentials: "include", method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: vehicle.id, ...editForm, createdAt: vehicle.createdAt }) });
+      const response = await fetch("/api/inventory", { credentials: "include", method: "PATCH", headers: { "content-type": "application/json", "if-match": revision.current }, body: JSON.stringify({ id: vehicle.id, ...editForm, createdAt: vehicle.createdAt }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Unable to update listing.");
+      revision.current = response.headers.get("etag") || "";
       setVehicles((current) => current.map((item) => item.id === vehicle.id ? result : item));
       setEditingVehicleId(null);
       setInventoryMessage("Listing updated.");
@@ -350,12 +379,15 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
     setEditForms((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== vehicleId)));
   }
   async function remove(id: string) {
-    if (!confirm("Remove this vehicle from inventory?")) return;
+    if (inventoryOperation.current || !confirm("Remove this vehicle from inventory?")) return;
+    inventoryOperation.current = true;
+    setUpdatingVehicleId(id);
+    try {
     setInventoryMessage("Removing listing…");
     const response = await fetch("/api/inventory", {
       credentials: "include",
       method: "DELETE",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "if-match": revision.current },
       body: JSON.stringify({ id }),
     });
     const result = await response.json().catch(() => ({}));
@@ -363,16 +395,20 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
       setInventoryMessage(result.error || "Unable to remove listing.");
       return;
     }
-    setVehicles((current) => current.filter((vehicle) => vehicle.id !== id));
+    revision.current = response.headers.get("etag") || "";
+      setVehicles((current) => current.filter((vehicle) => vehicle.id !== id));
     setInventoryMessage("Listing removed.");
+    } catch { setInventoryMessage("Unable to confirm removal. Reload inventory before retrying."); }
+    finally { inventoryOperation.current = false; setUpdatingVehicleId(null); }
   }
   const inventoryBusy = preparingPhotos || submitting || updatingVehicleId !== null;
-  if (!loggedIn) return <main className="admin-shell"><div className="admin-card admin-login"><p className="eyebrow">SpeedZone Motorsports</p><h1>Inventory admin</h1><p>Sign in to manage current vehicle listings.</p>{recoveryToken ? <form onSubmit={resetPassword}><label>New password<input type="password" minLength={12} value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} required autoFocus /></label><button className="button button-primary" type="submit" disabled={recoverySubmitting}>Set new password</button><p>Use at least 12 characters.</p></form> : <><form onSubmit={login}><label>Password<div className="password-input"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required autoFocus /><button className="button button-secondary" type="button" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? "Hide password" : "Show password"}</button></div></label><button className="button button-primary" type="submit">Sign in</button></form><form onSubmit={requestRecovery}><label>Admin email<input type="email" value={recoveryEmailInput} onChange={(event) => setRecoveryEmailInput(event.target.value)} required autoComplete="email" /></label><button className="button button-secondary" type="submit" disabled={recoverySent}>{recoverySent ? "Request processed" : "Forgot password?"}</button><p>Enter the email address associated with this admin account. For security, the response will be the same whether the address is eligible or not.</p></form></>}<AdminPasskey authenticated={false} onAuthenticated={() => { setLoggedIn(true); onAuthChange?.(true); void load(); }} /><p role="status" className="form-message">{message || recoveryMessage}</p></div></main>;
+  if (!loggedIn) return <main className="admin-shell"><div className="admin-card admin-login"><p className="eyebrow">SpeedZone Motorsports</p><h1>Inventory admin</h1><p>Sign in to manage current vehicle listings.</p>{recoveryToken ? <form onSubmit={resetPassword}><label>New password<input type="password" minLength={12} value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} required autoFocus /></label><button className="button button-primary" type="submit" disabled={recoverySubmitting}>Set new password</button><p>Use at least 12 characters.</p></form> : <><form onSubmit={login}><label>Password<div className="password-input"><input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required autoFocus /><button className="button button-secondary" type="button" onClick={() => setShowPassword((visible) => !visible)} aria-pressed={showPassword} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? "Hide password" : "Show password"}</button></div></label><button className="button button-primary" type="submit">Sign in</button></form><form onSubmit={requestRecovery}><label>Admin email<input type="email" value={recoveryEmailInput} onChange={(event) => setRecoveryEmailInput(event.target.value)} required autoComplete="email" /></label><button className="button button-secondary" type="submit" disabled={recoverySent}>{recoverySent ? "Request processed" : "Forgot password?"}</button><p>Enter the email address associated with this admin account. For security, the response will be the same whether the address is eligible or not.</p></form></>}<AdminPasskey authenticated={false} onAuthenticated={() => { setLoggedIn(true); setSetupRequired(false); onAuthChange?.(true); void load(); }} /><p role="status" className="form-message">{message || recoveryMessage}</p></div></main>;
   return (
     <main className="admin-shell">
       <div className="admin-heading">
         <div><p className="eyebrow">SpeedZone Motorsports</p><h1>Inventory admin</h1></div>
-        <button className="button button-secondary" onClick={async () => { await fetch("/api/admin/login", { credentials: "include", method: "DELETE" }); setLoggedIn(false); onAuthChange?.(false); }}>Sign out</button>
+        <button className="button button-secondary" onClick={() => { void load().catch(() => setInventoryMessage("Unable to reload inventory.")); }}>Reload inventory</button>
+        <button className="button button-secondary" onClick={async () => { await fetch("/api/admin/login", { credentials: "include", method: "DELETE" }); setLoggedIn(false); setVehicles([]); setEditForms({}); onAuthChange?.(false); }}>Sign out</button>
       </div>
       {photoPreviews.length > 0 && (
         <section className="photo-selection admin-card">
@@ -390,7 +426,8 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
           </div>
         </section>
       )}
-      <AdminPasskey authenticated={true} />
+      {setupRequired && <p>Password-authenticated inventory access is active. Enroll a passkey to access customer requests and diagnostics.</p>}
+      <AdminPasskey authenticated={true} onAuthenticated={() => { setSetupRequired(false); onAuthChange?.(true); }} />
       <section className="admin-grid">
         <div className="admin-card">
           <h2>Add vehicle</h2>

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
 
 const hours = [
@@ -10,6 +10,9 @@ const hours = [
 ];
 
 export function TestDriveForm() {
+  const pending = useRef(false);
+  const requestId = useRef("");
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const [date, setDate] = useState("");
@@ -17,6 +20,7 @@ export function TestDriveForm() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending.current) return;
     const form = new FormData(event.currentTarget);
     const validationError = validateTestDriveFields(getTestDriveFields(form));
 
@@ -25,7 +29,11 @@ export function TestDriveForm() {
       return;
     }
 
+    if (!requestId.current) requestId.current = crypto.randomUUID();
+    form.set("requestId", requestId.current);
+    pending.current = true; setSubmitting(true);
     setError("");
+    try {
     const response = await fetch("/api/test-drive", {
       method: "POST",
       body: form,
@@ -35,11 +43,13 @@ export function TestDriveForm() {
       setError(
         response.status === 429
           ? "Too many requests from this contact. Please try again later."
-          : result.error || "Unable to submit your request right now.",
+          : (result.error || "Unable to submit your request right now.") + (result.reference ? ` Reference: ${result.reference}` : ""),
       );
       return;
     }
     setSubmitted(true);
+    } catch { setError("The connection was interrupted. Retry to check this same request safely."); }
+    finally { pending.current = false; setSubmitting(false); }
   }
 
   if (submitted) {
@@ -116,8 +126,8 @@ export function TestDriveForm() {
         This request does not guarantee an appointment. We&apos;ll confirm the
         vehicle and time with you before your visit.
       </p>
-      <button className="button button-primary" type="submit">
-        Request a test drive
+      <button className="button button-primary" type="submit" disabled={submitting}>
+        {submitting ? "Sending request…" : "Request a test drive"}
       </button>
     </form>
   );

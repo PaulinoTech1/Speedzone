@@ -5,9 +5,11 @@ import { LegalFooter, LegalHeader } from "./SiteChrome";
 export function LegalPageShell({
   title,
   counterpart,
+  updated = "August 20, 2026",
   children,
 }: {
   title: string;
+  updated?: string;
   counterpart: "privacy" | "terms";
   children: ReactNode;
 }) {
@@ -21,7 +23,7 @@ export function LegalPageShell({
         <article className="shell legal-copy">
           <p className="section-kicker">Site information</p>
           <h1>{title}</h1>
-          <p className="legal-updated">Updated August 20, 2026</p>
+          <p className="legal-updated">Updated {updated}</p>
           {children}
         </article>
       </main>

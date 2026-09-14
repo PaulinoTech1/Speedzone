@@ -10,6 +10,7 @@ export default defineConfig([
     "coverage/**",
     "legacy-static/**",
     "playwright-report/**",
+    "security-console/**",
     "test-results/**",
   ]),
 ]);

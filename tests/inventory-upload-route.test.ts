@@ -11,7 +11,7 @@ vi.mock("@/lib/admin-auth", () => ({
   privateResponseHeaders: () => ({ "Cache-Control": "private, no-store, max-age=0" }),
 }));
 
-import { POST } from "@/app/api/inventory/upload/route";
+import { GET, POST } from "@/app/api/inventory/upload/route";
 
 function tokenRequest(pathname: string) {
   return new Request("https://speedzone.example/api/inventory/upload", {
@@ -49,6 +49,31 @@ describe("inventory photo upload route", () => {
 
     expect(response.status).toBe(401);
     expect(mocks.handleUpload).not.toHaveBeenCalled();
+  });
+
+  it("protects readiness configuration with inventory authentication", async () => {
+    mocks.isAdminAuthenticated.mockResolvedValue(false);
+    const request = new Request("https://speedzone.example/api/inventory/upload");
+    const response = await GET(request);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "Unauthorized" });
+    expect(mocks.isAdminAuthenticated).toHaveBeenCalledWith(request);
+  });
+
+  it("preserves readiness for password/setup-authorized inventory sessions", async () => {
+    mocks.isAdminAuthenticated.mockResolvedValue(true);
+    const response = await GET(new Request("https://speedzone.example/api/inventory/upload"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ready: true });
+    expect(response.headers.get("cache-control")).toContain("no-store");
+  });
+
+  it("preserves actionable storage readiness errors for authorized admins", async () => {
+    mocks.isAdminAuthenticated.mockResolvedValue(true);
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    const response = await GET(new Request("https://speedzone.example/api/inventory/upload"));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ ready: false, error: "Inventory photo storage is missing BLOB_READ_WRITE_TOKEN" });
   });
 
   it("rejects malformed token requests", async () => {

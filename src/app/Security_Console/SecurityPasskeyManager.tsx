@@ -21,7 +21,15 @@ export default function SecurityPasskeyManager() {
     if (response.ok) setPasskeys(result.passkeys || []);
   }
 
-  useEffect(() => { void loadPasskeys(); }, []);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/security-console-auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "passkeys" }) })
+      .then(async (response) => ({ response, result: await response.json() }))
+      .then(({ response, result }) => {
+        if (active && response.ok) setPasskeys(result.passkeys || []);
+      });
+    return () => { active = false; };
+  }, []);
 
   async function addPasskey(event: React.FormEvent) {
     event.preventDefault();
