@@ -133,9 +133,11 @@ async function challenge(kind: "registration" | "authentication", value: string)
 }
 
 export async function registrationOptions(config: WebAuthnConfig) {
-  if (!(await isSecurityAuthenticated())) return { error: "Unauthorized" as const };
   const redis = configuredRedis();
   const current = await credentials();
+  const authenticated = await isSecurityAuthenticated();
+  const passwordAuthenticated = await isSecurityPasswordAuthenticated();
+  if (!authenticated && !(passwordAuthenticated && current?.length === 0)) return { error: "Unauthorized" as const };
   if (!redis || !current) return { error: "Security Redis is not configured" as const };
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "security@speedzonems.com", userDisplayName: "SpeedZone security administrator", userID: new TextEncoder().encode(userId), attestationType: "none", excludeCredentials: current.map((item) => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
   await redis.set(challengeKey("registration", options.challenge), { challenge: options.challenge, createdAt: Date.now() } satisfies ChallengeRecord, { ex: challengeTtlSeconds });
@@ -143,8 +145,11 @@ export async function registrationOptions(config: WebAuthnConfig) {
 }
 
 export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig) {
-  if (!(await isSecurityAuthenticated())) return { error: "Unauthorized" as const };
   const redis = configuredRedis();
+  const current = await credentials();
+  const authenticated = await isSecurityAuthenticated();
+  const passwordAuthenticated = await isSecurityPasswordAuthenticated();
+  if (!authenticated && !(passwordAuthenticated && current?.length === 0)) return { error: "Unauthorized" as const };
   if (!redis) return { error: "Security Redis is not configured" as const };
   try {
     const clientData = (response as { response?: { clientDataJSON?: string } }).response?.clientDataJSON;

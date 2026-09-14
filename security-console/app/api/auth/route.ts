@@ -35,7 +35,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ authenticated: true }, { headers: { "Set-Cookie": `${securitySessionCookie(token).name}=${securitySessionCookie(token).value}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}` } });
   }
 
-  if (body.action === "authentication-options") return NextResponse.json(await authenticationOptions(config));
+  if (body.action === "authentication-options") {
+    const result = await authenticationOptions(config);
+    return "options" in result ? NextResponse.json(result) : NextResponse.json(result, { status: 400 });
+  }
   if (body.action === "authentication-verify") {
     const result = await verifyAuthentication(body.response, config);
     if (!("verified" in result)) return NextResponse.json(result, { status: 401 });

@@ -31,7 +31,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ authenticated: true }, { headers: sessionHeaders(token) });
   }
 
-  if (body.action === "authentication-options") return NextResponse.json(await authenticationOptions(config));
+  if (body.action === "authentication-options") {
+    const result = await authenticationOptions(config);
+    return "options" in result ? NextResponse.json(result) : NextResponse.json(result, { status: 400 });
+  }
   if (body.action === "authentication-verify") {
     const result = await verifyAuthentication(body.response, config);
     if (!("verified" in result)) return NextResponse.json(result, { status: 401 });
@@ -40,8 +43,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ authenticated: true }, { headers: sessionHeaders(token) });
   }
 
-  if (body.action === "registration-options") return NextResponse.json(await registrationOptions(config));
-  if (body.action === "registration-verify") return NextResponse.json(await verifyRegistration(body.response, body.name || "", config));
+  if (body.action === "registration-options") {
+    const result = await registrationOptions(config);
+    return "options" in result ? NextResponse.json(result) : NextResponse.json(result, { status: 400 });
+  }
+  if (body.action === "registration-verify") {
+    const result = await verifyRegistration(body.response, body.name || "", config);
+    if (!("verified" in result)) return NextResponse.json(result, { status: 400 });
+    const token = await createSecuritySession("mfa");
+    if (!token) return NextResponse.json({ error: "Security session could not be created" }, { status: 503 });
+    return NextResponse.json({ authenticated: true, verified: true }, { headers: sessionHeaders(token) });
+  }
   if (body.action === "logout") {
     const cookie = clearSecuritySessionCookie();
     return NextResponse.json({ authenticated: false }, { headers: { "Set-Cookie": `${cookie.name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${cookie.secure ? "; Secure" : ""}` } });

@@ -30,11 +30,11 @@ export default function LoginForm() {
       if (!passwordStep && !passwordJustVerified) throw new Error("Enter the security-console password first.");
       const optionsResponse = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "authentication-options" }) });
       const optionsResult = await optionsResponse.json();
-      if (!optionsResponse.ok) throw new Error(optionsResult.error || "Passkey login is unavailable.");
+      if (!optionsResponse.ok || optionsResult.error || !optionsResult.options) throw new Error(optionsResult.error || "Passkey login is unavailable.");
       const response = await startAuthentication({ optionsJSON: optionsResult.options });
       const verifyResponse = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "authentication-verify", response }) });
       const verifyResult = await verifyResponse.json();
-      if (!verifyResponse.ok) throw new Error(verifyResult.error || "Passkey could not be verified.");
+      if (!verifyResponse.ok || verifyResult.error || !verifyResult.authenticated) throw new Error(verifyResult.error || "Passkey could not be verified.");
       window.location.assign("/");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Passkey login failed.");
