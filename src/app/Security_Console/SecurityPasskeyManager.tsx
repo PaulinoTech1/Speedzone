@@ -5,6 +5,10 @@ import { useEffect, useState } from "react";
 
 type Passkey = { id: string; name: string; deviceType: string; backedUp: boolean };
 
+function deviceTypeLabel(deviceType: string) {
+  return deviceType === "multiDevice" ? "Multi-device passkey" : "Single-device passkey";
+}
+
 export default function SecurityPasskeyManager() {
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
@@ -61,7 +65,7 @@ export default function SecurityPasskeyManager() {
       <input id="security-passkey-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Security key or device" required />
       <button className="button button-primary" disabled={busy} type="submit">Add passkey</button>
       {message && <p className="muted">{message}</p>}
-      {passkeys.length > 0 && <div><h3>Registered passkeys</h3>{passkeys.map((passkey) => <p key={passkey.id}>{passkey.name} <button className="button button-ghost" disabled={busy} onClick={() => void deletePasskey(passkey.id)} type="button">Delete</button></p>)}</div>}
+      {passkeys.length > 0 && <div><h3>Registered passkeys</h3>{passkeys.map((passkey) => <div key={passkey.id}><p><strong>{passkey.name}</strong></p><p className="muted">{deviceTypeLabel(passkey.deviceType)}{passkey.backedUp ? " · Backed up" : ""}</p><button className="button button-ghost" disabled={busy} onClick={() => void deletePasskey(passkey.id)} type="button">Delete</button></div>)}</div>}
     </form>
   );
 }
