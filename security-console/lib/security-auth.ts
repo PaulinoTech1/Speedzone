@@ -69,7 +69,8 @@ export async function hasSecurityPassword() {
 
 export async function bootstrapSecurityPassword(password: string, bootstrapToken: string) {
   const redis = configuredRedis();
-  if (!redis || !process.env.SECURITY_BOOTSTRAP_TOKEN || bootstrapToken !== process.env.SECURITY_BOOTSTRAP_TOKEN) return { error: "Invalid bootstrap credentials" as const };
+  const configuredBootstrapToken = process.env.SECURITY_BOOTSTRAP_TOKEN || process.env.ADMIN_SECURITY_BOOTSTRAP_TOKEN;
+  if (!redis || !configuredBootstrapToken || bootstrapToken !== configuredBootstrapToken) return { error: "Invalid bootstrap credentials" as const };
   if (password.length < 12) return { error: "Password must be at least 12 characters" as const };
   if (await redis.exists(passwordKey)) return { error: "Security password is already configured" as const };
   const hash = await argon2.hash(password, { type: argon2.argon2id });

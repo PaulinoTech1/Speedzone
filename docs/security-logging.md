@@ -11,7 +11,7 @@ Public app -> sanitized event ingest -> provider/archive -> security console
 
 ## Configuration
 
-Set `SECURITY_LOG_PROVIDER=axiom`, an allowlisted ingest URL, and a short-lived ingest credential only in the public app. Configure `SECURITY_KV_REST_API_URL`, `SECURITY_KV_REST_API_TOKEN`, `SECURITY_WEBAUTHN_ORIGIN`, `SECURITY_WEBAUTHN_RP_ID`, and `SECURITY_BOOTSTRAP_TOKEN` only in the security-console deployment. The console uses its own Argon2id password, `speedzone_security_session` cookie, `speedzone:security-console:*` Redis keys, and WebAuthn RP; never reuse `speedzone_admin` cookies, credentials, Redis keys, or the inventory WebAuthn RP ID.
+Set `SECURITY_LOG_PROVIDER=axiom`, an allowlisted ingest URL, and a short-lived ingest credential only in the public app. Configure `SECURITY_KV_REST_API_URL` and `SECURITY_KV_REST_API_TOKEN` in the security-console deployment, or use the accepted `ADMIN_SECURITY_KV_REST_API_URL` and `ADMIN_SECURITY_KV_REST_API_TOKEN` aliases. The first-run token may be `SECURITY_BOOTSTRAP_TOKEN` or `ADMIN_SECURITY_BOOTSTRAP_TOKEN`. The console uses its own Argon2id password, `speedzone_security_session` cookie, `speedzone:security-console:*` Redis keys, and WebAuthn RP; never reuse `speedzone_admin` cookies, credentials, Redis keys, or the inventory WebAuthn RP ID. Do not use the read-only token for bootstrap or login writes.
 
 The application does not provision Vercel Drains, Axiom datasets, S3 Object Lock, KMS retention, DNS, alerting, or backups. Those are external operational controls and must be configured and verified independently.
 
