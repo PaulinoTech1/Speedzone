@@ -1,6 +1,6 @@
 # Security
 
-SpeedZone Motorsports consists of a public Next.js application and a separately deployable `security-console/` application. The root application includes admin authentication, inventory mutations, test-drive submissions, uploads, rate limiting, and security-event logging. The security console is a separate read-only event-viewing application, but its independent authentication and authorization flow is not operational in the current source.
+SpeedZone Motorsports consists of a public Next.js application and a separately deployable `security-console/` application. The root application includes admin authentication, inventory mutations, test-drive submissions, uploads, rate limiting, and security-event logging. The security console uses an independent password, WebAuthn passkeys, Redis sessions, rate-limit namespace, and host-only cookie.
 
 ## Root application security model
 
@@ -24,18 +24,18 @@ See [`docs/security-logging.md`](docs/security-logging.md) for the current loggi
 
 ## Security console status
 
-`security-console/` has separate Redis configuration names, security headers, read-only recent-event and individual-event views, an integrity-status page, and login/setup/passkey UI surfaces. It fails closed when the security event store cannot be read.
+`security-console/` has separate Redis configuration names, security headers, read-only recent-event and individual-event views, an integrity-status page, and login/setup/passkey UI surfaces. It fails closed when authentication storage or the event provider cannot be read.
 
 Its independent Redis configuration is:
 
 ```text
-SECURITY_KV_REST_API_URL
-SECURITY_KV_REST_API_TOKEN
+ADMIN_SECURITY_KV_REST_API_URL
+ADMIN_SECURITY_KV_REST_API_TOKEN
 ```
 
-The current login, setup, and passkey pages explicitly state that security-console authentication is not yet operational. The console is not currently protected by an independent WebAuthn passkey. The separate application boundary and variable names alone do not establish cryptographic isolation from inventory-admin credentials.
+The console uses the writable `ADMIN_SECURITY_KV_REST_API_URL` and `ADMIN_SECURITY_KV_REST_API_TOKEN` pair. Provider-created read-only and TCP connection variables are not used because credentials, sessions, challenges, replay records, and rate-limit counters require writes. The one-time setup exchanges `SECURITY_BOOTSTRAP_TOKEN` for an Argon2id password record in the console Redis. A password session can enroll or authenticate a passkey; event pages and event APIs require the upgraded MFA session. Sessions have four-hour absolute and fifteen-minute idle expiry, support individual and global revocation, and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory cookie is not inspected or accepted.
 
-The intended variables `SECURITY_WEBAUTHN_RP_ID`, `SECURITY_WEBAUTHN_ORIGIN`, and `SECURITY_BOOTSTRAP_TOKEN` do not represent a completed WebAuthn/session/bootstrap implementation in the current source. Do not expose the console publicly until that independent authentication and authorization layer is completed and verified. The event API must not be treated as authenticated merely because it resides under a separate deployment.
+The event reader uses the configured external provider query API. Redis is used only for console credentials, sessions, challenges, and rate limits. Delivery testing is server-to-server, signed with `SECURITY_CONSOLE_TEST_SECRET`, replay protected, and limited to two attempts per fifteen minutes. No ingest or query token reaches the browser.
 
 ## Target deployment boundary
 
