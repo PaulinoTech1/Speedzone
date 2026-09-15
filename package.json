@@ -8,6 +8,7 @@
     "build": "next build",
     "check:deps": "node scripts/check-deps.js",
     "prebuild": "npm run check:deps",
+    "postinstall": "node scripts/patch-tar.cjs",
     "start": "next start --hostname localhost --port 4173",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
@@ -21,7 +22,8 @@
     "node": "22.x"
   },
   "overrides": {
-    "@tootallnate/once": "^2.0.1"
+    "@tootallnate/once": "^2.0.1",
+    "tar": "^7.5.11"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^14.0.0",

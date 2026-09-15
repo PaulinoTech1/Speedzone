@@ -78,6 +78,14 @@ Treat authentication bypass, cross-credential acceptance, unauthorized inventory
 
 ## Known limitations
 
+### Archive extraction dependencies
+
+The root npm override requires `tar >=7.5.11 <8` for the Vercel CLI dependency tree (currently locked to 7.5.22). This includes upstream fixes for drive-relative hardlink and symlink traversal. `npm ci` runs `scripts/patch-tar.cjs` to add the project's stricter boundary contract to both CommonJS and ESM `Unpack` builds and route the default bundled exports through those builds.
+
+The guard normalizes separators and removes drive/volume/root prefixes before checking traversal segments and resolved boundaries. It rejects `..` segments in entry paths and link targets, including otherwise internal parent-relative links, even with `preservePaths`. Rejected entries emit `ERR_TAR_PATH_TRAVERSAL` with the original `entryPath`, normalized extraction `targetCwd`, and message `Extraction path or link target attempts to escape target directory`. Root directory entries remain permitted. Upstream tar retains its filesystem symlink protections; lexical checks alone do not prevent filesystem races.
+
+Do not use `--ignore-scripts` when installing the CLI dependencies if the custom error contract is required. The upstream patched version remains enforced by the lockfile/override independently of this hook. The hook fails if its expected source/exports change; review it and run `npx vitest run tests/tar-boundary.test.ts` when upgrading tar. Production-only installs without Vercel skip the hook.
+
 Individual event hashes detect modification when the trusted original hash is available, but they do not establish a serialized hash chain or immutable archive. Automated alerting, external WORM storage, KMS signing, and provider retention controls require separate deployment configuration. The console currently provides data visibility; workflow features such as report assignment, internal notes, and automated alarms are separate work.
 
 ## Reporting
