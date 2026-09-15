@@ -252,6 +252,8 @@ Its development server runs on port `4190`.
 ## Validation
 
 ```bash
+npm audit --audit-level=high
+npm run check:deps
 npm run lint
 npm run typecheck
 npm test
@@ -259,7 +261,18 @@ npm run build
 npm run test:e2e
 ```
 
-The root `npm run check` script runs linting, type checking, tests, and a production build.
+The root `npm run check` script runs linting, type checking, tests, and a production build. CI also runs the high-severity dependency audit and the dependency downgrade guard before the remaining checks.
+
+`npm ci` runs the `postinstall` hook. The hook applies the repository's bounded-behavior patches to the installed `tar`, `smol-toml`, `js-yaml`, and `minimatch` packages. Do not use `--ignore-scripts` when those protections are required. The hooks fail when an expected upstream package layout changes; review the relevant script and focused test after dependency upgrades.
+
+Focused dependency-hardening tests are available with:
+
+```bash
+npx vitest run tests/tar-boundary.test.ts
+npx vitest run tests/toml-eof.test.ts
+npx vitest run tests/yaml-merge-budget.test.ts
+npx vitest run tests/glob-budget.test.ts
+```
 
 ## Deployment
 

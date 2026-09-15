@@ -78,6 +78,21 @@ Treat authentication bypass, cross-credential acceptance, unauthorized inventory
 
 ## Known limitations
 
+### Dependency and install-time hardening
+
+The root `postinstall` hook runs `scripts/patch-tar.cjs`, `scripts/patch-toml.cjs`, `scripts/patch-yaml.cjs`, and `scripts/patch-glob.cjs` after `npm ci` or `npm install`. These scripts add repository-specific termination, resource-budget, and archive-boundary checks to the installed dependency copies. The package overrides and lockfile independently pin the supported upstream versions; the hooks do not replace upstream security fixes.
+
+The CI workflow runs `npm audit --audit-level=high` and `npm run check:deps`. The dependency guard currently prevents the Vercel CLI from being downgraded below major version 59. Use of `--ignore-scripts` skips the custom runtime contracts, and an install that omits the Vercel CLI may skip hooks whose target packages are not present. Review the corresponding focused test after upgrading any patched dependency.
+
+Run the focused checks with:
+
+```bash
+npx vitest run tests/tar-boundary.test.ts
+npx vitest run tests/toml-eof.test.ts
+npx vitest run tests/yaml-merge-budget.test.ts
+npx vitest run tests/glob-budget.test.ts
+```
+
 ### Globstar execution budget
 
 Minimatch overrides retain compatible major versions: 3.1.5 for legacy callers and 10.2.6 for modern callers. `scripts/patch-glob.cjs` discovers installed copies and patches the CommonJS/ESM matchers during installation. Failure results are memoized by file/body-pattern indices within each globstar body sequence; separate alternatives and calls cannot reuse unrelated cached results. Existing upstream path normalization and matching semantics remain in place.
