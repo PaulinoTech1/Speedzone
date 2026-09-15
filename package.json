@@ -8,7 +8,7 @@
     "build": "next build",
     "check:deps": "node scripts/check-deps.js",
     "prebuild": "npm run check:deps",
-    "postinstall": "node scripts/patch-tar.cjs && node scripts/patch-toml.cjs && node scripts/patch-yaml.cjs",
+    "postinstall": "node scripts/patch-tar.cjs && node scripts/patch-toml.cjs && node scripts/patch-yaml.cjs && node scripts/patch-glob.cjs",
     "start": "next start --hostname localhost --port 4173",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
@@ -25,7 +25,9 @@
     "@tootallnate/once": "^2.0.1",
     "tar": "^7.5.11",
     "smol-toml": "^1.7.1",
-    "js-yaml": "$js-yaml"
+    "js-yaml": "$js-yaml",
+    "minimatch@>=3 <4": "^3.1.5",
+    "minimatch@>=10 <11": "^10.2.6"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^14.0.0",

@@ -78,6 +78,14 @@ Treat authentication bypass, cross-credential acceptance, unauthorized inventory
 
 ## Known limitations
 
+### Globstar execution budget
+
+Minimatch overrides retain compatible major versions: 3.1.5 for legacy callers and 10.2.6 for modern callers. `scripts/patch-glob.cjs` discovers installed copies and patches the CommonJS/ESM matchers during installation. Failure results are memoized by file/body-pattern indices within each globstar body sequence; separate alternatives and calls cannot reuse unrelated cached results. Existing upstream path normalization and matching semantics remain in place.
+
+`maxBacktracks` defaults to 10000 and accepts non-negative safe integers. The budget counts matcher entries and scanning/backtracking loop iterations across all alternatives in one `match()` call; standalone `matchOne()` calls also get a fresh budget. Exceeding it throws `ERR_GLOB_BACKTRACK_LIMIT_EXCEEDED` with message `Glob matching halted: exceeded maximum backtrack budget`, `pattern`, `path`, `backtrackCount`, and `maxBacktracks`. Context is cleared even after exceptions. The limit can reject legitimate unusually large matches; callers may raise it for trusted workloads. It does not time-limit individual regular expressions or pattern compilation.
+
+Run `npx vitest run tests/glob-budget.test.ts` after updates. Worker-isolated tests check the requested 11-globstar/30-segment non-match completes within 10ms in the test environment, low-limit errors, independent calls, shared brace-alternative budgets, and normal matching behavior. Install scripts are required for this custom contract; the overrides independently retain upstream fixes. The hook uses the development TypeScript dependency, skips installs without minimatch, and fails on unfamiliar matcher layouts.
+
 ### YAML merge resource budget
 
 The root `js-yaml` override uses the direct dependency's patched 4.x version for every consumer, including Vercel's Python tooling. `scripts/patch-yaml.cjs` runs on install and adds `maxMergedKeys` (default 10000, a non-negative safe integer) to CommonJS, ESM, and browser loaders. A new parser state initializes `mergedKeysCount` to zero for each `load()`/`loadAll()` call; documents within one `loadAll()` share the budget. Every source-key visit counts, including keys already present in the destination.
