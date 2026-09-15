@@ -13,9 +13,18 @@ it("shows the established count without credential material", async () => {
   mocks.count.mockResolvedValue(2); const html = renderToStaticMarkup(await Page());
   expect(html).toContain("Password verified. Security passkey required.");
   expect(html).toContain("Established security passkeys: 2"); expect(html).toContain("Use security passkey");
+  expect(html).not.toContain("Register first security passkey");
+  expect(html).not.toContain("Replace unavailable passkeys");
 });
-it.each([0, null])("locks access when established passkeys are unavailable (%s)", async count => {
-  mocks.count.mockResolvedValue(count); const html = renderToStaticMarkup(await Page());
+it("locks access when no passkeys are established", async () => {
+  mocks.count.mockResolvedValue(0); const html = renderToStaticMarkup(await Page());
   expect(html).not.toContain("Use security passkey");
-  expect(html).toContain(count === 0 ? "Console access is locked until credential recovery is performed." : "storage is unavailable");
+  expect(html).not.toContain("Register first security passkey");
+  expect(html).toContain("Console access is locked until credential recovery is performed.");
+});
+it("locks access when passkey storage is unavailable", async () => {
+  mocks.count.mockResolvedValue(null); const html = renderToStaticMarkup(await Page());
+  expect(html).not.toContain("Use security passkey");
+  expect(html).not.toContain("Register first security passkey");
+  expect(html).toContain("storage is unavailable");
 });

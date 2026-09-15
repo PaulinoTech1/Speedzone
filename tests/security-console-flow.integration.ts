@@ -72,12 +72,32 @@ it("atomically preserves established legacy credentials without duplication", as
   expect(JSON.parse(state.store[`${prefix}passkeys:v1`]!)).toEqual([credential]);
   const response = await assertion();
   expect((await passkey(request("/api/auth/passkeys", { action: "authenticate", response }))).status).toBe(200);
+  expect(state.store[`${prefix}passkeys`]).toBe(original);
 });
 it("refuses password migration when the legacy epoch changes during verification", async () => {
   legacyState(); state.changeLegacyEpoch = true;
   const response = await login(request("/api/auth/login", { password }));
   expect(response.status).toBe(503); expect(response.headers.get("set-cookie")).toBeNull();
   expect(state.store[`${prefix}credential:v1`]).toBeUndefined(); expect(state.store[`${prefix}credential-epoch:v1`]).toBeUndefined();
+});
+it.each(["established", "empty", "missing", "malformed"])("rejects bootstrap without changing credentials or granting MFA (%s)", async condition => {
+  await passwordLogin();
+  if (condition === "empty") state.store[`${prefix}passkeys:v1`] = "[]";
+  if (condition === "missing") delete state.store[`${prefix}passkeys:v1`];
+  if (condition === "malformed") state.store[`${prefix}passkeys:v1`] = JSON.stringify({ malformed: true });
+  state.store[`${prefix}passkeys`] = JSON.stringify([credential]);
+  const original = state.store[`${prefix}passkeys:v1`];
+  const legacy = state.store[`${prefix}passkeys`];
+  for (const action of ["bootstrap-options", "bootstrap", "replacement-options", "replace"]) {
+    const response = await passkey(request("/api/auth/passkeys", { action, response: {} }));
+    expect(response.status).toBe(400);
+    expect(response.headers.get("set-cookie")).toBeNull();
+  }
+  expect(state.store[`${prefix}passkeys:v1`]).toBe(original);
+  expect(state.store[`${prefix}passkeys`]).toBe(legacy);
+  expect(JSON.parse(state.store[sessionKey()]!).level).toBe("password");
+  expect(await validateSecuritySession()).toBe(false);
+  await expect(Dashboard()).rejects.toThrow("NEXT_REDIRECT");
 });
 it("denies anonymous and password-only protected pages and privileged APIs", async () => {
   await expect(Dashboard()).rejects.toThrow("NEXT_REDIRECT");

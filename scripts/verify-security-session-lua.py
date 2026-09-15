@@ -157,4 +157,33 @@ for key, value in [("currentKeys", "[]"), ("epoch", "4"), ("legacyEpoch", "2"),
     seed_legacy()
     store[key] = value
     check(run(migrate, keys, args) == 0, f"migration refuses concurrent or authoritative {key} change")
+register = script("security-console/lib/passkeys.ts", "registrationCommitScript")
+registration_keys = ["currentKeys", "epoch", "challenge"]
+new_key = dict(id="backup", publicKey="BAUG", counter=0, credentialEpoch=3)
+registration_args = ["3", "one-use", json.dumps(new_key), "managed"]
+
+
+def seed_registration(current=mapped):
+    store.clear()
+    store.update(epoch="3", challenge=json.dumps({"challenge": "one-use"}), legacyKeys=legacy)
+    if current is not None:
+        store["currentKeys"] = current
+
+
+seed_registration()
+check(run(register, registration_keys, registration_args) == 1
+      and json.loads(store["currentKeys"]) == [*json.loads(mapped), new_key]
+      and store["legacyKeys"] == legacy and "challenge" not in store,
+      "managed registration appends to schema-less keys and preserves legacy records")
+check(run(register, registration_keys, registration_args) == 0,
+      "managed registration challenge cannot be replayed")
+for current in [None, "[]", '{"malformed":true}', '[{"malformed":true}]']:
+    seed_registration(current)
+    original = dict(store)
+    check(run(register, registration_keys, registration_args) <= 0 and store == original,
+          f"managed registration does not replace missing or malformed keys: {current}")
+seed_registration()
+original = dict(store)
+check(run(register, registration_keys, [*registration_args[:3], "bootstrap"]) == 0
+      and store == original, "Lua rejects the removed bootstrap mode without changing credentials")
 print(f"{count} Lua authorization assertions passed")

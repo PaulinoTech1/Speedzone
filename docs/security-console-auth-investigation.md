@@ -1,7 +1,117 @@
 # Security Console authentication investigation
 
-Status: local implementation and verification complete; production verification
-and deployment blocked on authenticated Vercel access.
+Status: the earlier implementation was pushed as `b08a4ba`; the historical
+deployment evidence below applies to that revision. The passkey follow-up fix
+below is locally verified. Authenticated Production runtime and
+Redis-state verification remain outstanding.
+
+## September 15: resolve unfinished passkey enrollment changes
+
+The unfinished follow-up rejected established credentials without `schema: 2`,
+offered password-only first-passkey enrollment, replaced the versioned store,
+deleted legacy credentials, and upgraded registration directly to MFA.
+
+The corrected implementation removes those bootstrap routes, helpers, and UI.
+Existing credentials remain eligible by credential epoch, including credentials
+without a schema marker and password-verified legacy migrations. Malformed
+stores fail closed; missing credentials leave access locked. Only a verified
+assertion can upgrade a password session. Managed registration still requires
+MFA, appends to established credentials, preserves supported transport hints,
+and cannot replace an empty or malformed store. Unrelated diagnostic notes and
+UI cleanup were preserved.
+
+Local validation on Node 22.23.2:
+
+- `npm run check`: lint, typecheck, 212 unit tests, production build passed.
+- `npm run test:security-console`: 15 integration tests passed; the extended
+  `python scripts/verify-security-session-lua.py` passed 33 assertions.
+- Separate `security-console` package: typecheck and 7 tests passed.
+- `npm run test:e2e -- e2e/security-console.spec.ts`: 3 browser/API checks passed.
+- Regression coverage includes real signed assertions from migrated keys,
+  rejected bootstrap requests with established/empty/missing/malformed stores,
+  preservation of legacy records, managed enrollment, and challenge replay.
+
+Python `lupa==2.8` was installed in an isolated ignored `.data` virtual
+environment for these checks. No production credentials or Redis records were
+used or changed. Physical-authenticator and hosted-runtime verification were
+not performed. These results describe local verification before publication;
+they do not establish the follow-up's deployment status.
+
+## Follow-up: historical root causes and deployment evidence
+
+The follow-up investigation traced earlier deployed implementations, rather than
+assuming the latest Redis-pair fix explained the reported incident.
+
+### Confirmed historical source defects
+
+1. **Password and passkey were originally alternatives.** At `e0b3b97`,
+   `src/app/api/security-console-auth/route.ts` called `createSecuritySession()`
+   directly after successful password verification. Its session record had no
+   authentication factor, and `isSecurityAuthenticated()` accepted that session.
+   The page explicitly offered password **or** passkey. `e2268bf` subsequently
+   introduced a password-level session. This is a real historical password-only
+   path, not a claim that the current implementation permits it.
+2. **Credential migration was incomplete.** At `70d309e`, password verification
+   could migrate the legacy password/epoch, but passkey lookup read only
+   `speedzone:security-console:passkeys:v1`. Existing keys under
+   `speedzone:security-console:passkeys` were not migrated. Therefore valid legacy
+   passkeys in the same database could appear absent without being deleted.
+3. **Missing keys opened enrollment instead of locking access.** In that revision,
+   login routed to `/passkeys` when `hasCurrentPasskey()` was false. The management
+   page allowed password sessions; initial registration allowed them when no
+   current key existed; registration then called `upgradeSecuritySession()`.
+   That upgraded to MFA without an assertion from an established credential.
+   The old validator accepted MFA records without assertion timestamps.
+4. **Redis selection also changed between implementations.** The early
+   `security-store.ts` preferred `SECURITY_KV_*`, while the replacement preferred
+   `ADMIN_SECURITY_KV_*`. If both were configured to different databases, the
+   replacement would read a different store. The independent URL/token fallback
+   also permitted mixed pairs. Actual Production variable presence and instance
+   identity remain unknown; this is a conditional cause, not an observed switch.
+
+An isolated execution of the actual Lua from Git history confirmed:
+
+| Revision | Password session accepted for MFA | MFA record without assertion timestamp accepted |
+| --- | --- | --- |
+| `70d309e` | No | Yes |
+| `55eb328` | No | No |
+| `b08a4ba` | No | No |
+
+All records were synthetic and in memory. No production state was accessed.
+
+### Newly verified production history
+
+Public GitHub deployment objects and their status endpoints identify these
+successful **Production** deployments (Eastern daylight time):
+
+| Revision | Successful deployment | GitHub deployment ID |
+| --- | --- | --- |
+| `e0b3b97` | September 14, 2026, 1:23:43 AM | `6431000094` |
+| `70d309e` | September 14, 2026, 10:48:29 AM | `6439661793` |
+| `55eb328` | September 14, 2026, 4:28:39 PM | `6445813342` |
+| `b08a4ba` | September 15, 2026, 10:42:12 AM | `6461436796` |
+
+Sources: `https://api.github.com/repos/PaulinoTech1/Speedzone/deployments?environment=Production&per_page=30`
+and each deployment's `/statuses` endpoint. The latest deployment URL is
+`https://speedzone-7p8xtysh4-boss-projects-5a103493.vercel.app`.
+
+The current custom-domain login returns the established-passkey instruction;
+its referenced client bundle routes password success to `/login/passkey` and
+contains `authentication-options`. No public deployment ID appeared in that
+HTML. These observations support the newer flow but do not independently prove
+the custom domain's exact backend SHA, runtime variables, or session contents.
+
+### Incident attribution remains conditional
+
+The historical defects above were deployed. They explain how password-only
+access and apparently missing established keys could occur. They do not establish
+which state the operator encountered or reproduce a current password-only bypass.
+The time of the last reproduction and the exact destination after password entry
+are still needed, along with safe Production Redis/session diagnostics.
+
+A present versioned passkey store, including `[]`, is authoritative even today.
+If earlier enrollment created it, migration deliberately will not overwrite it
+with legacy keys. Do not delete it, reset epochs, or auto-enroll to investigate.
 
 ## Evidence collected before editing
 
@@ -36,7 +146,8 @@ records, and migration state require authenticated runtime evidence.
   Existing passkey migration and its authoritative versioned-store behavior remain.
 
 No production records, passkeys, epochs, secrets, or environment variables were
-changed. No commit or deployment was performed.
+changed by this investigation. The patch was subsequently committed/pushed at
+the user's request and Vercel reported the successful deployment above.
 
 ## Validation
 
@@ -120,4 +231,5 @@ Production password-only denial, actual credential database contents, deployed
 SHA/root/branch, environment scope, provider TTL behavior, and the operator's
 existing authenticator remain unverified. Existing dependency-audit findings
 and the unrelated parallel YAML timing failure are outside this patch.
-No new production deployment or Git push has been made.
+Authenticated verification remains outstanding despite the successful Git push
+and provider-reported Production deployment.

@@ -19,6 +19,14 @@ it.each(["register", "registration-options"])("password-only sessions cannot use
   expect(mocks.upgrade).not.toHaveBeenCalled();
   expect(response.headers.get("set-cookie")).toBeNull();
 });
+it.each(["bootstrap", "bootstrap-options", "replace", "replacement-options"])("password-only replacement actions are removed (%s)", async action => {
+  mocks.validate.mockResolvedValue(true);
+  const response = await POST(request(action));
+  expect(response.status).toBe(400);
+  expect(mocks.register).not.toHaveBeenCalled();
+  expect(response.headers.get("set-cookie")).toBeNull();
+  expect(mocks.upgrade).not.toHaveBeenCalled();
+});
 it.each([{ error: "Invalid assertion" }, { verified: false, credentialEpoch: 3 }])("failed assertions never issue MFA sessions (%j)", async result => {
   mocks.validate.mockResolvedValue(true); mocks.verify.mockResolvedValue(result);
   expect((await POST(request("authenticate"))).status).toBe(401);
