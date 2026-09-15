@@ -78,6 +78,14 @@ Treat authentication bypass, cross-credential acceptance, unauthorized inventory
 
 ## Known limitations
 
+### TOML parser termination
+
+The npm override requires `smol-toml >=1.7.1 <2` (locked to 1.8.0) for Vercel and its Rust/Python tooling. This includes the upstream fix for GHSA-7w5x-hrqm-74c2. The postinstall hook `scripts/patch-toml.cjs` adds EOF checks, cursor progress guards, and typed error fields to the ESM and CommonJS parsers. It uses the project's TypeScript development dependency to locate functions and fails if the expected parser layout changes.
+
+An EOF comment inside an open array or inline table throws a `TomlError` with code `ERR_TOML_UNTERMINATED_COMMENT`, message `Unterminated comment at end of input`, and one-based `line`/`col` at the `#`. Other EOF failures in these structures use `ERR_TOML_UNEXPECTED_EOF`; a non-advancing scan uses `ERR_TOML_PARSER_STALL`. Complete documents may still end with a comment without a newline, as TOML permits.
+
+Run `npx vitest run tests/toml-eof.test.ts` after parser updates. The tests isolate parsing in workers with a hard termination deadline and assert the reported comment cases finish within 10ms, excluding worker startup. This timing assertion measures the test environment, not a guarantee under arbitrary system load. Production-only installs without the Vercel CLI skip the hook; `--ignore-scripts` also skips the custom contract but retains the upstream version fix.
+
 ### Archive extraction dependencies
 
 The root npm override requires `tar >=7.5.11 <8` for the Vercel CLI dependency tree (currently locked to 7.5.22). This includes upstream fixes for drive-relative hardlink and symlink traversal. `npm ci` runs `scripts/patch-tar.cjs` to add the project's stricter boundary contract to both CommonJS and ESM `Unpack` builds and route the default bundled exports through those builds.
