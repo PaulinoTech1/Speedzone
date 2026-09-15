@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
+    "test:security-console": "vitest run --config tests/security-console.integration.config.mts && python scripts/verify-security-session-lua.py",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "vercel": "vercel",

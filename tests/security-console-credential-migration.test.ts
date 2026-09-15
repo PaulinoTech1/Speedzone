@@ -35,7 +35,14 @@ it("upgrades a verified legacy password into the versioned credential record", a
     "speedzone:security-console:credential:v1",
     "speedzone:security-console:credential-epoch:v1",
     "speedzone:security-console:password",
+    "speedzone:security-console:credential-epoch",
   ], ["legacy-hash", "upgraded-hash", "3"]);
+});
+
+it.each(["credential:v1", "credential-epoch:v1"])("fails closed on partial versioned %s state", async suffix => {
+  mocks.get.mockImplementation(async (key: string) => key === `speedzone:security-console:${suffix}` ? (suffix === "credential:v1" ? "current-hash" : "4") : key.endsWith(":password") ? "legacy-hash" : key.endsWith(":credential-epoch") ? "3" : null);
+  await expect(verifyPassword("EstablishedPassword!42")).resolves.toEqual({ ok: false, reason: "unavailable" });
+  expect(mocks.eval).not.toHaveBeenCalled();
 });
 
 it("does not migrate a legacy credential when password verification fails", async () => {

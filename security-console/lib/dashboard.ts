@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SecurityEvent } from "./security-store";
+import { securityRedisConfiguration } from "./redis";
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -52,14 +53,13 @@ export function dashboardSummary(events: SecurityEvent[]) {
 }
 
 export function configurationHealth() {
-  return [
+  const items = [
     ["SECURITY_LOG_PROVIDER", process.env.SECURITY_LOG_PROVIDER],
     ["SECURITY_LOG_QUERY_URL", process.env.SECURITY_LOG_QUERY_URL],
     ["SECURITY_LOG_QUERY_TOKEN", process.env.SECURITY_LOG_QUERY_TOKEN],
     ["SECURITY_CONSOLE_IP_HASH_SECRET", process.env.SECURITY_CONSOLE_IP_HASH_SECRET || process.env.SECURITY_IP_HASH_SECRET],
-    ["ADMIN_SECURITY_KV_REST_API_URL", process.env.ADMIN_SECURITY_KV_REST_API_URL || process.env.SECURITY_KV_REST_API_URL],
-    ["ADMIN_SECURITY_KV_REST_API_TOKEN", process.env.ADMIN_SECURITY_KV_REST_API_TOKEN || process.env.SECURITY_KV_REST_API_TOKEN],
     ["SPEEDZONE_SOURCE_URL", process.env.SPEEDZONE_SOURCE_URL],
     ["SECURITY_CONSOLE_SERVICE_SECRET", process.env.SECURITY_CONSOLE_SERVICE_SECRET],
   ].map(([key, value]) => ({ key, status: value?.trim() ? "SET" as const : "MISSING" as const }));
+  return [...items, { key: "Security Redis writable REST pair", status: securityRedisConfiguration().status }];
 }

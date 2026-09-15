@@ -31,6 +31,14 @@ jobs:
         run: npm run typecheck
       - name: Unit and integration tests
         run: npm test
+      - name: Use Python for authorization Lua tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install authorization test runtime
+        run: python -m pip install lupa==2.8
+      - name: Verify Security Console authentication flow
+        run: npm run test:security-console
       - name: Production build
         run: npm run build
       - name: Install Playwright Chromium

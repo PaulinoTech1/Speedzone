@@ -42,6 +42,8 @@ export async function verifyPassword(password: string): Promise<PasswordResult> 
       await migrateLegacyPasskeys(password, epoch, hash);
       return { ok: true, epoch };
     }
+    // Partial versioned state is a recovery condition, never permission to reset its epoch.
+    if (hash !== null || rawEpoch !== null) return { ok: false, reason: "unavailable" };
 
     const [legacyHash, rawLegacyEpoch] = await Promise.all([redis.get<string>(LEGACY_CREDENTIAL_KEY), redis.get<string>(LEGACY_EPOCH_KEY)]);
     const legacyEpoch = Number(rawLegacyEpoch);
@@ -49,8 +51,8 @@ export async function verifyPassword(password: string): Promise<PasswordResult> 
 
     const upgradedHash = await argon2.hash(password, { type: argon2.argon2id, memoryCost: 65536, timeCost: 3, parallelism: 1 });
     const migratedEpoch = Number(await redis.eval(
-      "if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end; if redis.call('GET', KEYS[3]) ~= ARGV[1] then return 0 end; redis.call('SET', KEYS[1], ARGV[2]); redis.call('SET', KEYS[2], ARGV[3]); return tonumber(ARGV[3])",
-      [CREDENTIAL_KEY, EPOCH_KEY, LEGACY_CREDENTIAL_KEY],
+      "if redis.call('EXISTS', KEYS[1]) == 1 or redis.call('EXISTS', KEYS[2]) == 1 then return 0 end; if redis.call('GET', KEYS[3]) ~= ARGV[1] or redis.call('GET', KEYS[4]) ~= ARGV[3] then return 0 end; redis.call('SET', KEYS[1], ARGV[2]); redis.call('SET', KEYS[2], ARGV[3]); return tonumber(ARGV[3])",
+      [CREDENTIAL_KEY, EPOCH_KEY, LEGACY_CREDENTIAL_KEY, LEGACY_EPOCH_KEY],
       [legacyHash, upgradedHash, String(legacyEpoch)],
     ));
     if (!Number.isSafeInteger(migratedEpoch) || migratedEpoch < 1) return { ok: false, reason: "unavailable" };

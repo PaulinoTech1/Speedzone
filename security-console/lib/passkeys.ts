@@ -17,6 +17,7 @@ const challengeTtl = 120;
 const credentialsKey = "speedzone:security-console:passkeys:v1";
 const challengePrefix = "speedzone:security-console:passkey:";
 const epochKey = "speedzone:security-console:credential-epoch:v1";
+export const NO_ESTABLISHED_PASSKEY = "No established Security Console passkey is available. Console access is locked until credential recovery is performed.";
 
 type StoredCredential = { id: string; publicKey: string; counter: number; transports?: AuthenticatorTransport[]; deviceType: CredentialDeviceType; backedUp: boolean; name: string; credentialEpoch: number };
 type ChallengeRecord = { challenge: string; credentialEpoch: number; createdAt: number };
@@ -103,6 +104,12 @@ export async function hasCurrentPasskey() {
   const [credentials, epoch] = await Promise.all([getCredentials(), currentCredentialEpoch()]);
   return credentials?.some((credential) => credential.credentialEpoch === epoch) ?? false;
 }
+export async function establishedPasskeyCount() {
+  try {
+    const [credentials, epoch] = await Promise.all([getCredentials(), currentCredentialEpoch()]);
+    return credentials && epoch !== null ? credentials.filter(item => item.credentialEpoch === epoch).length : null;
+  } catch { return null; }
+}
 export async function listPasskeys(): Promise<AdminPasskeySummary[]> { return (await getCredentials() ?? []).map(({ id, deviceType, backedUp, name }) => ({ id, deviceType, backedUp, name })); }
 export async function deletePasskey(id: string) {
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
@@ -142,9 +149,9 @@ export async function verifyRegistration(response: unknown, name: string, config
 }
 export async function authenticationOptions(config: WebAuthnConfig) {
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
-  if (!client || !credentials || epoch === null) return { error: "Passkey login is not configured" as const };
+  if (!client || !credentials || epoch === null) return { error: "Security passkey storage is unavailable. Please try again later.", status: 503 };
   const active = credentials.filter((item) => item.credentialEpoch === epoch);
-  if (!active.length) return { error: "No established security passkey is available. Contact the operator to restore access." as const };
+  if (!active.length) return { error: NO_ESTABLISHED_PASSKEY, status: 403 };
   const options = await generateAuthenticationOptions({ rpID: config.rpID, allowCredentials: active.map((item) => ({ id: item.id, transports: item.transports })), userVerification: "required" });
   await client.set(challengeKey("authentication", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now() } satisfies ChallengeRecord, { ex: challengeTtl });
   return { options };

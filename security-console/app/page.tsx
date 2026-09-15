@@ -6,6 +6,7 @@ import { configurationHealth, dashboardSummary, eventGroups } from "../lib/dashb
 import { readEvents, type SecurityEvent } from "../lib/security-store";
 import { readConsoleAudit, type ConsoleAuditEvent } from "../lib/console-audit";
 import { listSecuritySessions, type VisibleSecuritySession } from "../lib/auth";
+import { authenticationHealth } from "../lib/auth-health";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,14 @@ function SessionTable({sessions}:{sessions:VisibleSecuritySession[]}){if(!sessio
 
 export default async function Page() {
   await requireMfa();
+  const authHealth = await authenticationHealth();
   let events: SecurityEvent[]=[]; let consoleEvents:ConsoleAuditEvent[]=[];let sessions:VisibleSecuritySession[]=[]; let unavailable=false; let consoleAuditUnavailable=false;
   try { events=await readEvents(500); } catch { unavailable=true; }
   try { [consoleEvents,sessions]=await Promise.all([readConsoleAudit(100),listSecuritySessions()]); } catch { consoleAuditUnavailable=true; }
   const groups=eventGroups(events); const summary=dashboardSummary(events); const configuration=configurationHealth();
   return <main><header><div><p className="eyebrow">SpeedZone / security operations</p><h1>Security headquarters</h1><p className="muted">Read-only visibility across website access, inventory operations, reports, and delivery health.</p></div><nav><a href="#admin-access">Admin access</a><a href="#inventory">Inventory</a><Link href={consolePath("/integrity")}>Integrity</Link><Link href={consolePath("/passkeys")}>Passkeys</Link><LogoutButton/></nav></header>
     {unavailable && <section className="notice danger">The security-event provider is unavailable. Configuration status remains visible below.</section>}
+    <section className="panel"><h2>Authentication configuration health</h2><dl>{Object.entries(authHealth).map(([name,value])=><div key={name}><dt>{name}</dt><dd>{value ?? "UNAVAILABLE"}</dd></div>)}</dl></section>
     <section aria-labelledby="overview"><h2 id="overview">Overview</h2><div className="metric-grid"><div className="panel"><span className="muted">Successful admin logins / 24h</span><div className="value">{summary.successfulLogins}</div></div><div className="panel"><span className="muted">Failed admin logins / 24h</span><div className="value">{summary.failedLogins}</div></div><div className="panel"><span className="muted">Operational failures / 24h</span><div className="value">{summary.operationalFailures}</div></div><div className="panel"><span className="muted">Bug reports / 24h</span><div className="value">{summary.reports}</div></div><div className="panel"><span className="muted">Inventory mutations / 24h</span><div className="value">{summary.inventoryMutations}</div></div><div className="panel"><span className="muted">Single-seen networks</span><div className="value">{summary.newNetworks}</div></div></div></section>
     <section className="panel section" id="admin-access"><h2>Admin access</h2><p className="muted">Password and passkey outcomes, rate limits, session lifecycle, and privacy-safe network context.</p><EventTable events={groups.adminAccess} empty="No administrator access events are available."/></section>
     <section className="panel section" id="credentials"><h2>Credential history</h2><p className="muted">Password recovery, password changes, passkey operations, and credential epochs. Secret material is excluded at event creation.</p><EventTable events={groups.credentials} empty="No credential-history events are available."/></section>

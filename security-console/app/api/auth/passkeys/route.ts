@@ -4,12 +4,14 @@ import { privateHeaders, SECURITY_COOKIE, securityCookieOptions, upgradeSecurity
 import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, verifyAuthentication, verifyRegistration } from "../../../../lib/passkeys";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { recordConsoleAudit } from "../../../../lib/console-audit";
+import { logAuthenticationFailure } from "../../../../lib/auth-health";
 
 export async function GET(request: Request) {
   if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
   return NextResponse.json({ passkeys: await listPasskeys() }, { headers: privateHeaders });
 }
 export async function POST(request: Request) {
+  try {
   const rate = await enforceRateLimit(request, "passkey", 12, 300);
   if (!rate.allowed) { await recordConsoleAudit(request,"console.passkey","denied","rate_limited"); return NextResponse.json({ error: "Too many attempts" }, { status: 429, headers: { ...privateHeaders, "Retry-After": String(rate.retryAfter) } }); }
   const body = await request.json().catch(() => ({})) as { action?: string; response?: unknown; name?: string };
@@ -27,17 +29,33 @@ export async function POST(request: Request) {
   }
   if (body.action === "authentication-options") {
     if (!await validateSecuritySession(request, "password")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
-    return NextResponse.json(await authenticationOptions(config), { headers: privateHeaders });
+    const result = await authenticationOptions(config);
+    if ("error" in result) {
+      await logAuthenticationFailure(result.status === 403 ? "no_active_passkey" : "storage_unavailable");
+      return NextResponse.json({ error: result.error }, { status: result.status, headers: privateHeaders });
+    }
+    return NextResponse.json(result, { headers: privateHeaders });
   }
   if (body.action === "authenticate") {
     if (!await validateSecuritySession(request, "password")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
     const verified = await verifyAuthentication(body.response, config);
-    if (!("verified" in verified) || verified.verified !== true) return NextResponse.json(verified, { status: 401, headers: privateHeaders });
-    const session = await upgradeSecuritySession(request, verified.credentialEpoch); if (!session) return NextResponse.json({ error: "Your login expired. Enter your password and verify your passkey again." }, { status: 401, headers: privateHeaders });
+    if (!("verified" in verified) || verified.verified !== true) {
+      await logAuthenticationFailure("assertion_denied");
+      await recordConsoleAudit(request,"console.login","denied","assertion_denied");
+      return NextResponse.json(verified, { status: 401, headers: privateHeaders });
+    }
+    const session = await upgradeSecuritySession(request, verified.credentialEpoch); if (!session) {
+      await logAuthenticationFailure("session_upgrade_denied");
+      return NextResponse.json({ error: "Your login expired. Enter your password and verify your passkey again." }, { status: 401, headers: privateHeaders });
+    }
     await recordConsoleAudit(request,"console.login","allowed","passkey_verified");
     const response = NextResponse.json({ verified: true }, { headers: privateHeaders }); response.cookies.set(SECURITY_COOKIE, session, securityCookieOptions); return response;
   }
   return NextResponse.json({ error: "Unsupported action" }, { status: 400, headers: privateHeaders });
+  } catch {
+    await logAuthenticationFailure("storage_unavailable");
+    return NextResponse.json({ error: "Security Console authentication is unavailable. Please try again later." }, { status: 503, headers: privateHeaders });
+  }
 }
 export async function DELETE(request: Request) {
   if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });

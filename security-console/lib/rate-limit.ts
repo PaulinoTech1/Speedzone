@@ -6,7 +6,7 @@ export async function enforceRateLimit(request: Request, bucket: string, limit: 
   const identity = createHash("sha256").update(ip).digest("hex").slice(0, 24);
   const slot = Math.floor(Date.now() / (windowSeconds * 1000));
   const key = `speedzone:security-console:rate:${bucket}:${identity}:${slot}`;
-  const redis = getSecurityRedis(); if (!redis) return { allowed: false, retryAfter: windowSeconds };
+  const redis = getSecurityRedis(); if (!redis) throw new Error("Security authentication storage unavailable");
   const count = Number(await redis.incr(key)); if (count === 1) await redis.expire(key, windowSeconds + 1);
   return { allowed: count <= limit, retryAfter: windowSeconds };
 }

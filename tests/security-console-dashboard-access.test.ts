@@ -19,3 +19,10 @@ it("renders the dashboard after the MFA guard accepts the session", async () => 
   expect(html).toContain("Overview");
   expect(html).toContain("Admin access");
 });
+it("keeps authentication configuration health visible when the event provider fails", async () => {
+  mocks.events.mockRejectedValue(new Error("Provider unavailable"));
+  const html = renderToStaticMarkup(await Dashboard());
+  expect(html).toContain("Security headquarters");
+  expect(html).toContain("Authentication configuration health");
+  expect(html).toContain("security-event provider is unavailable");
+});
