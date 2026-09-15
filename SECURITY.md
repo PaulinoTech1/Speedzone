@@ -78,6 +78,14 @@ Treat authentication bypass, cross-credential acceptance, unauthorized inventory
 
 ## Known limitations
 
+### YAML merge resource budget
+
+The root `js-yaml` override uses the direct dependency's patched 4.x version for every consumer, including Vercel's Python tooling. `scripts/patch-yaml.cjs` runs on install and adds `maxMergedKeys` (default 10000, a non-negative safe integer) to CommonJS, ESM, and browser loaders. A new parser state initializes `mergedKeysCount` to zero for each `load()`/`loadAll()` call; documents within one `loadAll()` share the budget. Every source-key visit counts, including keys already present in the destination.
+
+The first visit over the limit throws `YAMLException` with code `ERR_YAML_MAX_MERGE_KEYS_EXCEEDED`, message `Exceeded maximum allowed merged keys limit (maxMergedKeys)`, configured `maxMergedKeys`, current `mergedKeysCount`, and the normal zero-based YAML `mark` context. The upstream total-work guard remains active for repeated empty mappings; its default allows `maxMergedKeys + 10000` total work units. Explicit upstream `maxTotalMergeKeys` settings remain supported independently and can reject input earlier.
+
+Run `npx vitest run tests/yaml-merge-budget.test.ts` after upgrades. Worker-isolated tests verify a 4000-link chain stops at visit 10001 in under 20ms in the test environment, budget resets, multi-document accounting, overridden keys, valid merges, and empty-source limits. The browser `.min.js` artifact uses the same patched UMD code without minification. As with the other dependency patches, install scripts must run for the custom error contract; upstream protections remain enforced by the version override. The hook requires the development TypeScript dependency and skips production-only installs without YAML/Vercel.
+
 ### TOML parser termination
 
 The npm override requires `smol-toml >=1.7.1 <2` (locked to 1.8.0) for Vercel and its Rust/Python tooling. This includes the upstream fix for GHSA-7w5x-hrqm-74c2. The postinstall hook `scripts/patch-toml.cjs` adds EOF checks, cursor progress guards, and typed error fields to the ESM and CommonJS parsers. It uses the project's TypeScript development dependency to locate functions and fails if the expected parser layout changes.
