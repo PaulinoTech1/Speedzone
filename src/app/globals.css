@@ -2419,6 +2419,17 @@ body:has(.error-page) {
 }
 
 /* Ownership cost calculator */
+.monthly-payment-calculator {
+  display: grid;
+  gap: 1.1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.5rem;
+}
+
+.monthly-payment-calculator h2 { margin: 0; }
+.monthly-payment-result { font-size: 1.2rem; font-weight: 800; color: var(--red-bright); }
+.cost-calculator [role="alert"] { color: var(--red-bright); margin: 0.5rem 0 0; }
+
 .cost-calculator {
   display: grid;
   gap: 1.1rem;
