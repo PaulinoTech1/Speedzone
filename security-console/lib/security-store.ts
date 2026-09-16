@@ -50,7 +50,7 @@ class AxiomProvider implements SecurityEventProvider {
     } catch { throw new SecurityProviderError("endpoint"); }
     const end=new Date(); const start=new Date(end.getTime()-30*24*60*60*1000);
     let response: Response;
-    try { response=await fetch(endpoint,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:JSON.stringify({startTime:start.toISOString(),endTime:end.toISOString(),limit:Math.min(Math.max(limit,1),500),order:[{field:"occurredAt",desc:true}]}),cache:"no-store",signal:AbortSignal.timeout(5000),redirect:"error"}); } catch { throw new SecurityProviderError("network"); }
+    try { response=await fetch(endpoint,{method:"POST",headers:{authorization:`Bearer ${token}`,"content-type":"application/json"},body:JSON.stringify({startTime:start.toISOString(),endTime:end.toISOString(),limit:Math.min(Math.max(limit,1),500),order:[{field:"_time",desc:true}]}),cache:"no-store",signal:AbortSignal.timeout(5000),redirect:"error"}); } catch { throw new SecurityProviderError("network"); }
     if(!response.ok) throw new SecurityProviderError("http", response.status);
     let payload: unknown;
     try { payload = await response.json(); } catch { throw new SecurityProviderError("response"); }
