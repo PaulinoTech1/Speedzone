@@ -1085,16 +1085,24 @@ h1 em::after {
 .password-input { display: flex; gap: .5rem; align-items: stretch; }
 .password-input input { flex: 1; min-width: 0; }
 .admin-grid { display: grid; gap: 2rem; }
+.admin-grid > *, .vehicle-form label, .form-row > * { min-width: 0; }
+.admin-heading { flex-wrap: wrap; }
 .vehicle-form, .vehicle-form label { display: grid; gap: .55rem; }
 .vehicle-form { gap: 1rem; }
 .form-row { display: grid; gap: 1rem; }
 .vehicle-form input, .vehicle-form select, .vehicle-form textarea, .admin-login input { width: 100%; padding: .8rem; color: var(--text); background: var(--ink); border: 1px solid var(--line); border-radius: .45rem; font: inherit; }
 .admin-list { display: grid; gap: .75rem; }
-.admin-listing { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; background: var(--surface); border: 1px solid var(--line); border-radius: .6rem; }
-.admin-listing > div { display: flex; align-items: center; gap: .8rem; }
+.admin-listing { display: grid; min-width: 0; gap: 1rem; padding: .8rem; background: var(--surface); border: 1px solid var(--line); border-radius: .6rem; }
+.admin-listing-summary { display: flex; align-items: center; gap: .8rem; min-width: 0; overflow-wrap: anywhere; }
+.admin-listing-summary img { flex-shrink: 0; }
+.admin-edit-form { padding-block: 1rem; border-block: 1px solid var(--line); }
+.admin-edit-form textarea { resize: vertical; min-height: 7rem; }
+.vehicle-form input, .vehicle-form select, .vehicle-form textarea { min-width: 0; max-width: 100%; }
+.admin-listing .admin-vehicle-vin { font-family: monospace; text-transform: none; overflow-wrap: anywhere; }
+.admin-grid .form-row { grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); }
 .admin-listing img { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: .35rem; }
   .admin-listing span { display: block; color: var(--muted); font-size: .85rem; text-transform: capitalize; }
-  .admin-listing-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .admin-listing-actions { display: flex; gap: .75rem; flex-wrap: wrap; justify-content: flex-end; }
   .admin-photo-management { display: grid; gap: .65rem; width: 100%; padding: .75rem 0 0; border-top: 1px solid var(--line); }
   .admin-photo-management p { margin: 0; color: var(--muted); font-size: .85rem; }
   .admin-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr)); gap: .5rem; }

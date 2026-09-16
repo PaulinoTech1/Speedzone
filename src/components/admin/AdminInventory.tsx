@@ -11,7 +11,7 @@ import {
   maxInventoryPhotoSize,
 } from "@/lib/inventory-photos";
 
-const empty = { year: "", make: "", model: "", price: "", mileage: "", condition: "Used", status: "available", description: "" };
+const empty = { vin: "", year: "", make: "", model: "", price: "", mileage: "", condition: "Used", status: "available", description: "" };
 const maxPhotoDimension = 2400;
 const webpQuality = 0.82;
 
@@ -348,7 +348,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   }
   function startEditing(vehicle: Vehicle) {
     setEditingVehicleId(vehicle.id);
-    setEditForms((current) => ({ ...current, [vehicle.id]: { year: String(vehicle.year), make: vehicle.make, model: vehicle.model, price: String(vehicle.price), mileage: String(vehicle.mileage), condition: vehicle.condition, status: vehicle.status, description: vehicle.description } }));
+    setEditForms((current) => ({ ...current, [vehicle.id]: { vin: vehicle.vin || "", year: String(vehicle.year), make: vehicle.make, model: vehicle.model, price: String(vehicle.price), mileage: String(vehicle.mileage), condition: vehicle.condition, status: vehicle.status, description: vehicle.description } }));
   }
   function updateEditField(vehicleId: string, field: string, value: string) {
     setEditForms((current) => ({ ...current, [vehicleId]: { ...(current[vehicleId] || {}), [field]: value } }));
@@ -442,6 +442,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
               <label>Mileage<input type="number" value={form.mileage} onChange={(e) => setForm({ ...form, mileage: e.target.value })} required /></label>
               <label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="available">Available</option><option value="pending">Pending</option><option value="sold">Sold</option></select></label>
             </div>
+            <label>VIN<input name="vin" value={form.vin} onChange={(e) => setForm({ ...form, vin: e.target.value.toUpperCase() })} minLength={17} maxLength={17} pattern="[A-HJ-NPR-Z0-9]{17}" autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="17-character vehicle identification number" aria-describedby="new-vehicle-vin-help" /><small id="new-vehicle-vin-help" className="field-help">Optional. Enter 17 letters and numbers; I, O, and Q are not used.</small></label>
             <label>Condition<input value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} /></label>
             <label>Description<textarea rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
             <label>
@@ -469,15 +470,16 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
               const photoPickerId = `inventory-photo-picker-${vehicle.id}`;
               return (
                 <article className="admin-listing" key={vehicle.id}>
-                  <div>
+                  <div className="admin-listing-summary">
                     {vehicle.photos[0] && <img src={vehicle.photos[0]} alt="" />}
                     <div>
                       <strong>{vehicle.year} {vehicle.make} {vehicle.model}</strong>
+                      {vehicle.vin && <span className="admin-vehicle-vin">VIN: {vehicle.vin}</span>}
                       <span>{vehicle.status} · ${vehicle.price.toLocaleString()} · {vehicle.photos.length} photo{vehicle.photos.length === 1 ? "" : "s"}</span>
                     </div>
                   </div>
                   {editingVehicleId === vehicle.id && editForms[vehicle.id] && (
-                    <div className="admin-edit-form" aria-label={`Edit ${vehicle.year} ${vehicle.make} ${vehicle.model}`}>
+                    <form className="vehicle-form admin-edit-form" onSubmit={(event) => { event.preventDefault(); void saveVehicle(vehicle); }} aria-label={`Edit ${vehicle.year} ${vehicle.make} ${vehicle.model}`}>
                       <div className="form-row">
                         {(["year", "make", "model"] as const).map((field) => <label key={field}>{field.slice(0, 1).toUpperCase() + field.slice(1)}<input type={field === "year" ? "number" : "text"} value={editForms[vehicle.id]?.[field] || ""} onChange={(event) => updateEditField(vehicle.id, field, event.target.value)} required /></label>)}
                       </div>
@@ -486,10 +488,11 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
                         <label>Mileage<input type="number" min="0" value={editForms[vehicle.id]?.mileage || ""} onChange={(event) => updateEditField(vehicle.id, "mileage", event.target.value)} required /></label>
                         <label>Status<select value={editForms[vehicle.id]?.status || "available"} onChange={(event) => updateEditField(vehicle.id, "status", event.target.value)}><option value="available">Available</option><option value="pending">Pending</option><option value="sold">Sold</option></select></label>
                       </div>
+                      <label>VIN<input name="vin" value={editForms[vehicle.id]?.vin || ""} onChange={(event) => updateEditField(vehicle.id, "vin", event.target.value.toUpperCase())} minLength={17} maxLength={17} pattern="[A-HJ-NPR-Z0-9]{17}" autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="17-character vehicle identification number" aria-describedby={`vin-help-${vehicle.id}`} /><small id={`vin-help-${vehicle.id}`} className="field-help">Optional. Enter 17 letters and numbers; I, O, and Q are not used.</small></label>
                       <label>Condition<input value={editForms[vehicle.id]?.condition || ""} onChange={(event) => updateEditField(vehicle.id, "condition", event.target.value)} /></label>
                       <label>Description<textarea rows={4} value={editForms[vehicle.id]?.description || ""} onChange={(event) => updateEditField(vehicle.id, "description", event.target.value)} /></label>
-                      <div className="admin-listing-actions"><button type="button" className="button button-primary" disabled={updatingThisVehicle} onClick={() => void saveVehicle(vehicle)}>{updatingThisVehicle ? "Saving…" : "Save changes"}</button><button type="button" className="button button-secondary" disabled={updatingThisVehicle} onClick={() => cancelEditing(vehicle.id)}>Cancel</button></div>
-                    </div>
+                      <div className="admin-listing-actions"><button type="submit" className="button button-primary" disabled={inventoryBusy}>{updatingThisVehicle ? "Saving…" : "Save changes"}</button><button type="button" className="button button-secondary" disabled={updatingThisVehicle} onClick={() => cancelEditing(vehicle.id)}>Cancel</button></div>
+                    </form>
                   )}
                   {vehicle.photos.length > 0 && (
                     <div className="admin-photo-management">

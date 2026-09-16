@@ -3,6 +3,7 @@ import { maxInventoryPhotoCount } from "@/lib/inventory-photos";
 
 export type Vehicle = {
   id: string;
+  vin?: string;
   year: number;
   make: string;
   model: string;
@@ -76,11 +77,13 @@ export function sanitizeVehicleInput(input: Record<string, unknown>, photos: str
   if (!Number.isFinite(price) || price < 0) throw new Error("Enter a valid price");
   if (!Number.isFinite(mileage) || mileage < 0) throw new Error("Enter valid mileage");
   const text = (key: string) => String(input[key] ?? "").trim();
+  const vin = text("vin").toUpperCase();
+  if (vin && !/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) throw new Error("Enter a valid 17-character VIN");
   const make = text("make");
   const model = text("model");
   if (!make || !model) throw new Error("Make and model are required");
   return {
-    id: text("id") || crypto.randomUUID(), year, make, model, price, mileage,
+    id: text("id") || crypto.randomUUID(), vin, year, make, model, price, mileage,
     condition: text("condition") || "Used", description: text("description"),
     status: input.status === "sold" || input.status === "pending" ? input.status : "available",
     photos, createdAt: text("createdAt") || new Date().toISOString(),

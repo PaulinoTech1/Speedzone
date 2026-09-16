@@ -61,7 +61,7 @@ async function handlePATCH(request: Request) {
     if (body.photos === undefined) {
       const existing = vehicles.find((vehicle) => vehicle.id === body.id);
       if (!existing) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
-      const updatedVehicle = sanitizeVehicleInput({ ...body, id: existing.id, createdAt: existing.createdAt }, existing.photos);
+      const updatedVehicle = sanitizeVehicleInput({ ...body, vin: body.vin === undefined ? existing.vin : body.vin, id: existing.id, createdAt: existing.createdAt }, existing.photos);
       const saved = await writeInventory(vehicles.map((item) => item.id === existing.id ? updatedVehicle : item), revision);
       await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"allowed",actor:"admin",reason:"vehicle_updated",metadata:{catalog_revision_before:revision,catalog_revision_after:saved.etag}});
       return NextResponse.json(updatedVehicle, { headers: { ETag: saved.etag } });
