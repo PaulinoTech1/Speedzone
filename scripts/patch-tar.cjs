@@ -9,11 +9,14 @@ if (!fs.existsSync(root)) {
   throw new Error('Expected Vercel tar dependency is missing.');
 }
 const marker = '    [CHECKPATH](entry) {\n';
+// A cached patch can originate from a Windows checkout or a Linux Git build.
+// Normalize only line endings; substantive guard changes must still fail closed.
+const validatorSource = validate.toString().replace(/\r\n/g, '\n');
 for (const build of ['commonjs', 'esm']) {
   const file = path.join(root, 'dist', build, 'unpack.js');
-  const source = fs.readFileSync(file, 'utf8');
+  const source = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   const pathName = build === 'esm' ? 'path' : 'node_path_1.default';
-  const guard = `${marker}        // SpeedZone extraction boundary guard\n        try {\n            (${validate.toString()})(entry, this.cwd, ${pathName});\n        } catch (error) {\n            this.emit('error', error);\n            return false;\n        }\n`;
+  const guard = `${marker}        // SpeedZone extraction boundary guard\n        try {\n            (${validatorSource})(entry, this.cwd, ${pathName});\n        } catch (error) {\n            this.emit('error', error);\n            return false;\n        }\n`;
   if (source.includes(guard)) continue;
   if (source.includes('SpeedZone extraction boundary guard') || source.split(marker).length !== 2) {
     throw new Error('tar internals changed; review the extraction boundary patch before installing.');
