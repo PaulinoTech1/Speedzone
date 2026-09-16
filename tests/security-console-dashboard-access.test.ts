@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 const mocks = vi.hoisted(() => ({ guard: vi.fn(), events: vi.fn() }));
 vi.mock("../security-console/lib/guards", () => ({ requireMfa: mocks.guard }));
-vi.mock("../security-console/lib/security-store", () => ({ readEvents: mocks.events }));
+vi.mock("../security-console/lib/security-store", async importOriginal => ({ ...await importOriginal<object>(), readEvents: mocks.events }));
 vi.mock("../security-console/lib/console-audit", () => ({ readConsoleAudit: async () => [] }));
 vi.mock("../security-console/lib/auth", () => ({ listSecuritySessions: async () => [] }));
 import Dashboard from "../src/app/Security_Console/page";

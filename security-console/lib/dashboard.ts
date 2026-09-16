@@ -26,7 +26,7 @@ export function eventGroups(events: SecurityEvent[]) {
 
 export function dashboardSummary(events: SecurityEvent[]) {
   const since = Date.now() - 24 * 60 * 60 * 1000;
-  const recent = events.filter(event => Date.parse(event.occurredAt) >= since);
+  const recent = events.filter(event => Date.parse(event.occurredAt) >= since && event.metadata?.synthetic !== true);
   const networks = new Map<string, number>();
   for (const event of events) if (event.client?.networkFingerprint) networks.set(event.client.networkFingerprint, (networks.get(event.client.networkFingerprint) || 0) + 1);
   const invalidHashes = events.filter(event => !eventHashIsValid(event)).length;
@@ -39,8 +39,8 @@ export function dashboardSummary(events: SecurityEvent[]) {
     if (current && previous) largestGapMs = Math.max(largestGapMs, Date.parse(current.occurredAt) - Date.parse(previous.occurredAt));
   }
   return {
-    successfulLogins: recent.filter(event => event.event === "admin.login" && event.outcome === "allowed").length,
-    failedLogins: recent.filter(event => event.event === "admin.login" && event.outcome !== "allowed").length,
+    successfulLogins: new Set(recent.filter(event => event.event === "admin.session.created" && event.outcome === "allowed").map(event => event.requestId)).size,
+    failedLogins: recent.filter(event => (event.event === "admin.login" || (event.event === "admin.passkey" && event.reason === "authenticate")) && event.outcome !== "allowed").length,
     operationalFailures: recent.filter(event => ["failed", "unavailable"].includes(event.outcome)).length,
     reports: recent.filter(event => event.event === "bug-report.submission").length,
     inventoryMutations: recent.filter(event => event.event === "inventory.mutation" && event.outcome === "allowed").length,

@@ -14,5 +14,5 @@ function event(input: Partial<SecurityEvent>): SecurityEvent {
 }
 describe("security dashboard",()=>{
   it("groups operational events without exposing unrelated categories",()=>{const events=[event({event:"admin.login"}),event({event:"inventory.mutation"}),event({event:"bug-report.submission"})];const groups=eventGroups(events);expect(groups.adminAccess).toHaveLength(1);expect(groups.inventory).toHaveLength(1);expect(groups.reports).toHaveLength(1)});
-  it("summarizes recent visible data and validates integrity",()=>{const valid=event({});const invalid={...event({event:"test-drive.notification",outcome:"failed"}),reason:"tampered"};const summary=dashboardSummary([valid,invalid]);expect(summary.successfulLogins).toBe(1);expect(summary.operationalFailures).toBe(1);expect(summary.invalidHashes).toBe(1);expect(eventHashIsValid(valid)).toBe(true)});
+  it("summarizes recent visible data and validates integrity",()=>{const valid=event({event:"admin.session.created"});const invalid={...event({event:"test-drive.notification",outcome:"failed"}),reason:"tampered"};const summary=dashboardSummary([valid,invalid]);expect(summary.successfulLogins).toBe(1);expect(summary.operationalFailures).toBe(1);expect(summary.invalidHashes).toBe(1);expect(eventHashIsValid(valid)).toBe(true)});
 });
