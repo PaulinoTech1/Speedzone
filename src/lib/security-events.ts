@@ -122,7 +122,7 @@ export async function deliverSecurityEvent(event: SecurityEvent) {
     const endpoint = process.env.SECURITY_LOG_INGEST_URL;
     const token = process.env.SECURITY_LOG_INGEST_TOKEN;
     if (!endpoint || !token) { console.error("[security] logging configuration incomplete"); return { delivered: false as const, status: null, reason: "incomplete" as const }; }
-    try { const response = await fetch(endpoint, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(event), signal: AbortSignal.timeout(3000) }); if (!response.ok) console.error("[security] log delivery rejected", response.status); return { delivered: response.ok, status: response.status, reason: response.ok ? null : "rejected" as const }; } catch { console.error("[security] log delivery unavailable"); return { delivered: false as const, status: null, reason: "unavailable" as const }; }
+    try { const response = await fetch(endpoint, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify([event]), signal: AbortSignal.timeout(3000) }); if (!response.ok) console.error("[security] log delivery rejected", response.status); return { delivered: response.ok, status: response.status, reason: response.ok ? null : "rejected" as const }; } catch { console.error("[security] log delivery unavailable"); return { delivered: false as const, status: null, reason: "unavailable" as const }; }
   }
   return { delivered: false as const, status: null, reason: "unsupported" as const };
 }
