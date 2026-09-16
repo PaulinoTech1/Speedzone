@@ -6,9 +6,10 @@ import {
   type AuthenticatorTransport,
   type CredentialDeviceType,
 } from "@simplewebauthn/server";
-import { validateSecuritySession } from "./auth";
+import { passwordSessionContext, validateSecuritySession } from "./auth";
 import { currentCredentialEpoch } from "./password";
 import { getSecurityRedis } from "./redis";
+import { recoveryCodeMatches, recoveryGrant, recoveryUsedKey } from "./passkey-recovery";
 
 const rpName = "SpeedZone Security Console";
 export type WebAuthnConfig = { rpID: string; origin: string };
@@ -44,7 +45,7 @@ export function getWebAuthnConfig(headers: Headers): WebAuthnConfig {
   return { rpID, origin: configuredOrigin || `${protocol}://${host}` };
 }
 function redis() { return getSecurityRedis(); }
-function challengeKey(kind: "registration" | "authentication", challenge: string) { return `${challengePrefix}${kind}:${challenge}`; }
+function challengeKey(kind: "registration" | "authentication" | "recovery", challenge: string) { return `${challengePrefix}${kind}:${challenge}`; }
 function isStoredCredential(item: unknown): item is StoredCredential {
   if (!item || typeof item !== "object") return false;
   const credential = item as StoredCredential;
@@ -172,6 +173,77 @@ function storedFromVerification(info: NonNullable<Awaited<ReturnType<typeof veri
     name: name.trim() ? name.trim().slice(0, 80) : fallbackName,
     credentialEpoch: epoch,
   };
+}
+type RecoveryChallenge = ChallengeRecord & { sessionKey: string; grantHash: string; origin: string; rpID: string };
+const recoveryError = { error: "Recovery is unavailable, expired, or already used. Request a new recovery code.", status: 403 } as const;
+// Check the live session and consume the grant in the same transaction as the
+// append. A revoked session or two concurrent completions cannot enroll a key.
+const recoveryCommitScript = `
+local now=tonumber(ARGV[1])
+if now>=tonumber(ARGV[2]) or redis.call('EXISTS',KEYS[4])==1 then return 0 end
+if redis.call('GET',KEYS[2])~=ARGV[3] then return 0 end
+local rawSession=redis.call('GET',KEYS[5]); local generation=redis.call('GET',KEYS[6])
+if not rawSession or not generation then return 0 end
+local session=cjson.decode(rawSession)
+if session.level~='password' or session.generation~=generation or tostring(session.epoch)~=ARGV[3] then return 0 end
+if now-session.createdAt>=tonumber(ARGV[7]) or now-session.lastSeenAt>=tonumber(ARGV[8]) then return 0 end
+local rawChallenge=redis.call('GET',KEYS[3]); if not rawChallenge then return 0 end
+local challenge=cjson.decode(rawChallenge)
+if challenge.challenge~=ARGV[4] or challenge.sessionKey~=KEYS[5] or challenge.grantHash~=ARGV[5] or tostring(challenge.credentialEpoch)~=ARGV[3] then return 0 end
+if now-challenge.createdAt>=120000 or challenge.createdAt>now then return 0 end
+local raw=redis.call('GET',KEYS[1]); local credentials={}
+if raw then
+  if not string.match(raw,'^%s*%[') then return 0 end
+  credentials=cjson.decode(raw)
+end
+local added=cjson.decode(ARGV[6])
+for _,item in ipairs(credentials) do
+  if type(item)~='table' or type(item.id)~='string' or type(item.publicKey)~='string' or type(item.counter)~='number' or type(item.credentialEpoch)~='number' then return 0 end
+  if item.id==added.id then return 0 end
+end
+table.insert(credentials,added)
+redis.call('SET',KEYS[1],cjson.encode(credentials))
+redis.call('SET',KEYS[4],'used')
+redis.call('DEL',KEYS[3])
+return 1`;
+
+export async function recoveryRegistrationOptions(request: Request, code: unknown, config: WebAuthnConfig) {
+  const grant = recoveryGrant();
+  if (!grant || !recoveryCodeMatches(code, grant.sha256)) return recoveryError;
+  const context = await passwordSessionContext(request);
+  if (!context) return { error: "Enter your password again before recovery.", status: 401 } as const;
+  const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
+  if (!client || !credentials || epoch === null) return { error: "Passkey storage is unavailable.", status: 503 } as const;
+  if (await client.get(recoveryUsedKey(grant.sha256)) !== null) return recoveryError;
+  const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "security@speedzonemotorsports", userDisplayName: "SpeedZone security operator", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: credentials.map(item => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
+  const record: RecoveryChallenge = { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), sessionKey: context.sessionKey, grantHash: grant.sha256, origin: config.origin, rpID: config.rpID };
+  await client.set(challengeKey("recovery", options.challenge), record, { ex: challengeTtl });
+  return { options };
+}
+
+export async function verifyRecoveryRegistration(request: Request, response: unknown, name: string, config: WebAuthnConfig) {
+  const grant = recoveryGrant();
+  if (!grant) return recoveryError;
+  const context = await passwordSessionContext(request);
+  const client = redis();
+  if (!context || !client) return { error: "Enter your password again before recovery.", status: 401 } as const;
+  try {
+    const clientData = (response as { response?: { clientDataJSON?: string } }).response?.clientDataJSON;
+    if (!clientData) return recoveryError;
+    const challenge: unknown = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge;
+    if (typeof challenge !== "string" || !/^[A-Za-z0-9_-]{16,256}$/.test(challenge)) return recoveryError;
+    const record = await client.get<RecoveryChallenge>(challengeKey("recovery", challenge));
+    if (!record || record.challenge !== challenge || record.sessionKey !== context.sessionKey || record.grantHash !== grant.sha256 || record.origin !== config.origin || record.rpID !== config.rpID) return recoveryError;
+    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, requireUserVerification: true });
+    if (!verification.verified || !verification.registrationInfo) return recoveryError;
+    const currentGrant = recoveryGrant();
+    if (!currentGrant || currentGrant.sha256 !== grant.sha256) return recoveryError;
+    const stored = storedFromVerification(verification.registrationInfo, name, record.credentialEpoch, "Recovered security passkey");
+    const result = await client.eval(recoveryCommitScript,
+      [credentialsKey, epochKey, challengeKey("recovery", challenge), recoveryUsedKey(grant.sha256), context.sessionKey, context.generationKey],
+      [Date.now(), currentGrant.expiresAt, String(record.credentialEpoch), challenge, grant.sha256, JSON.stringify(stored), context.absoluteMs, context.idleMs]);
+    return Number(result) === 1 ? { verified: true as const } : recoveryError;
+  } catch { return recoveryError; }
 }
 export async function registrationOptions(config: WebAuthnConfig) {
   if (!await validateSecuritySession(undefined, "mfa")) return { error: "Verify your established passkey first" as const };

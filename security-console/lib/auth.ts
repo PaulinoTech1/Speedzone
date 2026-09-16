@@ -68,6 +68,18 @@ export async function validateSecuritySession(request?: Request, required: Sessi
   catch { return false; }
 }
 export async function revokeSecuritySession(request?: Request) { const value = await token(request); if (value) await getSecurityRedis()?.del(key(value)); }
+// Recovery challenges bind to this exact live password session, never a cookie
+// supplied by the browser as an arbitrary Redis key.
+export async function passwordSessionContext(request?: Request) {
+  if (!await validateSecuritySession(request, "password")) return null;
+  const value = await token(request);
+  const redis = getSecurityRedis();
+  if (!value || !redis) return null;
+  const sessionKey = key(value);
+  const session = await redis.get<Session>(sessionKey);
+  if (session?.level !== "password") return null;
+  return { sessionKey, generationKey: GENERATION_KEY, absoluteMs: ABSOLUTE_SECONDS * 1000, idleMs: IDLE_SECONDS * 1000 };
+}
 export async function revokeAllSecuritySessions() { await getSecurityRedis()?.set(GENERATION_KEY, randomBytes(16).toString("hex")); }
 export async function upgradeSecuritySession(request: Request, verifiedEpoch: number) {
   const value = await token(request);

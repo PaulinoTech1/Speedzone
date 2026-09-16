@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import argon2 from "argon2";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ store: {} as Record<string,string>, cookie: "", changeLegacyEpoch: false }));
+const state = vi.hoisted(() => ({ store: {} as Record<string,string>, cookie: "", changeLegacyEpoch: false, recoveryRace: "" }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => state.cookie ? { value: state.cookie } : undefined }), headers: async () => new Headers({ host: "www.speedzonems.com" }) }));
 vi.mock("../security-console/lib/redis", () => ({
   securityRedisConfiguration: () => ({ status: "SET", source: "ADMIN_SECURITY" }),
@@ -14,6 +14,20 @@ vi.mock("../security-console/lib/redis", () => ({
     del: async (key: string) => { delete state.store[key]; return 1; },
     incr: async () => 1, expire: async () => 1, zrange: async () => [], lrange: async () => [],
     eval: async (script: string, keys: string[], args: unknown[]) => {
+      if (keys[3]?.includes("passkey-recovery:used") && state.recoveryRace) {
+        const race = state.recoveryRace; state.recoveryRace = "";
+        if (race === "revoked") delete state.store[keys[4]!];
+        if (race === "epoch") state.store[keys[1]!] = "4";
+        if (race === "generation") state.store[keys[5]!] = "revoked";
+        if (race === "used") state.store[keys[3]!] = "used";
+        if (race === "expired") args[1] = Date.now() - 1;
+        if (race === "idle" || race === "absolute") {
+          const session = JSON.parse(state.store[keys[4]!]!);
+          if (race === "idle") session.lastSeenAt = Date.now() - 900_001;
+          else session.createdAt = Date.now() - 14_400_001;
+          state.store[keys[4]!] = JSON.stringify(session);
+        }
+      }
       if (state.changeLegacyEpoch && keys[0] === "speedzone:security-console:credential:v1") state.store["speedzone:security-console:credential-epoch"] = "4";
       const output = execFileSync("python", [resolve("tests/helpers/security-lua.py")], {
         input: JSON.stringify({ script, keys, args, store: state.store }), encoding: "utf8",
@@ -38,25 +52,26 @@ const jwk = keys.publicKey.export({ format: "jwk" });
 // COSE EC2, ES256, P-256, x and y coordinates from a synthetic test key.
 const cose = Buffer.concat([Buffer.from([0xa5,1,2,3,0x26,0x20,1,0x21,0x58,0x20]), Buffer.from(jwk.x!, "base64url"), Buffer.from([0x22,0x58,0x20]), Buffer.from(jwk.y!, "base64url")]);
 const credential = { id: Buffer.from("synthetic-established-key").toString("base64url"), publicKey: cose.toString("base64url"), counter: 7, credentialEpoch: 3, deviceType: "singleDevice", backedUp: false, name: "Synthetic established key" };
-function request(path: string, body?: unknown) { return new Request(`https://www.speedzonems.com/Security_Console${path}`, { method: body ? "POST" : "GET", headers: { cookie: `${SECURITY_COOKIE}=${state.cookie}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) }); }
+function request(path: string, body?: unknown) { return new Request(`https://www.speedzonems.com/Security_Console${path}`, { method: body ? "POST" : "GET", headers: { cookie: `${SECURITY_COOKIE}=${state.cookie}`, "content-type": "application/json", origin: "https://www.speedzonems.com" }, ...(body ? { body: JSON.stringify(body) } : {}) }); }
 function sessionKey() { return `${prefix}session:v1:${createHash("sha256").update(state.cookie).digest("hex")}`; }
 async function passwordLogin() { const response = await login(request("/api/auth/login", { password })); expect(response.status).toBe(200); state.cookie = response.headers.get("set-cookie")!.split(";")[0]!.split("=")[1]!; return response; }
-async function assertion() {
+async function assertion(selectedId = credential.id) {
   const optionsResponse = await passkey(request("/api/auth/passkeys", { action: "authentication-options" }));
   expect(optionsResponse.status).toBe(200);
   const { options } = await optionsResponse.json();
-  expect(options.allowCredentials.map((item: {id:string}) => item.id)).toEqual([credential.id]);
+  expect(options.allowCredentials.map((item: {id:string}) => item.id)).toContain(selectedId);
   expect(options.userVerification).toBe("required");
   const clientData = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: options.challenge, origin: "https://www.speedzonems.com", crossOrigin: false }));
   const counter = Buffer.alloc(4); counter.writeUInt32BE(8);
   const authenticatorData = Buffer.concat([createHash("sha256").update("www.speedzonems.com").digest(), Buffer.from([5]), counter]);
   const signature = sign("sha256", Buffer.concat([authenticatorData, createHash("sha256").update(clientData).digest()]), keys.privateKey);
-  return { id: credential.id, rawId: credential.id, type: "public-key", clientExtensionResults: {}, response: { clientDataJSON: clientData.toString("base64url"), authenticatorData: authenticatorData.toString("base64url"), signature: signature.toString("base64url") } };
+  return { id: selectedId, rawId: selectedId, type: "public-key", clientExtensionResults: {}, response: { clientDataJSON: clientData.toString("base64url"), authenticatorData: authenticatorData.toString("base64url"), signature: signature.toString("base64url") } };
 }
 beforeEach(async () => {
   vi.stubEnv("NEXT_PUBLIC_SECURITY_CONSOLE_BASE_PATH", "/Security_Console");
   vi.stubEnv("EMBEDDED_SECURITY_WEBAUTHN_RP_ID", "www.speedzonems.com"); vi.stubEnv("EMBEDDED_SECURITY_WEBAUTHN_ORIGIN", "https://www.speedzonems.com");
-  state.cookie = ""; state.changeLegacyEpoch = false; state.store = { [`${prefix}credential:v1`]: await argon2.hash(password), [`${prefix}credential-epoch:v1`]: "3", [`${prefix}passkeys:v1`]: JSON.stringify([credential]) };
+  vi.stubEnv("SECURITY_PASSKEY_RECOVERY", "");
+  state.cookie = ""; state.changeLegacyEpoch = false; state.recoveryRace = ""; state.store = { [`${prefix}credential:v1`]: await argon2.hash(password), [`${prefix}credential-epoch:v1`]: "3", [`${prefix}passkeys:v1`]: JSON.stringify([credential]) };
 });
 function legacyState() {
   state.store[`${prefix}password`] = state.store[`${prefix}credential:v1`]!;
@@ -140,4 +155,75 @@ it.each(["missing-proof", "early-proof", "epoch", "generation", "absolute", "idl
   if (condition === "idle") session.lastSeenAt = Date.now() - 900_001;
   state.store[key] = JSON.stringify(session);
   expect(await validateSecuritySession()).toBe(false);
+});
+
+const recoveryCode = "R".repeat(43);
+function enableRecovery() {
+  vi.stubEnv("SECURITY_PASSKEY_RECOVERY", JSON.stringify({ sha256: createHash("sha256").update(recoveryCode).digest("hex"), expiresAt: Date.now() + 3_600_000 }));
+}
+async function recoveryResponse(id = Buffer.from("recovered-key").toString("base64url")) {
+  const response = await passkey(request("/api/auth/passkeys", { action: "recovery-options", code: recoveryCode }));
+  expect(response.status).toBe(200);
+  const { options } = await response.json();
+  expect(options.authenticatorSelection.userVerification).toBe("required");
+  const clientData = Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: options.challenge, origin: "https://www.speedzonems.com" }));
+  const idBytes = Buffer.from(id, "base64url"); const idLength = Buffer.alloc(2); idLength.writeUInt16BE(idBytes.length);
+  const authData = Buffer.concat([createHash("sha256").update("www.speedzonems.com").digest(), Buffer.from([0x45]), Buffer.alloc(4), Buffer.alloc(16), idLength, idBytes, cose]);
+  // CBOR {fmt:"none", attStmt:{}, authData:bytes}; real WebAuthn verifier.
+  const attestation = Buffer.concat([Buffer.from("a363666d74646e6f6e656761747453746d74a068617574684461746158", "hex"), Buffer.from([authData.length]), authData]);
+  return { id, rawId: id, type: "public-key", clientExtensionResults: {}, response: { clientDataJSON: clientData.toString("base64url"), attestationObject: attestation.toString("base64url"), transports: ["internal"] } };
+}
+it.each(["established", "empty", "missing"])("recovers once without deleting keys, then requires a signed assertion (%s)", async condition => {
+  enableRecovery(); await passwordLogin();
+  if (condition === "empty") state.store[`${prefix}passkeys:v1`] = "[]";
+  if (condition === "missing") delete state.store[`${prefix}passkeys:v1`];
+  const existing = JSON.parse(state.store[`${prefix}passkeys:v1`] || "[]");
+  state.store[`${prefix}passkeys`] = JSON.stringify([credential]);
+  const legacy = state.store[`${prefix}passkeys`];
+  const response = await recoveryResponse();
+  const registered = await passkey(request("/api/auth/passkeys", { action: "recover", response }));
+  expect(registered.status).toBe(200); expect(registered.headers.get("set-cookie")).toBeNull();
+  expect(state.store[`${prefix}passkeys`]).toBe(legacy);
+  const saved = JSON.parse(state.store[`${prefix}passkeys:v1`]!);
+  expect(saved.slice(0, existing.length)).toEqual(existing); expect(saved).toHaveLength(existing.length + 1);
+  expect(JSON.parse(state.store[sessionKey()]!).level).toBe("password");
+  expect(await validateSecuritySession()).toBe(false);
+  await expect(Dashboard()).rejects.toThrow("NEXT_REDIRECT");
+  expect((await passkey(request("/api/auth/passkeys", { action: "recover", response }))).status).toBe(403);
+  expect((await passkey(request("/api/auth/passkeys", { action: "recovery-options", code: recoveryCode }))).status).toBe(403);
+  const authenticated = await passkey(request("/api/auth/passkeys", { action: "authenticate", response: await assertion(response.id) }));
+  expect(authenticated.status).toBe(200);
+  state.cookie = authenticated.headers.get("set-cookie")!.split(";")[0]!.split("=")[1]!;
+  expect(await validateSecuritySession()).toBe(true);
+});
+it.each(["revoked", "epoch", "generation", "used", "expired", "idle", "absolute"])("rejects recovery when live authorization changes before commit (%s)", async condition => {
+  enableRecovery(); await passwordLogin(); const response = await recoveryResponse();
+  const original = state.store[`${prefix}passkeys:v1`];
+  state.recoveryRace = condition;
+  expect((await passkey(request("/api/auth/passkeys", { action: "recover", response }))).status).toBe(403);
+  expect(state.store[`${prefix}passkeys:v1`]).toBe(original);
+});
+it("binds recovery to the exact password session", async () => {
+  enableRecovery(); await passwordLogin(); const response = await recoveryResponse();
+  await passwordLogin(); const original = state.store[`${prefix}passkeys:v1`];
+  expect((await passkey(request("/api/auth/passkeys", { action: "recover", response }))).status).toBe(403);
+  expect(state.store[`${prefix}passkeys:v1`]).toBe(original);
+});
+it("does not overwrite a duplicate credential ID during recovery", async () => {
+  enableRecovery(); await passwordLogin(); const response = await recoveryResponse(credential.id);
+  const original = state.store[`${prefix}passkeys:v1`];
+  expect((await passkey(request("/api/auth/passkeys", { action: "recover", response }))).status).toBe(403);
+  expect(state.store[`${prefix}passkeys:v1`]).toBe(original);
+});
+it("rejects disabled, wrong-code, cross-origin, and malformed-store recovery", async () => {
+  await passwordLogin();
+  const options = () => request("/api/auth/passkeys", { action: "recovery-options", code: recoveryCode });
+  expect((await passkey(options())).status).toBe(403);
+  enableRecovery();
+  expect((await passkey(request("/api/auth/passkeys", { action: "recovery-options", code: "wrong" }))).status).toBe(403);
+  const crossOrigin = options(); crossOrigin.headers.set("origin", "https://untrusted.example");
+  expect((await passkey(crossOrigin)).status).toBe(403);
+  state.store[`${prefix}passkeys:v1`] = JSON.stringify({ malformed: true });
+  expect((await passkey(options())).status).toBe(503);
+  expect(state.store[`${prefix}passkeys:v1`]).toBe(JSON.stringify({ malformed: true }));
 });
