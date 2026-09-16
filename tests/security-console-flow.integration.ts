@@ -60,6 +60,7 @@ import { POST as passkey, GET as listPasskeys } from "../src/app/Security_Consol
 import { GET as events } from "../src/app/Security_Console/api/events/route";
 import Dashboard from "../src/app/Security_Console/page";
 import PasskeysPage from "../src/app/Security_Console/passkeys/page";
+import PasskeyLoginPage from "../src/app/Security_Console/login/passkey/page";
 import IntegrityPage from "../src/app/Security_Console/integrity/page";
 import ReportsPage from "../src/app/Security_Console/reports/page";
 import { SECURITY_COOKIE, validateSecuritySession } from "../security-console/lib/auth";
@@ -311,4 +312,39 @@ it("requires password login, origin, and JSON for first-passkey setup", async ()
     expect((await passkey(invalid)).status).toBe(403);
   }
   expect(state.store[`${prefix}passkeys:v1`]).toBeUndefined();
+});
+
+it("allows the password-to-passkey transition once, then refresh revokes access until a new password login", async () => {
+  await passwordLogin();
+  await expect(PasskeyLoginPage()).resolves.toBeTruthy();
+  const response = await assertion();
+  const oldSession = sessionKey();
+  await expect(PasskeyLoginPage()).rejects.toThrow("NEXT_REDIRECT");
+  expect(state.store[oldSession]).toBeUndefined();
+  expect((await passkey(request("/api/auth/passkeys", { action: "authenticate", response }))).status).toBe(401);
+  await expect(Dashboard()).rejects.toThrow("NEXT_REDIRECT");
+  await expect(PasskeyLoginPage()).rejects.toThrow("NEXT_REDIRECT");
+  await passwordLogin();
+  await expect(PasskeyLoginPage()).resolves.toBeTruthy();
+  const authenticated = await passkey(request("/api/auth/passkeys", { action: "authenticate", response: await assertion() }));
+  expect(authenticated.status).toBe(200);
+  state.cookie = authenticated.headers.get("set-cookie")!.split(";")[0]!.split("=")[1]!;
+  await expect(Dashboard()).resolves.toBeTruthy();
+});
+
+it("revokes pending first-passkey enrollment on a page refresh", async () => {
+  await passwordLogin(); delete state.store[`${prefix}passkeys:v1`];
+  await expect(PasskeyLoginPage()).resolves.toBeTruthy();
+  const response = await recoveryResponse(undefined, "bootstrap-options");
+  await expect(PasskeyLoginPage()).rejects.toThrow("NEXT_REDIRECT");
+  expect((await passkey(request("/api/auth/passkeys", { action: "bootstrap", response }))).status).toBe(401);
+  expect(state.store[`${prefix}passkeys:v1`]).toBeUndefined();
+});
+
+it("requires fresh password entry for old sessions without a page-entry grant", async () => {
+  await passwordLogin();
+  const key = sessionKey(); const session = JSON.parse(state.store[key]!);
+  delete session.passkeyPagePending; state.store[key] = JSON.stringify(session);
+  await expect(PasskeyLoginPage()).rejects.toThrow("NEXT_REDIRECT");
+  expect(state.store[key]).toBeUndefined();
 });

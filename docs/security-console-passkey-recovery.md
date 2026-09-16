@@ -8,6 +8,11 @@ shows **Register first security passkey** without requiring a recovery code.
 Complete the browser's registration prompt, then select **Use security passkey**
 and verify the new key. Successful verification opens the dashboard.
 
+Each password login permits one visit to the passkey page. Refreshing or
+reopening that page revokes the session and returns to password login. Pending
+passkey operations from the old session cannot complete. If a passkey was
+already saved, enter the password again and verify the saved key normally.
+
 The registration endpoint rechecks the live password session and both stores
 atomically. It records a permanent bootstrap-used marker, so concurrent setup
 attempts or later deletion of the credential list cannot reopen first-time

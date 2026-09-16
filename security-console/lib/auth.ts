@@ -10,7 +10,7 @@ const SESSION_MAP_KEY = "speedzone:security-console:session-map:v1";
 const ABSOLUTE_SECONDS = 60 * 60 * 4;
 const IDLE_SECONDS = 15 * 60;
 export type SessionLevel = "password" | "mfa";
-type Session = { id:string;createdAt: number; lastSeenAt: number; epoch: number; generation: string; level: SessionLevel; passkeyVerifiedAt?: number };
+type Session = { id:string;createdAt: number; lastSeenAt: number; epoch: number; generation: string; level: SessionLevel; passkeyVerifiedAt?: number; passkeyPagePending?: boolean };
 export type VisibleSecuritySession={id:string;createdAt:number;lastSeenAt:number;level:SessionLevel;current:boolean};
 const createIndexedSessionScript=`redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]);redis.call('ZADD',KEYS[2],ARGV[3],ARGV[4]);redis.call('HSET',KEYS[3],ARGV[4],KEYS[1]);redis.call('EXPIRE',KEYS[2],ARGV[2]);redis.call('EXPIRE',KEYS[3],ARGV[2]);return 1`;
 
@@ -22,6 +22,12 @@ if session.generation~=generation or tostring(session.epoch)~=epoch or (ARGV[4]=
 if session.level~='password' and session.level~='mfa' then return 0 end
 if session.level=='mfa' and (type(session.passkeyVerifiedAt)~='number' or session.passkeyVerifiedAt<session.createdAt or session.passkeyVerifiedAt>now) then return 0 end
 if now-tonumber(session.createdAt)>=tonumber(ARGV[2]) or now-tonumber(session.lastSeenAt)>=tonumber(ARGV[3]) then redis.call('DEL',KEYS[1]); return 0 end
+if ARGV[4]=='passkey-page' then
+  if session.level~='password' or session.passkeyPagePending~=true then
+    redis.call('DEL',KEYS[1]); return 0
+  end
+  session.passkeyPagePending=false
+end
 session.lastSeenAt=now; local remaining=math.max(1,math.ceil((tonumber(ARGV[2])-(now-tonumber(session.createdAt)))/1000)); redis.call('SET',KEYS[1],cjson.encode(session),'EX',remaining); return 1`;
 
 const upgradeScript = `
@@ -57,15 +63,24 @@ export async function createSecuritySession(epoch: number, level: "password") {
   const redis = getSecurityRedis(); const current = await generation();
   if (!redis || !current) return null;
   const value = randomBytes(32).toString("base64url"); const now = Date.now(); const id=randomUUID();
-  const record: Session = { id,createdAt: now, lastSeenAt: now, epoch, generation: current, level };
+  const record: Session = { id,createdAt: now, lastSeenAt: now, epoch, generation: current, level, passkeyPagePending: true };
   await redis.eval(createIndexedSessionScript,[key(value),SESSION_INDEX_KEY,SESSION_MAP_KEY],[JSON.stringify(record),ABSOLUTE_SECONDS,now,id]);
   return value;
 }
-export async function validateSecuritySession(request?: Request, required: SessionLevel = "mfa") {
+async function evaluateSecuritySession(request: Request | undefined, required: SessionLevel | "passkey-page") {
   const value = await token(request); if (!value || !/^[A-Za-z0-9_-]{43}$/.test(value)) return false;
   const redis = getSecurityRedis(); if (!redis) return false;
   try { return Number(await redis.eval(validateScript, [key(value), GENERATION_KEY, "speedzone:security-console:credential-epoch:v1"], [Date.now(), ABSOLUTE_SECONDS * 1000, IDLE_SECONDS * 1000, required])) === 1; }
   catch { return false; }
+}
+export async function validateSecuritySession(request?: Request, required: SessionLevel = "mfa") {
+  return evaluateSecuritySession(request, required);
+}
+// A password login authorizes exactly one server render of the passkey page.
+// A refresh consumes no new grant: it revokes the session, including outstanding
+// enrollment/assertion authorization, and the page guard returns to login.
+export async function enterPasskeyPage() {
+  return evaluateSecuritySession(undefined, "passkey-page");
 }
 export async function revokeSecuritySession(request?: Request) { const value = await token(request); if (value) await getSecurityRedis()?.del(key(value)); }
 // Recovery challenges bind to this exact live password session, never a cookie
