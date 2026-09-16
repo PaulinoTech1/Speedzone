@@ -5,7 +5,7 @@ import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, 
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { recordConsoleAudit } from "../../../../lib/console-audit";
 import { logAuthenticationFailure } from "../../../../lib/auth-health";
-import { recoveryRegistrationOptions, verifyRecoveryRegistration } from "../../../../lib/passkeys";
+import { firstPasskeyOptions, verifyFirstPasskey, recoveryRegistrationOptions, verifyRecoveryRegistration } from "../../../../lib/passkeys";
 
 export async function GET(request: Request) {
   if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
@@ -17,6 +17,19 @@ export async function POST(request: Request) {
   if (!rate.allowed) { await recordConsoleAudit(request,"console.passkey","denied","rate_limited"); return NextResponse.json({ error: "Too many attempts" }, { status: 429, headers: { ...privateHeaders, "Retry-After": String(rate.retryAfter) } }); }
   const body = await request.json().catch(() => ({})) as { action?: string; response?: unknown; name?: string; code?: unknown };
   const config = getWebAuthnConfig(await headers());
+  if (body.action === "bootstrap-options" || body.action === "bootstrap") {
+    if (request.headers.get("origin") !== config.origin || request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
+      return NextResponse.json({ error: "Invalid setup request" }, { status: 403, headers: privateHeaders });
+    }
+    if (!await validateSecuritySession(request, "password")) return NextResponse.json({ error: "Enter your password first" }, { status: 401, headers: privateHeaders });
+    const result = body.action === "bootstrap-options"
+      ? await firstPasskeyOptions(request, config)
+      : await verifyFirstPasskey(request, body.response, config);
+    if ("error" in result) return NextResponse.json({ error: result.error }, { status: result.status, headers: privateHeaders });
+    if ("verified" in result) await recordConsoleAudit(request, "console.passkey", "allowed", "first_registered");
+    // Only a subsequent signed assertion can elevate the password session.
+    return NextResponse.json(result, { headers: privateHeaders });
+  }
   if (body.action === "recovery-options" || body.action === "recover") {
     if (request.headers.get("origin") !== config.origin || request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
       return NextResponse.json({ error: "Invalid recovery request" }, { status: 403, headers: privateHeaders });

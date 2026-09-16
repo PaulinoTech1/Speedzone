@@ -1,5 +1,22 @@
 # One-time Security Console passkey recovery
 
+## First passkey setup
+
+If both the current and legacy passkey stores are missing or empty, sign in
+with the established password at `/Security_Console/login`. The next page
+shows **Register first security passkey** without requiring a recovery code.
+Complete the browser's registration prompt, then select **Use security passkey**
+and verify the new key. Successful verification opens the dashboard.
+
+The registration endpoint rechecks the live password session and both stores
+atomically. It records a permanent bootstrap-used marker, so concurrent setup
+attempts or later deletion of the credential list cannot reopen first-time
+setup. Registration alone never grants an MFA session. Existing, inactive,
+legacy, or malformed keys require the recovery process below; they are never
+replaced by first-time setup. Storage failures disable enrollment.
+
+## Recovery for existing credentials
+
 Recovery allows an operator who knows the established password but cannot use
 an established passkey to register one additional key. Existing passkeys and
 legacy credentials are preserved. Recovery is disabled by default.

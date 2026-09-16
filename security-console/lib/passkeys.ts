@@ -19,6 +19,7 @@ const credentialsKey = "speedzone:security-console:passkeys:v1";
 const legacyCredentialsKey = "speedzone:security-console:passkeys";
 const challengePrefix = "speedzone:security-console:passkey:";
 const epochKey = "speedzone:security-console:credential-epoch:v1";
+const bootstrapUsedKey = "speedzone:security-console:passkey-bootstrap:used";
 export const NO_ESTABLISHED_PASSKEY = "No established Security Console passkey is available. Console access is locked until credential recovery is performed.";
 
 type StoredCredential = {
@@ -45,7 +46,7 @@ export function getWebAuthnConfig(headers: Headers): WebAuthnConfig {
   return { rpID, origin: configuredOrigin || `${protocol}://${host}` };
 }
 function redis() { return getSecurityRedis(); }
-function challengeKey(kind: "registration" | "authentication" | "recovery", challenge: string) { return `${challengePrefix}${kind}:${challenge}`; }
+function challengeKey(kind: "registration" | "authentication" | "recovery" | "bootstrap", challenge: string) { return `${challengePrefix}${kind}:${challenge}`; }
 function isStoredCredential(item: unknown): item is StoredCredential {
   if (!item || typeof item !== "object") return false;
   const credential = item as StoredCredential;
@@ -174,7 +175,77 @@ function storedFromVerification(info: NonNullable<Awaited<ReturnType<typeof veri
     credentialEpoch: epoch,
   };
 }
-type RecoveryChallenge = ChallengeRecord & { sessionKey: string; grantHash: string; origin: string; rpID: string };
+// An empty active-key list alone is not first-time setup: old or malformed
+// credentials must go through recovery, and a completed bootstrap stays closed.
+export async function firstPasskeyAvailable() {
+  try {
+    const client = redis();
+    if (!client) return false;
+    const [current, legacy, used, epoch] = await Promise.all([
+      client.get<unknown>(credentialsKey), client.get<unknown>(legacyCredentialsKey),
+      client.get(bootstrapUsedKey), currentCredentialEpoch(),
+    ]);
+    const empty = (value: unknown) => value === null || (Array.isArray(value) && value.length === 0);
+    return epoch !== null && used === null && empty(current) && empty(legacy);
+  } catch { return false; }
+}
+type BootstrapChallenge = ChallengeRecord & { sessionKey: string; origin: string; rpID: string };
+const bootstrapError = { error: "First-passkey setup is unavailable. Use an established passkey or one-time recovery.", status: 403 } as const;
+const bootstrapCommitScript = `
+local now=tonumber(ARGV[1])
+if redis.call('EXISTS',KEYS[7])==1 or redis.call('GET',KEYS[2])~=ARGV[2] then return 0 end
+local function empty(key)
+  local raw=redis.call('GET',key)
+  return not raw or string.match(raw,'^%s*%[%s*%]%s*$')~=nil
+end
+if not empty(KEYS[1]) or not empty(KEYS[6]) then return 0 end
+local rawSession=redis.call('GET',KEYS[4]); local generation=redis.call('GET',KEYS[5])
+if not rawSession or not generation then return 0 end
+local session=cjson.decode(rawSession)
+if session.level~='password' or session.generation~=generation or tostring(session.epoch)~=ARGV[2] then return 0 end
+if now-session.createdAt>=tonumber(ARGV[5]) or now-session.lastSeenAt>=tonumber(ARGV[6]) then return 0 end
+local rawChallenge=redis.call('GET',KEYS[3]); if not rawChallenge then return 0 end
+local challenge=cjson.decode(rawChallenge)
+if challenge.challenge~=ARGV[3] or challenge.sessionKey~=KEYS[4] or tostring(challenge.credentialEpoch)~=ARGV[2] then return 0 end
+if now-challenge.createdAt>=120000 or challenge.createdAt>now then return 0 end
+redis.call('SET',KEYS[1],ARGV[4])
+redis.call('SET',KEYS[7],'used')
+redis.call('DEL',KEYS[3])
+return 1`;
+
+export async function firstPasskeyOptions(request: Request, config: WebAuthnConfig) {
+  const context = await passwordSessionContext(request);
+  if (!context) return { error: "Enter your password first.", status: 401 } as const;
+  if (!await firstPasskeyAvailable()) return bootstrapError;
+  const client = redis(); const epoch = await currentCredentialEpoch();
+  if (!client || epoch === null) return bootstrapError;
+  const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "security@speedzonemotorsports", userDisplayName: "SpeedZone security operator", userID: new TextEncoder().encode(userID), attestationType: "none", authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
+  const record: BootstrapChallenge = { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), sessionKey: context.sessionKey, origin: config.origin, rpID: config.rpID };
+  await client.set(challengeKey("bootstrap", options.challenge), record, { ex: challengeTtl });
+  return { options };
+}
+
+export async function verifyFirstPasskey(request: Request, response: unknown, config: WebAuthnConfig) {
+  const context = await passwordSessionContext(request); const client = redis();
+  if (!context || !client) return { error: "Enter your password first.", status: 401 } as const;
+  try {
+    const clientData = (response as { response?: { clientDataJSON?: string } })?.response?.clientDataJSON;
+    if (!clientData) return bootstrapError;
+    const challenge: unknown = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge;
+    if (typeof challenge !== "string" || !/^[A-Za-z0-9_-]{16,256}$/.test(challenge)) return bootstrapError;
+    const record = await client.get<BootstrapChallenge>(challengeKey("bootstrap", challenge));
+    if (!record || record.challenge !== challenge || record.sessionKey !== context.sessionKey || record.origin !== config.origin || record.rpID !== config.rpID) return bootstrapError;
+    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, requireUserVerification: true });
+    if (!verification.verified || !verification.registrationInfo) return bootstrapError;
+    const stored = storedFromVerification(verification.registrationInfo, "First security passkey", record.credentialEpoch, "First security passkey");
+    const result = await client.eval(bootstrapCommitScript,
+      [credentialsKey, epochKey, challengeKey("bootstrap", challenge), context.sessionKey, context.generationKey, legacyCredentialsKey, bootstrapUsedKey],
+      [Date.now(), String(record.credentialEpoch), challenge, JSON.stringify([stored]), context.absoluteMs, context.idleMs]);
+    return Number(result) === 1 ? { verified: true as const } : bootstrapError;
+  } catch { return bootstrapError; }
+}
+
+type RecoveryChallenge = BootstrapChallenge & { grantHash: string };
 const recoveryError = { error: "Recovery is unavailable, expired, or already used. Request a new recovery code.", status: 403 } as const;
 // Check the live session and consume the grant in the same transaction as the
 // append. A revoked session or two concurrent completions cannot enroll a key.

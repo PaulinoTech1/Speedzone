@@ -1,9 +1,9 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-const mocks = vi.hoisted(() => ({ guard: vi.fn(), count: vi.fn(), recovery: vi.fn() }));
+const mocks = vi.hoisted(() => ({ guard: vi.fn(), count: vi.fn(), recovery: vi.fn(), bootstrap: vi.fn() }));
 vi.mock("../security-console/lib/passkey-recovery", () => ({ passkeyRecoveryAvailable: mocks.recovery }));
 vi.mock("../security-console/lib/guards", () => ({ requirePasswordSession: mocks.guard }));
-vi.mock("../security-console/lib/passkeys", async importOriginal => ({ ...await importOriginal<object>(), establishedPasskeyCount: mocks.count }));
+vi.mock("../security-console/lib/passkeys", async importOriginal => ({ ...await importOriginal<object>(), establishedPasskeyCount: mocks.count, firstPasskeyAvailable: mocks.bootstrap }));
 import Page from "../src/app/Security_Console/login/passkey/page";
 beforeEach(() => vi.resetAllMocks());
 it("loads established-key counts only after password authorization", async () => {
@@ -27,7 +27,14 @@ it("does not offer recovery against unavailable credential storage", async () =>
   mocks.count.mockResolvedValue(null); mocks.recovery.mockResolvedValue(true);
   expect(renderToStaticMarkup(await Page())).not.toContain("Register recovery passkey");
 });
-it("locks access when no passkeys are established", async () => {
+it("offers first-passkey setup after password login when both stores are empty", async () => {
+  mocks.count.mockResolvedValue(0); mocks.bootstrap.mockResolvedValue(true);
+  const html = renderToStaticMarkup(await Page());
+  expect(html).toContain("Register first security passkey");
+  expect(html).not.toContain("Console access is locked");
+  expect(html).not.toContain("One-time recovery code");
+});
+it("requires recovery when inactive or legacy keys prevent first-time setup", async () => {
   mocks.count.mockResolvedValue(0); const html = renderToStaticMarkup(await Page());
   expect(html).not.toContain("Use security passkey");
   expect(html).not.toContain("Register first security passkey");

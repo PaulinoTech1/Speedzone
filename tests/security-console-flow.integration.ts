@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import argon2 from "argon2";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ store: {} as Record<string,string>, cookie: "", changeLegacyEpoch: false, recoveryRace: "" }));
+const state = vi.hoisted(() => ({ store: {} as Record<string,string>, cookie: "", changeLegacyEpoch: false, recoveryRace: "", bootstrapRace: "" }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => state.cookie ? { value: state.cookie } : undefined }), headers: async () => new Headers({ host: "www.speedzonems.com" }) }));
 vi.mock("../security-console/lib/redis", () => ({
   securityRedisConfiguration: () => ({ status: "SET", source: "ADMIN_SECURITY" }),
@@ -14,6 +14,24 @@ vi.mock("../security-console/lib/redis", () => ({
     del: async (key: string) => { delete state.store[key]; return 1; },
     incr: async () => 1, expire: async () => 1, zrange: async () => [], lrange: async () => [],
     eval: async (script: string, keys: string[], args: unknown[]) => {
+      if (keys[6]?.includes("passkey-bootstrap:used") && state.bootstrapRace) {
+        const race = state.bootstrapRace; state.bootstrapRace = "";
+        if (race === "revoked") delete state.store[keys[3]!];
+        if (race === "epoch") state.store[keys[1]!] = "4";
+        if (race === "generation") state.store[keys[4]!] = "revoked";
+        if (race === "used") state.store[keys[6]!] = "used";
+        if (race === "current" || race === "legacy") state.store[keys[race === "current" ? 0 : 5]!] = JSON.stringify([credential]);
+        if (race === "expired") {
+          const challenge = JSON.parse(state.store[keys[2]!]!); challenge.createdAt = Date.now() - 120_001;
+          state.store[keys[2]!] = JSON.stringify(challenge);
+        }
+        if (race === "idle" || race === "absolute") {
+          const session = JSON.parse(state.store[keys[3]!]!);
+          if (race === "idle") session.lastSeenAt = Date.now() - 900_001;
+          else session.createdAt = Date.now() - 14_400_001;
+          state.store[keys[3]!] = JSON.stringify(session);
+        }
+      }
       if (keys[3]?.includes("passkey-recovery:used") && state.recoveryRace) {
         const race = state.recoveryRace; state.recoveryRace = "";
         if (race === "revoked") delete state.store[keys[4]!];
@@ -45,6 +63,7 @@ import PasskeysPage from "../src/app/Security_Console/passkeys/page";
 import IntegrityPage from "../src/app/Security_Console/integrity/page";
 import ReportsPage from "../src/app/Security_Console/reports/page";
 import { SECURITY_COOKIE, validateSecuritySession } from "../security-console/lib/auth";
+import { firstPasskeyAvailable } from "../security-console/lib/passkeys";
 const prefix = "speedzone:security-console:";
 const password = "SyntheticIntegrationPassword!42";
 const keys = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
@@ -71,7 +90,7 @@ beforeEach(async () => {
   vi.stubEnv("NEXT_PUBLIC_SECURITY_CONSOLE_BASE_PATH", "/Security_Console");
   vi.stubEnv("EMBEDDED_SECURITY_WEBAUTHN_RP_ID", "www.speedzonems.com"); vi.stubEnv("EMBEDDED_SECURITY_WEBAUTHN_ORIGIN", "https://www.speedzonems.com");
   vi.stubEnv("SECURITY_PASSKEY_RECOVERY", "");
-  state.cookie = ""; state.changeLegacyEpoch = false; state.recoveryRace = ""; state.store = { [`${prefix}credential:v1`]: await argon2.hash(password), [`${prefix}credential-epoch:v1`]: "3", [`${prefix}passkeys:v1`]: JSON.stringify([credential]) };
+  state.cookie = ""; state.changeLegacyEpoch = false; state.recoveryRace = ""; state.bootstrapRace = ""; state.store = { [`${prefix}credential:v1`]: await argon2.hash(password), [`${prefix}credential-epoch:v1`]: "3", [`${prefix}passkeys:v1`]: JSON.stringify([credential]) };
 });
 function legacyState() {
   state.store[`${prefix}password`] = state.store[`${prefix}credential:v1`]!;
@@ -105,7 +124,7 @@ it.each(["established", "empty", "missing", "malformed"])("rejects bootstrap wit
   const legacy = state.store[`${prefix}passkeys`];
   for (const action of ["bootstrap-options", "bootstrap", "replacement-options", "replace"]) {
     const response = await passkey(request("/api/auth/passkeys", { action, response: {} }));
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(action.startsWith("bootstrap") ? 403 : 400);
     expect(response.headers.get("set-cookie")).toBeNull();
   }
   expect(state.store[`${prefix}passkeys:v1`]).toBe(original);
@@ -161,8 +180,8 @@ const recoveryCode = "R".repeat(43);
 function enableRecovery() {
   vi.stubEnv("SECURITY_PASSKEY_RECOVERY", JSON.stringify({ sha256: createHash("sha256").update(recoveryCode).digest("hex"), expiresAt: Date.now() + 3_600_000 }));
 }
-async function recoveryResponse(id = Buffer.from("recovered-key").toString("base64url")) {
-  const response = await passkey(request("/api/auth/passkeys", { action: "recovery-options", code: recoveryCode }));
+async function recoveryResponse(id = Buffer.from("recovered-key").toString("base64url"), action = "recovery-options") {
+  const response = await passkey(request("/api/auth/passkeys", { action, code: recoveryCode }));
   expect(response.status).toBe(200);
   const { options } = await response.json();
   expect(options.authenticatorSelection.userVerification).toBe("required");
@@ -226,4 +245,70 @@ it("rejects disabled, wrong-code, cross-origin, and malformed-store recovery", a
   state.store[`${prefix}passkeys:v1`] = JSON.stringify({ malformed: true });
   expect((await passkey(options())).status).toBe(503);
   expect(state.store[`${prefix}passkeys:v1`]).toBe(JSON.stringify({ malformed: true }));
+});
+
+it.each(["empty", "missing"])("bootstraps a first passkey once and opens the dashboard only after assertion (%s)", async condition => {
+  await passwordLogin();
+  if (condition === "empty") {
+    state.store[`${prefix}passkeys:v1`] = "[]";
+    state.store[`${prefix}passkeys`] = "[]";
+  } else delete state.store[`${prefix}passkeys:v1`];
+  const passwordHash = state.store[`${prefix}credential:v1`];
+  expect(await firstPasskeyAvailable()).toBe(true);
+  const response = await recoveryResponse(undefined, "bootstrap-options");
+  const competing = await recoveryResponse(Buffer.from("competing-first-key").toString("base64url"), "bootstrap-options");
+  const registered = await passkey(request("/api/auth/passkeys", { action: "bootstrap", response }));
+  expect(registered.status).toBe(200);
+  expect(registered.headers.get("set-cookie")).toBeNull();
+  expect(await firstPasskeyAvailable()).toBe(false);
+  expect(state.store[`${prefix}credential:v1`]).toBe(passwordHash);
+  expect(await validateSecuritySession()).toBe(false);
+  await expect(Dashboard()).rejects.toThrow("NEXT_REDIRECT");
+  expect((await passkey(request("/api/auth/passkeys", { action: "bootstrap", response }))).status).toBe(403);
+  expect((await passkey(request("/api/auth/passkeys", { action: "bootstrap", response: competing }))).status).toBe(403);
+  const authenticated = await passkey(request("/api/auth/passkeys", { action: "authenticate", response: await assertion(response.id) }));
+  expect(authenticated.status).toBe(200);
+  state.cookie = authenticated.headers.get("set-cookie")!.split(";")[0]!.split("=")[1]!;
+  expect(await validateSecuritySession()).toBe(true);
+  await expect(Dashboard()).resolves.toBeTruthy();
+  delete state.store[`${prefix}passkeys:v1`];
+  expect(await firstPasskeyAvailable()).toBe(false);
+});
+
+it.each(["current", "legacy", "stale", "malformed", "used"])("refuses first-passkey setup when credential history exists (%s)", async condition => {
+  await passwordLogin(); delete state.store[`${prefix}passkeys:v1`];
+  if (condition === "current") state.store[`${prefix}passkeys:v1`] = JSON.stringify([credential]);
+  if (condition === "legacy") state.store[`${prefix}passkeys`] = JSON.stringify([credential]);
+  if (condition === "stale") state.store[`${prefix}passkeys:v1`] = JSON.stringify([{ ...credential, credentialEpoch: 2 }]);
+  if (condition === "malformed") state.store[`${prefix}passkeys:v1`] = "{}";
+  if (condition === "used") state.store[`${prefix}passkey-bootstrap:used`] = "used";
+  expect(await firstPasskeyAvailable()).toBe(false);
+  expect((await passkey(request("/api/auth/passkeys", { action: "bootstrap-options" }))).status).toBe(403);
+});
+
+it.each(["revoked", "epoch", "generation", "used", "current", "legacy", "expired", "idle", "absolute"])("rechecks first-passkey authorization atomically (%s)", async condition => {
+  await passwordLogin(); delete state.store[`${prefix}passkeys:v1`];
+  const response = await recoveryResponse(undefined, "bootstrap-options");
+  state.bootstrapRace = condition;
+  expect((await passkey(request("/api/auth/passkeys", { action: "bootstrap", response }))).status).toBe(403);
+  const current = JSON.parse(state.store[`${prefix}passkeys:v1`] || "[]");
+  expect(current.some((item: { id: string }) => item.id === response.id)).toBe(false);
+});
+
+it("binds first-passkey setup to the exact password session", async () => {
+  await passwordLogin(); delete state.store[`${prefix}passkeys:v1`];
+  const response = await recoveryResponse(undefined, "bootstrap-options");
+  await passwordLogin();
+  expect((await passkey(request("/api/auth/passkeys", { action: "bootstrap", response }))).status).toBe(403);
+  expect(state.store[`${prefix}passkeys:v1`]).toBeUndefined();
+});
+
+it("requires password login, origin, and JSON for first-passkey setup", async () => {
+  expect((await passkey(request("/api/auth/passkeys", { action: "bootstrap-options" }))).status).toBe(401);
+  await passwordLogin(); delete state.store[`${prefix}passkeys:v1`];
+  for (const header of ["origin", "content-type"]) {
+    const invalid = request("/api/auth/passkeys", { action: "bootstrap-options" }); invalid.headers.delete(header);
+    expect((await passkey(invalid)).status).toBe(403);
+  }
+  expect(state.store[`${prefix}passkeys:v1`]).toBeUndefined();
 });

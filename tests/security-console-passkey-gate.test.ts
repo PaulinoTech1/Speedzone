@@ -19,11 +19,18 @@ it.each(["register", "registration-options"])("password-only sessions cannot use
   expect(mocks.upgrade).not.toHaveBeenCalled();
   expect(response.headers.get("set-cookie")).toBeNull();
 });
-it.each(["bootstrap", "bootstrap-options", "replace", "replacement-options"])("password-only replacement actions are removed (%s)", async action => {
+it.each(["replace", "replacement-options"])("password-only replacement actions are removed (%s)", async action => {
   mocks.validate.mockResolvedValue(true);
   const response = await POST(request(action));
   expect(response.status).toBe(400);
   expect(mocks.register).not.toHaveBeenCalled();
+  expect(response.headers.get("set-cookie")).toBeNull();
+  expect(mocks.upgrade).not.toHaveBeenCalled();
+});
+it.each(["bootstrap", "bootstrap-options"])("requires a same-origin setup request (%s)", async action => {
+  mocks.validate.mockResolvedValue(true);
+  const response = await POST(request(action));
+  expect(response.status).toBe(403);
   expect(response.headers.get("set-cookie")).toBeNull();
   expect(mocks.upgrade).not.toHaveBeenCalled();
 });
