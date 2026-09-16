@@ -116,7 +116,7 @@ export async function writeSecurityEvent(input: Parameters<typeof createSecurity
 }
 
 export async function deliverSecurityEvent(event: SecurityEvent) {
-  const provider = process.env.SECURITY_LOG_PROVIDER;
+  const provider = process.env.SECURITY_LOG_PROVIDER?.trim().toLowerCase();
   if (!provider || provider === "disabled") return { delivered: false as const, status: null, reason: "disabled" as const };
   if (provider === "axiom") {
     const endpoint = process.env.SECURITY_LOG_INGEST_URL;
