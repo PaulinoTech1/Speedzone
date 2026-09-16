@@ -36,8 +36,10 @@ type ChallengeRecord = { challenge: string; credentialEpoch: number; createdAt: 
 
 export function getWebAuthnConfig(headers: Headers): WebAuthnConfig {
   const mounted = process.env.NEXT_PUBLIC_SECURITY_CONSOLE_BASE_PATH === "/Security_Console";
-  const configuredRpID = ((mounted && process.env.EMBEDDED_SECURITY_WEBAUTHN_RP_ID) || process.env.SECURITY_WEBAUTHN_RP_ID)?.trim();
-  const configuredOrigin = ((mounted && process.env.EMBEDDED_SECURITY_WEBAUTHN_ORIGIN) || process.env.SECURITY_WEBAUTHN_ORIGIN)?.trim();
+  // The standalone console can still use its original host. Never inherit that
+  // origin for the embedded console: same-origin setup would reject the site.
+  const configuredRpID = (mounted ? process.env.EMBEDDED_SECURITY_WEBAUTHN_RP_ID : process.env.SECURITY_WEBAUTHN_RP_ID)?.trim();
+  const configuredOrigin = (mounted ? process.env.EMBEDDED_SECURITY_WEBAUTHN_ORIGIN : process.env.SECURITY_WEBAUTHN_ORIGIN)?.trim();
   const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const host = forwardedHost || headers.get("host")?.trim() || "localhost:3000";
   const rpID = configuredRpID || host.split(":")[0] || "localhost";

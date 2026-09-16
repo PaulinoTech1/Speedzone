@@ -2,6 +2,13 @@
 
 ## First passkey setup
 
+Production at `www.speedzonems.com` uses
+`EMBEDDED_SECURITY_WEBAUTHN_ORIGIN=https://www.speedzonems.com` and
+`EMBEDDED_SECURITY_WEBAUTHN_RP_ID=www.speedzonems.com`. These server settings
+must match the browser's origin and domain. Redeploy after changing them.
+The embedded console does not inherit `SECURITY_WEBAUTHN_*` settings from the
+standalone console. An origin mismatch rejects setup before touching passkeys.
+
 If both the current and legacy passkey stores are missing or empty, sign in
 with the established password at `/Security_Console/login`. The next page
 shows **Register first security passkey** without requiring a recovery code.
