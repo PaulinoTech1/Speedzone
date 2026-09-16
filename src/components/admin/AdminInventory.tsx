@@ -121,7 +121,7 @@ async function uploadPhotosSequentially(
   return photoUrls;
 }
 
-export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authenticated: boolean) => void }) {
+export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authenticated: boolean, inventoryAuthenticated?: boolean) => void }) {
   const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [showPassword, setShowPassword] = useState(false); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null); const [editForms, setEditForms] = useState<Record<string, Record<string, string>>>({}); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [selectedPhotos, setSelectedPhotos] = useState<Record<string, string[]>>({}); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [preparingPhotos, setPreparingPhotos] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [deletingPhotosVehicleId, setDeletingPhotosVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false); const [recoverySubmitting, setRecoverySubmitting] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const revision = useRef("");
@@ -135,7 +135,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
         if (!active) return;
         const authenticated = state === "authenticated";
         const inventoryAuthorized = authenticated || state === "setup";
-        setLoggedIn(inventoryAuthorized); setSetupRequired(state === "setup"); onAuthChange?.(authenticated);
+        setLoggedIn(inventoryAuthorized); setSetupRequired(state === "setup"); onAuthChange?.(authenticated, inventoryAuthorized);
         if (!inventoryAuthorized) { setVehicles([]); setEditForms({}); setSelectedPhotos({}); }
         else if (initial) { const inventory = await fetch("/api/inventory", { credentials: "include", cache: "no-store" }); if (inventory.ok && active) { revision.current = inventory.headers.get("etag") || ""; setVehicles(await inventory.json()); } }
       } catch { if (active) { setLoggedIn(false); setVehicles([]); onAuthChange?.(false); } }
@@ -196,7 +196,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
     setVehicles(await response.json());
     setEditForms({}); setEditingVehicleId(null);
   };
-  async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setPassword(""); setLoggedIn(true); setSetupRequired(true); onAuthChange?.(false); await load(); setMessage(""); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
+  async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setPassword(""); setLoggedIn(true); setSetupRequired(true); onAuthChange?.(false, true); await load(); setMessage(""); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
   async function requestRecovery(event: FormEvent) { event.preventDefault(); setRecoveryMessage("Processing request…"); const response = await fetch("/api/admin/recovery", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: recoveryEmailInput }) }); const result = await response.json().catch(() => ({})); setRecoveryMessage(result.message || result.error || "Unable to request recovery."); if (response.ok) setRecoverySent(true); }
   async function resetPassword(event: FormEvent) {
     event.preventDefault();
@@ -426,7 +426,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
           </div>
         </section>
       )}
-      {setupRequired && <p>Password-authenticated inventory access is active. Enroll a passkey to access customer requests and diagnostics.</p>}
+      {setupRequired && <p>Password-authenticated access to inventory and customer requests is active. Enroll a passkey to access diagnostics.</p>}
       <AdminPasskey authenticated={true} onAuthenticated={() => { setSetupRequired(false); onAuthChange?.(true); }} />
       <section className="admin-grid">
         <div className="admin-card">

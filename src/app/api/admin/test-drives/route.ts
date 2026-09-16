@@ -2,13 +2,13 @@ import { withDiagnostics } from "@/lib/diagnostics";
 import { get, list } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import type { TestDriveSubmission } from "@/app/api/test-drive/route";
-import { isAdmin, privateResponseHeaders } from "@/lib/admin-auth";
+import { isAdminAuthenticated, privateResponseHeaders } from "@/lib/admin-auth";
 import { decryptTestDrivePayload } from "@/lib/test-drive-crypto";
 
 const token = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN;
 
 async function diagnosedGET(request: Request) {
-  if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await isAdminAuthenticated(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const privateToken = token();
   if (!privateToken) return NextResponse.json({ error: "Test-drive storage is not configured" }, { status: 503 });
   const url = new URL(request.url);

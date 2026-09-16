@@ -11,7 +11,7 @@ export const diagnosticOperations = {
   INVENTORY_PHOTO_UPLOAD_AUTHORIZE: "Issue upload token: check passkey session, photo path and public Blob origin.",
   INVENTORY_PHOTO_FETCH: "Fetch photo: check origin allowlist, signature, size and upstream availability.",
   CUSTOMER_REQUEST_ACCEPT: "Accept request: check private Blob, encryption key, limiter and UUID reuse.",
-  CUSTOMER_REQUEST_INBOX_READ: "Read inbox: check full admin session and private Blob/encryption settings.",
+  CUSTOMER_REQUEST_INBOX_READ: "Read inbox: check authenticated admin session and private Blob/encryption settings.",
   CUSTOMER_REQUEST_EMAIL_NOTIFY: "Notify staff: check Resend configuration/provider. Do not reverse acceptance.",
   ADMIN_PASSWORD_BOOTSTRAP: "Bootstrap enrollment: inspect Redis, credential state and login limiter.",
   ADMIN_SESSION_LOGOUT: "Revoke session: check Redis availability and cookie expiry.",
@@ -25,7 +25,7 @@ export const diagnosticOperations = {
 export type DiagnosticOperation = keyof typeof diagnosticOperations;
 const failures = {
   400: ["REQUEST_VALIDATION_REJECTED", "Review the request schema and sanitized validation paths."],
-  401: ["AUTHENTICATED_SESSION_REQUIRED", "Verify the route-specific session: inventory accepts password/setup or passkey; private inbox and diagnostics require passkey."],
+  401: ["AUTHENTICATED_SESSION_REQUIRED", "Verify the route-specific session: inventory and private inbox accept password/setup or passkey; diagnostics require passkey."],
   403: ["REQUEST_NOT_AUTHORIZED_BY_POLICY", "Check authorization, origin and resource allowlists."],
   404: ["REQUESTED_RESOURCE_NOT_AVAILABLE", "Check whether the resource still exists."],
   409: ["STATE_REVISION_OR_IDEMPOTENCY_CONFLICT", "Reload current state and reconcile the original operation before retrying."],

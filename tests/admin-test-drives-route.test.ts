@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  isAdmin: vi.fn(),
+  isAdminAuthenticated: vi.fn(),
   list: vi.fn(),
   get: vi.fn(),
   decrypt: vi.fn(),
@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@vercel/blob", () => ({ list: mocks.list, get: mocks.get }));
 vi.mock("@/lib/admin-auth", () => ({
-  isAdmin: mocks.isAdmin,
+  isAdminAuthenticated: mocks.isAdminAuthenticated,
   privateResponseHeaders: () => ({ "Cache-Control": "private, no-store, max-age=0" }),
 }));
 vi.mock("@/lib/test-drive-crypto", () => ({ decryptTestDrivePayload: mocks.decrypt }));
@@ -22,7 +22,7 @@ describe("admin test-drive inbox", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubEnv("TEST_DRIVE_BLOB_READ_WRITE_TOKEN", "synthetic-private-token");
-    mocks.isAdmin.mockResolvedValue(true);
+    mocks.isAdminAuthenticated.mockResolvedValue(true);
     mocks.get.mockImplementation(async (pathname: string) => pathname === "missing"
       ? null
       : { stream: new Response(pathname).body });
@@ -58,7 +58,7 @@ describe("admin test-drive inbox", () => {
   });
 
   it("does not read private storage without authorization", async () => {
-    mocks.isAdmin.mockResolvedValue(false);
+    mocks.isAdminAuthenticated.mockResolvedValue(false);
 
     expect((await GET(request())).status).toBe(401);
     expect(mocks.list).not.toHaveBeenCalled();
