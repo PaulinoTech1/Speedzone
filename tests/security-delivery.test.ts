@@ -8,5 +8,5 @@ it("reports provider failures without changing an accepted operation", async () 
  const response = await auditRoute(new Request("https://example.test/api/inventory", { method: "PATCH", body: "customer private data" }), "inventory.mutation", async () => new Response("ok"), "patch");
  expect(response.status).toBe(200); expect(diagnostic).toHaveBeenCalledWith("[security] log delivery rejected", 503);
  expect(transport.mock.calls[0]?.[1].body).not.toContain("customer private data");
- expect(JSON.parse(transport.mock.calls[0]?.[1].body)).toMatchObject({ reason: "patch", outcome: "allowed", status: 200 });
+ expect(JSON.parse(transport.mock.calls[0]?.[1].body)).toEqual([expect.objectContaining({ reason: "patch", outcome: "allowed", status: 200 })]);
 });
