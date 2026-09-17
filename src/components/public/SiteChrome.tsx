@@ -13,8 +13,6 @@ type SiteChromeProps = {
 
 const directionsUrl =
   "https://maps.google.com/?q=1094+Main+St+Worcester+MA+01603";
-const securityConsoleUrl =
-  "https://www.speedzonems.com/Security_Console";
 
 export function SiteHeader({ currentPage = "home" }: SiteChromeProps) {
   const onHome = currentPage === "home";
@@ -200,10 +198,6 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
             <a href="/report-a-problem">Report a problem</a>
-            <a href="/admin">Admin inventory</a>
-            <a href={securityConsoleUrl} target="_blank" rel="noopener noreferrer">
-              Security Console
-            </a>
           </div>
         </div>
       </footer>
@@ -255,9 +249,6 @@ export function LegalFooter({ counterpart }: { counterpart: "privacy" | "terms" 
           <a href="/">Home</a>
           <a href={`/${counterpart}`}>
             {counterpart === "privacy" ? "Privacy" : "Terms"}
-          </a>
-          <a href={securityConsoleUrl} target="_blank" rel="noopener noreferrer">
-            Security Console
           </a>
         </div>
       </div>
