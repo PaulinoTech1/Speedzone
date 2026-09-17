@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Dependency audit
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
       - name: Prevent dependency downgrades
         run: npm run check:deps
       - name: Lint

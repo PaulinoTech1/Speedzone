@@ -6,7 +6,7 @@ import { proxy } from "@/proxy";
 describe("proxy content security policy", () => {
   it("allows local blob image previews and Vercel Blob uploads", () => {
     const response = proxy(
-      new NextRequest("https://speedzone.example/admin"),
+      new NextRequest("https://speedzone.example/"),
     );
     const csp = response.headers.get("Content-Security-Policy");
 
