@@ -23,6 +23,8 @@ export default function TestDriveSubmissions() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const pending = useRef(false);
+  const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
+  const [deletingPath, setDeletingPath] = useState<string | null>(null);
 
   async function loadMore() {
     if (!cursor || pending.current) return;
@@ -50,6 +52,23 @@ export default function TestDriveSubmissions() {
       .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load requests."));
   }, []);
 
+  async function deleteSubmission(pathname: string) {
+    setDeletingPath(pathname);
+    try {
+      const response = await fetch(`/api/admin/test-drives?pathname=${encodeURIComponent(pathname)}`, { method: "DELETE", credentials: "include" });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) throw new Error("Session expired. Sign in again.");
+      if (!response.ok) throw new Error(data.error || "Unable to delete request.");
+      setItems((current) => current.filter((item) => item.pathname !== pathname));
+      setMessage("Request deleted.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to delete request.");
+    } finally {
+      setDeletingPath(null);
+      setConfirmingPath(null);
+    }
+  }
+
   return (
     <section className="admin-card admin-submissions">
       <div className="admin-section-heading">
@@ -67,6 +86,18 @@ export default function TestDriveSubmissions() {
             ) : (
               <div><h3>{item.name}</h3><p>{item.vehicle} · {item.date} at {item.time}</p><p>{item.email} · {item.phone}</p>{item.notes && <p>{item.notes}</p>}</div>
             )}
+            <div className="submission-actions">
+              {confirmingPath === item.pathname ? (
+                <>
+                  <button className="button button-secondary" type="button" disabled={deletingPath === item.pathname} onClick={() => void deleteSubmission(item.pathname)}>
+                    {deletingPath === item.pathname ? "Deleting…" : "Confirm delete"}
+                  </button>
+                  <button className="button button-ghost" type="button" disabled={deletingPath === item.pathname} onClick={() => setConfirmingPath(null)}>Cancel</button>
+                </>
+              ) : (
+                <button className="button button-secondary" type="button" onClick={() => setConfirmingPath(item.pathname)}>Delete</button>
+              )}
+            </div>
           </article>
         ))}
       </div>
