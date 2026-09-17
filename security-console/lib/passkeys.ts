@@ -40,12 +40,18 @@ export function getWebAuthnConfig(headers: Headers): WebAuthnConfig {
   // origin for the embedded console: same-origin setup would reject the site.
   const configuredRpID = (mounted ? process.env.EMBEDDED_SECURITY_WEBAUTHN_RP_ID : process.env.SECURITY_WEBAUTHN_RP_ID)?.trim();
   const configuredOrigin = (mounted ? process.env.EMBEDDED_SECURITY_WEBAUTHN_ORIGIN : process.env.SECURITY_WEBAUTHN_ORIGIN)?.trim();
+  if (configuredRpID && configuredOrigin) return { rpID: configuredRpID, origin: configuredOrigin };
+  // Fail closed in production: the RP ID and origin bind a credential to the
+  // site and must come from explicit configuration, never request headers.
+  if (process.env.VERCEL_ENV === "production") {
+    throw new Error("WebAuthn RP ID/origin are not configured");
+  }
   const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const host = forwardedHost || headers.get("host")?.trim() || "localhost:3000";
-  const rpID = configuredRpID || host.split(":")[0] || "localhost";
+  const rpID = host.split(":")[0] || "localhost";
   const forwardedProto = headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
   const protocol = forwardedProto || (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
-  return { rpID, origin: configuredOrigin || `${protocol}://${host}` };
+  return { rpID, origin: `${protocol}://${host}` };
 }
 function redis() { return getSecurityRedis(); }
 function challengeKey(kind: "registration" | "authentication" | "recovery" | "bootstrap", challenge: string) { return `${challengePrefix}${kind}:${challenge}`; }
