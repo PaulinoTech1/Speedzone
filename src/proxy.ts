@@ -20,6 +20,17 @@ const PORTALS: Array<{ hosts: string[]; prefix: string }> = [
   },
 ];
 
+// Portal paths exist only on their dedicated subdomains. On any other host
+// they 404, so the portals are unreachable from the main domain.
+const PORTAL_HOSTS = new Set(PORTALS.flatMap((portal) => portal.hosts));
+const PORTAL_PREFIXES = PORTALS.map((portal) => portal.prefix);
+
+function isPortalPath(pathname: string): boolean {
+  return PORTAL_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
+
 function portalRewriteTarget(request: NextRequest): URL | null {
   const host =
     (request.headers.get("host") ?? "").toLowerCase().split(":")[0] ?? "";
@@ -44,6 +55,14 @@ function portalRewriteTarget(request: NextRequest): URL | null {
 }
 
 export function proxy(request: NextRequest) {
+  const host =
+    (request.headers.get("host") ?? "").toLowerCase().split(":")[0] ?? "";
+  const { pathname } = request.nextUrl;
+
+  if (isPortalPath(pathname) && !PORTAL_HOSTS.has(host)) {
+    return new NextResponse("Not Found", { status: 404 });
+  }
+
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const requestId = request.headers.get("x-request-id")?.match(/^[A-Za-z0-9._-]{8,96}$/)?.[0] ?? `req_${crypto.randomUUID()}`;
   const isDevelopment = process.env.NODE_ENV === "development";
