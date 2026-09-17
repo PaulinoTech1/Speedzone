@@ -1,4 +1,26 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "rewrites": [
+    {
+      "destination": "/admin/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "admin-inventory.speedzonems.com"
+        }
+      ],
+      "source": "/:path*"
+    },
+    {
+      "destination": "/Security_Console/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "security-console.speedzonems.com"
+        }
+      ],
+      "source": "/:path*"
+    }
+  ]
 }
