@@ -1,5 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// The admin portals live on dedicated subdomains. Rewrite portal-bound hosts
+// to their app routes. Real routes (API, Next.js internals, static files) and
+// paths already under the portal prefix are served untouched on every host.
+const PORTALS: Array<{ hosts: string[]; prefix: string }> = [
+  {
+    hosts: [
+      "admin-inventory.speedzonems.com",
+      "www.admin-inventory.speedzonems.com",
+    ],
+    prefix: "/admin",
+  },
+  {
+    hosts: [
+      "security-console.speedzonems.com",
+      "www.security-console.speedzonems.com",
+    ],
+    prefix: "/Security_Console",
+  },
+];
+
+function portalRewriteTarget(request: NextRequest): URL | null {
+  const host =
+    (request.headers.get("host") ?? "").toLowerCase().split(":")[0] ?? "";
+  const { pathname } = request.nextUrl;
+
+  if (
+    pathname.startsWith("/_next/") ||
+    pathname.startsWith("/api/") ||
+    pathname.includes(".")
+  ) {
+    return null;
+  }
+
+  for (const portal of PORTALS) {
+    if (portal.hosts.includes(host) && !pathname.startsWith(portal.prefix)) {
+      const url = request.nextUrl.clone();
+      url.pathname = `${portal.prefix}${pathname}`;
+      return url;
+    }
+  }
+  return null;
+}
+
 export function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const requestId = request.headers.get("x-request-id")?.match(/^[A-Za-z0-9._-]{8,96}$/)?.[0] ?? `req_${crypto.randomUUID()}`;
@@ -28,7 +71,10 @@ export function proxy(request: NextRequest) {
   requestHeaders.set("x-request-id", requestId);
   requestHeaders.set("Content-Security-Policy", csp);
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  const rewriteTarget = portalRewriteTarget(request);
+  const response = rewriteTarget
+    ? NextResponse.rewrite(rewriteTarget, { request: { headers: requestHeaders } })
+    : NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
   response.headers.set("x-request-id", requestId);
   response.headers.set("X-Content-Type-Options", "nosniff");
