@@ -40,7 +40,8 @@ async function diagnosedPOST(request: Request) {
     const photos = body.photos as string[];
     const vehicle = sanitizeVehicleInput({ ...payload, id: crypto.randomUUID(), createdAt: new Date().toISOString() }, photos);
     const { vehicles, revision } = await readInventorySnapshot();
-    if (normalizeEtag(request.headers.get("if-match")) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"create",catalog_revision:revision} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
+    const ifMatchRaw = request.headers.get("if-match");
+    if (normalizeEtag(ifMatchRaw) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"create",catalog_revision:revision,if_match_received:ifMatchRaw} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
     const saved = await writeInventory([vehicle, ...vehicles], revision);
     await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "allowed", actor: "admin", reason: "vehicle_created", metadata: { photo_count: photos.length, catalog_revision_before:revision,catalog_revision_after:saved.etag } });
     return NextResponse.json(vehicle, { status: 201, headers: { ETag: saved.etag } });
@@ -57,7 +58,8 @@ async function handlePATCH(request: Request) {
     }
 
     const { vehicles, revision } = await readInventorySnapshot();
-    if (normalizeEtag(request.headers.get("if-match")) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"update",catalog_revision:revision} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
+    const ifMatchRaw = request.headers.get("if-match");
+    if (normalizeEtag(ifMatchRaw) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"update",catalog_revision:revision,if_match_received:ifMatchRaw} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
     if (body.photos === undefined) {
       const existing = vehicles.find((vehicle) => vehicle.id === body.id);
       if (!existing) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
@@ -90,7 +92,8 @@ async function handleDELETE(request: Request) {
   try {
   const body = await request.json().catch(() => ({})) as { id?: unknown; photos?: unknown };
   const { vehicles, revision } = await readInventorySnapshot();
-    if (normalizeEtag(request.headers.get("if-match")) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"delete",catalog_revision:revision} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
+    const ifMatchRaw = request.headers.get("if-match");
+    if (normalizeEtag(ifMatchRaw) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"delete",catalog_revision:revision,if_match_received:ifMatchRaw} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
   const vehicle = vehicles.find((item) => item.id === body.id);
   if (!vehicle) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
 
