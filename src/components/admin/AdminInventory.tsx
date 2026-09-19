@@ -192,10 +192,25 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
     if (inventoryOperation.current) return;
     const response = await fetch("/api/inventory", { credentials: "include", cache: "no-store" });
     if (!response.ok) throw new Error("Unable to load inventory.");
-    revision.current = response.headers.get("etag") || "";
+    const etag = response.headers.get("etag") || "";
+    if (!etag) console.warn("[inventory] GET /api/inventory returned no ETag header; mutations will be rejected");
+    revision.current = etag;
     setVehicles(await response.json());
     setEditForms({}); setEditingVehicleId(null);
   };
+  // If the revision is missing (e.g. the ETag header was not readable when the
+  // list loaded), refresh it before mutating. Without a revision the server
+  // correctly rejects the write with revision_conflict.
+  async function ensureRevision(): Promise<boolean> {
+    if (revision.current) return true;
+    setInventoryMessage("Refreshing inventory version…");
+    try { await load(); } catch { /* fall through to the check below */ }
+    if (!revision.current) {
+      setInventoryMessage("Unable to determine inventory version. Reload inventory and retry.");
+      return false;
+    }
+    return true;
+  }
   async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setPassword(""); setLoggedIn(true); setSetupRequired(true); onAuthChange?.(false, true); await load(); setMessage(""); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
   async function requestRecovery(event: FormEvent) { event.preventDefault(); setRecoveryMessage("Processing request…"); const response = await fetch("/api/admin/recovery", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: recoveryEmailInput }) }); const result = await response.json().catch(() => ({})); setRecoveryMessage(result.message || result.error || "Unable to request recovery."); if (response.ok) setRecoverySent(true); }
   async function resetPassword(event: FormEvent) {
@@ -237,6 +252,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (inventoryOperation.current) return;
+    if (!(await ensureRevision())) return;
     inventoryOperation.current = true;
     setSubmitting(true);
     let uploadingPhotos = photos.length > 0;
@@ -273,6 +289,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   async function addPhotosToVehicle(vehicle: Vehicle, files: FileList | null) {
     const selected = Array.from(files || []);
     if (!selected.length || inventoryOperation.current) return;
+    if (!(await ensureRevision())) return;
     inventoryOperation.current = true;
 
     setUpdatingVehicleId(vehicle.id);
@@ -325,6 +342,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   async function deleteSelectedPhotos(vehicle: Vehicle) {
     const photosToDelete = selectedPhotos[vehicle.id] || [];
     if (!photosToDelete.length || !confirm(`Delete ${photosToDelete.length} selected photo${photosToDelete.length === 1 ? "" : "s"} from this listing?`)) return;
+    if (!(await ensureRevision())) return;
     setDeletingPhotosVehicleId(vehicle.id);
     setInventoryMessage("Deleting selected photos…");
     try {
@@ -356,6 +374,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   async function saveVehicle(vehicle: Vehicle) {
     const editForm = editForms[vehicle.id];
     if (!editForm || inventoryOperation.current) return;
+    if (!(await ensureRevision())) return;
     inventoryOperation.current = true;
     setUpdatingVehicleId(vehicle.id);
     setInventoryMessage(`Saving ${vehicle.year} ${vehicle.make} ${vehicle.model}…`);
@@ -380,6 +399,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   }
   async function remove(id: string) {
     if (inventoryOperation.current || !confirm("Remove this vehicle from inventory?")) return;
+    if (!(await ensureRevision())) return;
     inventoryOperation.current = true;
     setUpdatingVehicleId(id);
     try {
