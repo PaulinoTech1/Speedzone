@@ -137,7 +137,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
         const inventoryAuthorized = authenticated || state === "setup";
         setLoggedIn(inventoryAuthorized); setSetupRequired(state === "setup"); onAuthChange?.(authenticated, inventoryAuthorized);
         if (!inventoryAuthorized) { setVehicles([]); setEditForms({}); setSelectedPhotos({}); }
-        else if (initial) { const inventory = await fetch("/api/inventory", { credentials: "include", cache: "no-store" }); if (inventory.ok && active) { revision.current = inventory.headers.get("etag") || ""; setVehicles(await inventory.json()); } }
+        else if (initial) { const inventory = await fetch("/api/inventory", { credentials: "include", cache: "no-store" }); if (inventory.ok && active) { const data = await inventory.json(); revision.current = data.revision || inventory.headers.get("etag") || ""; setVehicles(data.vehicles || []); } }
       } catch { if (active) { setLoggedIn(false); setVehicles([]); onAuthChange?.(false); } }
     }
     void resolveSession(true);
@@ -192,10 +192,11 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
     if (inventoryOperation.current) return;
     const response = await fetch("/api/inventory", { credentials: "include", cache: "no-store" });
     if (!response.ok) throw new Error("Unable to load inventory.");
-    const etag = response.headers.get("etag") || "";
-    if (!etag) console.warn("[inventory] GET /api/inventory returned no ETag header; mutations will be rejected");
-    revision.current = etag;
-    setVehicles(await response.json());
+    const data = await response.json();
+    const rev = data.revision || response.headers.get("etag") || "";
+    if (!rev) console.warn("[inventory] GET /api/inventory returned no revision; mutations will be rejected");
+    revision.current = rev;
+    setVehicles(data.vehicles || []);
     setEditForms({}); setEditingVehicleId(null);
   };
   // If the revision is missing (e.g. the ETag header was not readable when the

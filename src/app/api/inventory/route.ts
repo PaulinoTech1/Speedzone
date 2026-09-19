@@ -10,9 +10,12 @@ async function diagnosedGET(request: Request) {
   try {
     const { vehicles: inventory, revision } = await readInventorySnapshot();
     const adminRequest = await isAdminAuthenticated(request);
-    return NextResponse.json(inventory, {
+    // Revision is in the body (not just the ETag header) because the header
+    // is not reliably readable via response.headers in all browsers/proxies.
+    return NextResponse.json({ vehicles: inventory, revision }, {
       headers: {
         "ETag": revision,
+        "Access-Control-Expose-Headers": "ETag",
         "Cache-Control": adminRequest ? "private, no-store" : "public, max-age=60",
       },
     });
