@@ -1,4 +1,4 @@
-import { get, put } from "@vercel/blob";
+import { BlobNotFoundError, get, head, put } from "@vercel/blob";
 import { maxInventoryPhotoCount } from "@/lib/inventory-photos";
 
 export type Vehicle = {
@@ -47,6 +47,25 @@ export async function readInventory(): Promise<Vehicle[]> {
 export async function readInventorySnapshot(): Promise<{ vehicles: Vehicle[]; revision: string }> {
   const fixture = readBrowserFixture();
   if (fixture) return { vehicles: fixture, revision: "fixture" };
+  // Use the authoritative Blob API etag for the revision, not the CDN etag from
+  // get(). The put() x-if-match precondition is evaluated against the API's
+  // etag; the CDN etag can be stale or transformed, which makes every
+  // conditional write fail. Fall back to the CDN etag only if head() is
+  // unavailable so reads keep working.
+  let apiRevision: string | null = null;
+  try {
+    const metadata = await head(catalogPath);
+    apiRevision = metadata.etag || null;
+  } catch (error) {
+    if (error instanceof BlobNotFoundError) {
+      const result = await get(catalogPath, { access: "public" });
+      if (!result || result.statusCode !== 200) return { vehicles: [], revision: "absent" };
+      // Blob API says absent but CDN still serves a copy; treat the API as
+      // authoritative for writes but keep serving the readable copy.
+    } else {
+      console.warn("[inventory] blob head() failed; falling back to CDN etag", error);
+    }
+  }
   const result = await get(catalogPath, { access: "public" });
   if (!result) return { vehicles: [], revision: "absent" };
   if (result.statusCode !== 200 || !result.blob.etag) throw new Error("Unable to read inventory catalog");
@@ -54,7 +73,7 @@ export async function readInventorySnapshot(): Promise<{ vehicles: Vehicle[]; re
   if (!Array.isArray(data) || data.some(item => !item || typeof item.id !== "string" || !Array.isArray(item.photos))) {
     throw new Error("Invalid inventory catalog; refusing to overwrite it");
   }
-  return { vehicles: data as Vehicle[], revision: result.blob.etag };
+  return { vehicles: data as Vehicle[], revision: apiRevision || result.blob.etag };
 }
 
 export async function writeInventory(vehicles: Vehicle[], revision: string) {

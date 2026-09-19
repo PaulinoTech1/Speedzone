@@ -44,7 +44,7 @@ async function diagnosedPOST(request: Request) {
     const saved = await writeInventory([vehicle, ...vehicles], revision);
     await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "allowed", actor: "admin", reason: "vehicle_created", metadata: { photo_count: photos.length, catalog_revision_before:revision,catalog_revision_after:saved.etag } });
     return NextResponse.json(vehicle, { status: 201, headers: { ETag: saved.etag } });
-  } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"create_failed",metadata:{failure_class:error instanceof Error?error.name:"UnknownError"}});return mutationError(error); }
+  } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"create_failed",metadata:{failure_class:error instanceof Error?(error.constructor?.name||error.name):"UnknownError"}});return mutationError(error); }
 }
 
 async function handlePATCH(request: Request) {
@@ -79,7 +79,7 @@ async function handlePATCH(request: Request) {
     await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"allowed",actor:"admin",reason:"photos_attached",metadata:{photo_count:(body.photos as string[]).length,catalog_revision_before:revision,catalog_revision_after:saved.etag}});
     return NextResponse.json(updated.vehicle, { headers: { ETag: saved.etag } });
   } catch (error) {
-    await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"update_failed",metadata:{failure_class:error instanceof Error?error.name:"UnknownError"}});
+    await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"update_failed",metadata:{failure_class:error instanceof Error?(error.constructor?.name||error.name):"UnknownError"}});
     return mutationError(error);
   }
 }
@@ -111,7 +111,7 @@ async function handleDELETE(request: Request) {
   const saved = await writeInventory(vehicles.filter((item) => item.id !== body.id), revision);
   await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"allowed",actor:"admin",reason:"vehicle_deleted",metadata:{photo_count:vehicle.photos.length,catalog_revision_before:revision,catalog_revision_after:saved.etag}});
   return NextResponse.json({ ok: true }, { headers: { ETag: saved.etag } });
-  } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"delete_failed",metadata:{failure_class:error instanceof Error?error.name:"UnknownError"}});return mutationError(error); }
+  } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"delete_failed",metadata:{failure_class:error instanceof Error?(error.constructor?.name||error.name):"UnknownError"}});return mutationError(error); }
 }
 
 function mutationError(error: unknown) {
