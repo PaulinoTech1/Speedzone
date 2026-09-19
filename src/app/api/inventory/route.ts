@@ -1,5 +1,5 @@
 import { withDiagnostics } from "@/lib/diagnostics";
-import { BlobPreconditionFailedError } from "@vercel/blob";
+import { BlobPreconditionFailedError, del } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { appendVehiclePhotos, normalizeEtag, readInventorySnapshot, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
@@ -111,13 +111,29 @@ async function handleDELETE(request: Request) {
     const updatedVehicle = { ...vehicle, photos: vehicle.photos.filter((photo) => !selectedPhotos.includes(photo)) };
     const saved = await writeInventory(vehicles.map((item) => item.id === vehicle.id ? updatedVehicle : item), revision);
     await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"allowed",actor:"admin",reason:"photos_removed_from_listing",metadata:{photo_count:selectedPhotos.length,catalog_revision_before:revision,catalog_revision_after:saved.etag}});
+    await deletePhotoBlobs(selectedPhotos, context, "photo_blobs_deleted");
     return NextResponse.json(updatedVehicle, { headers: { ETag: saved.etag } });
   }
 
   const saved = await writeInventory(vehicles.filter((item) => item.id !== body.id), revision);
   await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"allowed",actor:"admin",reason:"vehicle_deleted",metadata:{photo_count:vehicle.photos.length,catalog_revision_before:revision,catalog_revision_after:saved.etag}});
+  await deletePhotoBlobs(vehicle.photos, context, "photo_blobs_deleted");
   return NextResponse.json({ ok: true }, { headers: { ETag: saved.etag } });
   } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"delete_failed",metadata:{failure_class:error instanceof Error?(error.constructor?.name||error.name):"UnknownError"}});return mutationError(error); }
+}
+
+// Delete photo blobs from storage after they are removed from the inventory.
+// Best-effort: the inventory JSON is the source of truth, so a blob deletion
+// failure is logged (not thrown) to avoid orphaned references on retry.
+async function deletePhotoBlobs(urls: string[], context: ReturnType<typeof securityRequestContext>, reason: string) {
+  const targets = [...new Set(urls)].filter((url) => isInventoryPhotoBlobOriginUrl(url));
+  if (!targets.length) return;
+  try {
+    await del(targets);
+    await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "allowed", actor: "admin", reason, metadata: { blobs_deleted: targets.length } });
+  } catch (error) {
+    await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "failed", actor: "admin", reason, metadata: { blobs_failed: targets.length, failure_class: error instanceof Error ? (error.constructor?.name || error.name) : "UnknownError" } });
+  }
 }
 
 function mutationError(error: unknown) {
