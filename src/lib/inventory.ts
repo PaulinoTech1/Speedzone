@@ -1,6 +1,20 @@
 import { BlobNotFoundError, get, head, put } from "@vercel/blob";
 import { maxInventoryPhotoCount } from "@/lib/inventory-photos";
 
+/**
+ * Normalize an ETag for comparison. The Blob API returns etags unquoted, but
+ * HTTP ETag/If-Match headers are conventionally quoted (and Vercel's edge
+ * quotes them when serving). The UI echoes back whatever the ETag header
+ * carried, so comparisons must be quote-insensitive or every conditional
+ * write fails with revision_conflict.
+ */
+export function normalizeEtag(value: string | null | undefined): string {
+  const trimmed = (value || "").trim();
+  return trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1)
+    : trimmed;
+}
+
 export type Vehicle = {
   id: string;
   vin?: string;
@@ -73,7 +87,10 @@ export async function readInventorySnapshot(): Promise<{ vehicles: Vehicle[]; re
   if (!Array.isArray(data) || data.some(item => !item || typeof item.id !== "string" || !Array.isArray(item.photos))) {
     throw new Error("Invalid inventory catalog; refusing to overwrite it");
   }
-  return { vehicles: data as Vehicle[], revision: apiRevision || result.blob.etag };
+  // Keep the revision in raw (unquoted) Blob API form: put()'s ifMatch
+  // precondition is evaluated against the API etag, and route-level
+  // comparisons normalize quoting via normalizeEtag().
+  return { vehicles: data as Vehicle[], revision: normalizeEtag(apiRevision || result.blob.etag) };
 }
 
 export async function writeInventory(vehicles: Vehicle[], revision: string) {

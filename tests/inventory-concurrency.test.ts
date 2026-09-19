@@ -1,13 +1,13 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const store = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), del: vi.fn() }));
-vi.mock("@vercel/blob", async (original) => ({ ...await original<typeof import("@vercel/blob")>(), get: store.get, put: store.put, del: store.del }));
+const store = vi.hoisted(() => ({ get: vi.fn(), head: vi.fn(), put: vi.fn(), del: vi.fn() }));
+vi.mock("@vercel/blob", async (original) => ({ ...await original<typeof import("@vercel/blob")>(), get: store.get, head: store.head, put: store.put, del: store.del }));
 vi.mock("@/lib/admin-auth", () => ({ isAdminAuthenticated: async () => true }));
 vi.mock("@/lib/security-events", () => ({ securityRequestContext: () => ({}), writeSecurityEvent: async () => {}, auditRoute: async (_request: Request, _event: string, handler: () => Promise<Response>) => handler() }));
 import { BlobPreconditionFailedError } from "@vercel/blob";
-import { readInventorySnapshot, writeInventory } from "@/lib/inventory";
+import { readInventorySnapshot, normalizeEtag, writeInventory } from "@/lib/inventory";
 import { DELETE, PATCH } from "@/app/api/inventory/route";
 const vehicle = { id: "one", year: 2022, make: "Honda", model: "Civic", price: 100, mileage: 1, condition: "Used", description: "", status: "available" as const, photos: [], createdAt: "2026-01-01" };
-beforeEach(() => { vi.resetAllMocks(); store.get.mockImplementation(async () => ({ statusCode: 200, blob: { etag: "v1" }, stream: new Response(JSON.stringify([vehicle])).body })); });
+beforeEach(() => { vi.resetAllMocks(); store.get.mockImplementation(async () => ({ statusCode: 200, blob: { etag: '"v1"' }, stream: new Response(JSON.stringify([vehicle])).body })); store.head.mockImplementation(async () => ({ etag: "v1" })); });
 it("permits only one of two writers using the same snapshot", async () => {
   let current = "v1";
   store.put.mockImplementation(async (_path, _body, options) => { if (options.ifMatch !== current) throw new BlobPreconditionFailedError(); current = "v2"; return { etag: current }; });
@@ -28,4 +28,16 @@ it("retains photo objects when catalog deletion fails", async () => {
 it("creates an absent catalog without allowing overwrite", async () => {
   await writeInventory([vehicle], "absent");
   expect(store.put).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ allowOverwrite: false }));
+});
+it("accepts a quoted if-match echoed from the ETag header", async () => {
+  // head() returns the raw API etag (unquoted); the edge quotes it in the
+  // ETag response header and the browser echoes the quoted form back.
+  expect(normalizeEtag('"v1"')).toBe("v1");
+  expect(normalizeEtag("v1")).toBe("v1");
+  const snapshot = await readInventorySnapshot();
+  expect(snapshot.revision).toBe("v1");
+  store.put.mockImplementation(async () => ({ etag: "v2" }));
+  const response = await DELETE(new Request("https://example.com/api/inventory", { method: "DELETE", headers: { "if-match": '"v1"' }, body: JSON.stringify({ id: "one" }) }));
+  expect(response.status).toBe(200);
+  expect(store.put).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.objectContaining({ ifMatch: "v1" }));
 });
