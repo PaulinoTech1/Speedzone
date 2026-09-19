@@ -12,7 +12,7 @@ import { getSecurityRedis } from "./redis";
 import { recoveryCodeMatches, recoveryGrant, recoveryUsedKey } from "./passkey-recovery";
 
 const rpName = "SpeedZone Security Console";
-export type WebAuthnConfig = { rpID: string; origin: string };
+export type WebAuthnConfig = { rpID: string; origins: string[] };
 const userID = "speedzone-security-console";
 const challengeTtl = 120;
 const credentialsKey = "speedzone:security-console:passkeys:v1";
@@ -32,15 +32,35 @@ type StoredCredential = {
   name: string;
   credentialEpoch: number;
 };
-type ChallengeRecord = { challenge: string; credentialEpoch: number; createdAt: number };
+type ChallengeRecord = { challenge: string; credentialEpoch: number; createdAt: number; origin: string };
+
+function parseAllowedOrigins(raw: string | undefined): string[] {
+  return (raw ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
+}
 
 export function getWebAuthnConfig(headers: Headers): WebAuthnConfig {
   const mounted = process.env.NEXT_PUBLIC_SECURITY_CONSOLE_BASE_PATH === "/Security_Console";
   // The standalone console can still use its original host. Never inherit that
   // origin for the embedded console: same-origin setup would reject the site.
   const configuredRpID = (mounted ? process.env.EMBEDDED_SECURITY_WEBAUTHN_RP_ID : process.env.SECURITY_WEBAUTHN_RP_ID)?.trim();
-  const configuredOrigin = (mounted ? process.env.EMBEDDED_SECURITY_WEBAUTHN_ORIGIN : process.env.SECURITY_WEBAUTHN_ORIGIN)?.trim();
-  if (configuredRpID && configuredOrigin) return { rpID: configuredRpID, origin: configuredOrigin };
+  // Comma-separated origin allowlist. The legacy singular variable remains as
+  // a single-entry fallback so existing deployments keep working.
+  const rawOrigins = (mounted ? process.env.EMBEDDED_SECURITY_WEBAUTHN_ORIGINS : process.env.SECURITY_WEBAUTHN_ORIGINS)?.trim()
+    || (mounted ? process.env.EMBEDDED_SECURITY_WEBAUTHN_ORIGIN : process.env.SECURITY_WEBAUTHN_ORIGIN)?.trim();
+  const origins = parseAllowedOrigins(rawOrigins);
+  if (configuredRpID && origins.length > 0) {
+    // Fail closed on misconfiguration: every allowed origin must be an https
+    // origin whose host is the RP ID itself or a subdomain of it.
+    for (const origin of origins) {
+      let host = "";
+      try { host = new URL(origin).hostname; } catch { /* handled below */ }
+      const protocol = origin.startsWith("https://") ? "https:" : "";
+      if (protocol !== "https:" || !(host === configuredRpID || host.endsWith(`.${configuredRpID}`))) {
+        throw new Error(`WebAuthn origin ${origin} is not valid for RP ID ${configuredRpID}`);
+      }
+    }
+    return { rpID: configuredRpID, origins };
+  }
   // Fail closed in production: the RP ID and origin bind a credential to the
   // site and must come from explicit configuration, never request headers.
   if (process.env.VERCEL_ENV === "production") {
@@ -51,7 +71,13 @@ export function getWebAuthnConfig(headers: Headers): WebAuthnConfig {
   const rpID = host.split(":")[0] || "localhost";
   const forwardedProto = headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
   const protocol = forwardedProto || (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
-  return { rpID, origin: `${protocol}://${host}` };
+  return { rpID, origins: [`${protocol}://${host}`] };
+}
+
+/** Returns the request origin when it is on the configured allowlist, else null. */
+export function requestOrigin(request: Request, config: WebAuthnConfig): string | null {
+  const origin = request.headers.get("origin")?.trim();
+  return origin && config.origins.includes(origin) ? origin : null;
 }
 function redis() { return getSecurityRedis(); }
 function challengeKey(kind: "registration" | "authentication" | "recovery" | "bootstrap", challenge: string) { return `${challengePrefix}${kind}:${challenge}`; }
@@ -225,10 +251,12 @@ export async function firstPasskeyOptions(request: Request, config: WebAuthnConf
   const context = await passwordSessionContext(request);
   if (!context) return { error: "Enter your password first.", status: 401 } as const;
   if (!await firstPasskeyAvailable()) return bootstrapError;
+  const origin = requestOrigin(request, config);
+  if (!origin) return bootstrapError;
   const client = redis(); const epoch = await currentCredentialEpoch();
   if (!client || epoch === null) return bootstrapError;
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "security@speedzonemotorsports", userDisplayName: "SpeedZone security operator", userID: new TextEncoder().encode(userID), attestationType: "none", authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
-  const record: BootstrapChallenge = { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), sessionKey: context.sessionKey, origin: config.origin, rpID: config.rpID };
+  const record: BootstrapChallenge = { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), sessionKey: context.sessionKey, origin, rpID: config.rpID };
   await client.set(challengeKey("bootstrap", options.challenge), record, { ex: challengeTtl });
   return { options };
 }
@@ -242,8 +270,8 @@ export async function verifyFirstPasskey(request: Request, response: unknown, co
     const challenge: unknown = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge;
     if (typeof challenge !== "string" || !/^[A-Za-z0-9_-]{16,256}$/.test(challenge)) return bootstrapError;
     const record = await client.get<BootstrapChallenge>(challengeKey("bootstrap", challenge));
-    if (!record || record.challenge !== challenge || record.sessionKey !== context.sessionKey || record.origin !== config.origin || record.rpID !== config.rpID) return bootstrapError;
-    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, requireUserVerification: true });
+    if (!record || record.challenge !== challenge || record.sessionKey !== context.sessionKey || !config.origins.includes(record.origin) || record.rpID !== config.rpID) return bootstrapError;
+    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: challenge, expectedOrigin: record.origin, expectedRPID: config.rpID, requireUserVerification: true });
     if (!verification.verified || !verification.registrationInfo) return bootstrapError;
     const stored = storedFromVerification(verification.registrationInfo, "First security passkey", record.credentialEpoch, "First security passkey");
     const result = await client.eval(bootstrapCommitScript,
@@ -294,8 +322,10 @@ export async function recoveryRegistrationOptions(request: Request, code: unknow
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey storage is unavailable.", status: 503 } as const;
   if (await client.get(recoveryUsedKey(grant.sha256)) !== null) return recoveryError;
+  const origin = requestOrigin(request, config);
+  if (!origin) return recoveryError;
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "security@speedzonemotorsports", userDisplayName: "SpeedZone security operator", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: credentials.map(item => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
-  const record: RecoveryChallenge = { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), sessionKey: context.sessionKey, grantHash: grant.sha256, origin: config.origin, rpID: config.rpID };
+  const record: RecoveryChallenge = { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), sessionKey: context.sessionKey, grantHash: grant.sha256, origin, rpID: config.rpID };
   await client.set(challengeKey("recovery", options.challenge), record, { ex: challengeTtl });
   return { options };
 }
@@ -312,8 +342,8 @@ export async function verifyRecoveryRegistration(request: Request, response: unk
     const challenge: unknown = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge;
     if (typeof challenge !== "string" || !/^[A-Za-z0-9_-]{16,256}$/.test(challenge)) return recoveryError;
     const record = await client.get<RecoveryChallenge>(challengeKey("recovery", challenge));
-    if (!record || record.challenge !== challenge || record.sessionKey !== context.sessionKey || record.grantHash !== grant.sha256 || record.origin !== config.origin || record.rpID !== config.rpID) return recoveryError;
-    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, requireUserVerification: true });
+    if (!record || record.challenge !== challenge || record.sessionKey !== context.sessionKey || record.grantHash !== grant.sha256 || !config.origins.includes(record.origin) || record.rpID !== config.rpID) return recoveryError;
+    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: challenge, expectedOrigin: record.origin, expectedRPID: config.rpID, requireUserVerification: true });
     if (!verification.verified || !verification.registrationInfo) return recoveryError;
     const currentGrant = recoveryGrant();
     if (!currentGrant || currentGrant.sha256 !== grant.sha256) return recoveryError;
@@ -324,14 +354,15 @@ export async function verifyRecoveryRegistration(request: Request, response: unk
     return Number(result) === 1 ? { verified: true as const } : recoveryError;
   } catch { return recoveryError; }
 }
-export async function registrationOptions(config: WebAuthnConfig) {
+export async function registrationOptions(config: WebAuthnConfig, origin: string) {
   if (!await validateSecuritySession(undefined, "mfa")) return { error: "Verify your established passkey first" as const };
+  if (!config.origins.includes(origin)) return { error: "Verify your established passkey first" as const };
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey storage is not configured" as const };
   const active = usable(credentials, epoch);
   if (!active.length) return { error: "Verify your established passkey first" as const };
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "security@speedzonemotorsports", userDisplayName: "SpeedZone security operator", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: active.map((item) => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
-  await client.set(challengeKey("registration", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now() } satisfies ChallengeRecord, { ex: challengeTtl });
+  await client.set(challengeKey("registration", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), origin } satisfies ChallengeRecord, { ex: challengeTtl });
   return { options };
 }
 export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig) {
@@ -342,8 +373,8 @@ export async function verifyRegistration(response: unknown, name: string, config
     if (!clientData) return { error: "Invalid passkey response" as const };
     const challenge = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge as string;
     const record = await getChallenge("registration", challenge);
-    if (!record) return { error: "Passkey setup expired" as const };
-    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, requireUserVerification: true });
+    if (!record || !config.origins.includes(record.origin)) return { error: "Passkey setup expired" as const };
+    const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: record.origin, expectedRPID: config.rpID, requireUserVerification: true });
     if (!verification.verified || !verification.registrationInfo) return { error: "Passkey could not be verified" as const };
     const stored = storedFromVerification(verification.registrationInfo, name, record.credentialEpoch, "Unnamed passkey");
     const result = await client.eval(registrationCommitScript, [credentialsKey, epochKey, challengeKey("registration", challenge)], [String(record.credentialEpoch), record.challenge, JSON.stringify(stored), "managed"]);
@@ -351,13 +382,14 @@ export async function verifyRegistration(response: unknown, name: string, config
     return Number(result) === 1 ? { verified: true, credentialEpoch: record.credentialEpoch } : { error: "Passkey setup expired" as const };
   } catch { return { error: "Passkey could not be verified" as const }; }
 }
-export async function authenticationOptions(config: WebAuthnConfig) {
+export async function authenticationOptions(config: WebAuthnConfig, origin: string) {
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Security passkey storage is unavailable. Please try again later.", status: 503 };
+  if (!config.origins.includes(origin)) return { error: "Security passkey storage is unavailable. Please try again later.", status: 503 };
   const active = usable(credentials, epoch);
   if (!active.length) return { error: NO_ESTABLISHED_PASSKEY, status: 403 };
   const options = await generateAuthenticationOptions({ rpID: config.rpID, allowCredentials: active.map((item) => ({ id: item.id, transports: item.transports })), userVerification: "required" });
-  await client.set(challengeKey("authentication", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now() } satisfies ChallengeRecord, { ex: challengeTtl });
+  await client.set(challengeKey("authentication", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), origin } satisfies ChallengeRecord, { ex: challengeTtl });
   return { options };
 }
 export async function verifyAuthentication(response: unknown, config: WebAuthnConfig) {
@@ -370,8 +402,8 @@ export async function verifyAuthentication(response: unknown, config: WebAuthnCo
     if (!clientData || !credential) return { error: "Passkey could not be verified" as const };
     const challenge = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge as string;
     const record = await getChallenge("authentication", challenge);
-    if (!record || record.credentialEpoch !== epoch) return { error: "Passkey login expired" as const };
-    const verification = await verifyAuthenticationResponse({ response: response as Parameters<typeof verifyAuthenticationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: config.origin, expectedRPID: config.rpID, requireUserVerification: true, credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, "base64url"), counter: credential.counter, transports: credential.transports } });
+    if (!record || record.credentialEpoch !== epoch || !config.origins.includes(record.origin)) return { error: "Passkey login expired" as const };
+    const verification = await verifyAuthenticationResponse({ response: response as Parameters<typeof verifyAuthenticationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: record.origin, expectedRPID: config.rpID, requireUserVerification: true, credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, "base64url"), counter: credential.counter, transports: credential.transports } });
     if (!verification.verified) return { error: "Passkey could not be verified" as const };
     const result = await client.eval(counterCommitScript, [credentialsKey, epochKey, challengeKey("authentication", challenge)], [String(epoch), record.challenge, credential.id, String(credential.counter), String(verification.authenticationInfo.newCounter)]);
     return Number(result) === 1 ? { verified: true, credentialEpoch: epoch } : { error: "Passkey login expired" as const };

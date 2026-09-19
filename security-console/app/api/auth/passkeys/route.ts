@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { privateHeaders, SECURITY_COOKIE, securityCookieOptions, upgradeSecuritySession, validateSecuritySession } from "../../../../lib/auth";
-import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, verifyAuthentication, verifyRegistration } from "../../../../lib/passkeys";
+import { authenticationOptions, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, requestOrigin, verifyAuthentication, verifyRegistration } from "../../../../lib/passkeys";
 import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { recordConsoleAudit } from "../../../../lib/console-audit";
 import { logAuthenticationFailure } from "../../../../lib/auth-health";
@@ -17,8 +17,9 @@ export async function POST(request: Request) {
   if (!rate.allowed) { await recordConsoleAudit(request,"console.passkey","denied","rate_limited"); return NextResponse.json({ error: "Too many attempts" }, { status: 429, headers: { ...privateHeaders, "Retry-After": String(rate.retryAfter) } }); }
   const body = await request.json().catch(() => ({})) as { action?: string; response?: unknown; name?: string; code?: unknown };
   const config = getWebAuthnConfig(await headers());
+  const origin = requestOrigin(request, config);
   if (body.action === "bootstrap-options" || body.action === "bootstrap") {
-    if (request.headers.get("origin") !== config.origin || request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
+    if (!origin || request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
       return NextResponse.json({ error: "Invalid setup request" }, { status: 403, headers: privateHeaders });
     }
     if (!await validateSecuritySession(request, "password")) return NextResponse.json({ error: "Enter your password first" }, { status: 401, headers: privateHeaders });
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { headers: privateHeaders });
   }
   if (body.action === "recovery-options" || body.action === "recover") {
-    if (request.headers.get("origin") !== config.origin || request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
+    if (!origin || request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
       return NextResponse.json({ error: "Invalid recovery request" }, { status: 403, headers: privateHeaders });
     }
     if (!await validateSecuritySession(request, "password")) return NextResponse.json({ error: "Enter your password first" }, { status: 401, headers: privateHeaders });
@@ -47,7 +48,8 @@ export async function POST(request: Request) {
   }
   if (body.action === "registration-options") {
     if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Verify your established passkey first" }, { status: 401, headers: privateHeaders });
-    return NextResponse.json(await registrationOptions(config), { headers: privateHeaders });
+    if (!origin) return NextResponse.json({ error: "Invalid setup request" }, { status: 403, headers: privateHeaders });
+    return NextResponse.json(await registrationOptions(config, origin), { headers: privateHeaders });
   }
   if (body.action === "register") {
     if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Verify your established passkey first" }, { status: 401, headers: privateHeaders });
@@ -58,7 +60,8 @@ export async function POST(request: Request) {
   }
   if (body.action === "authentication-options") {
     if (!await validateSecuritySession(request, "password")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
-    const result = await authenticationOptions(config);
+    if (!origin) return NextResponse.json({ error: "Invalid request origin" }, { status: 403, headers: privateHeaders });
+    const result = await authenticationOptions(config, origin);
     if ("error" in result) {
       await logAuthenticationFailure(result.status === 403 ? "no_active_passkey" : "storage_unavailable");
       return NextResponse.json({ error: result.error }, { status: result.status, headers: privateHeaders });
