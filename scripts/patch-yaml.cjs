@@ -6,6 +6,22 @@ if (!fs.existsSync(root)) {
   if (!fs.existsSync(path.resolve(__dirname, '../node_modules/vercel'))) process.exit(0);
   throw new Error('Expected YAML dependency is missing.');
 }
+// js-yaml 5.x ships native merge-key protection (maxTotalMergeKeys, default
+// 1e4). Verify it is present and skip patching; 4.x needs the manual patch.
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const major = parseInt(String(pkg.version).split('.')[0], 10);
+if (major >= 5) {
+  for (const name of ['dist/js-yaml.cjs.js', 'dist/js-yaml.mjs']) {
+    const file = path.join(root, name);
+    if (!fs.existsSync(file)) throw new Error(`Expected js-yaml 5.x distribution is missing: ${name}`);
+    const source = fs.readFileSync(file, 'utf8');
+    if (!/maxTotalMergeKeys:\s*1e4/.test(source) || !/totalMergeKeys\s*>\s*state\.maxTotalMergeKeys/.test(source)) {
+      throw new Error(`js-yaml 5.x native merge-key protection changed in ${name}; review patch.`);
+    }
+  }
+  console.log('js-yaml 5.x native merge-key protection verified; no patch needed.');
+  process.exit(0);
+}
 const ts = require('typescript');
 const marker = '// SpeedZone YAML cumulative merge budget v1';
 const counter = `
