@@ -22,7 +22,7 @@ if (major >= 5) {
   console.log('js-yaml 5.x native merge-key protection verified; no patch needed.');
   process.exit(0);
 }
-const ts = require('typescript');
+const ts = require('typescript5');
 const marker = '// SpeedZone YAML cumulative merge budget v1';
 const counter = `
     state.mergedKeysCount += 1;
