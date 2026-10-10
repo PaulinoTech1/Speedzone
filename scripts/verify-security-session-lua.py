@@ -49,7 +49,10 @@ lua.globals().cjson = lua.table_from({
 
 def script(file, name):
     source = (ROOT / file).read_text(encoding="utf-8")
-    return re.search(r"const " + name + r"\s*=\s*`(.*?)`;", source, re.S).group(1)
+    result = re.search(r"const " + name + r"\s*=\s*`(.*?)`;", source, re.S).group(1)
+    if "${sessionGuardLua}" in result:
+        result = result.replace("${sessionGuardLua}", script("security-console/shared/credential-grants.ts", "sessionGuardLua"))
+    return result
 
 
 validate = script("security-console/lib/auth.ts", "validateScript")
@@ -158,14 +161,17 @@ for key, value in [("currentKeys", "[]"), ("epoch", "4"), ("legacyEpoch", "2"),
     store[key] = value
     check(run(migrate, keys, args) == 0, f"migration refuses concurrent or authoritative {key} change")
 register = script("security-console/lib/passkeys.ts", "registrationCommitScript")
-registration_keys = ["currentKeys", "epoch", "challenge"]
+registration_keys = ["currentKeys", "epoch", "challenge", "session", "generation", "grant"]
 new_key = dict(id="backup", publicKey="BAUG", counter=0, credentialEpoch=3)
-registration_args = ["3", "one-use", json.dumps(new_key), "managed"]
+registration_args = ["3", "one-use", json.dumps(new_key), "managed", NOW, json.dumps({"field":"level","value":"mfa","absoluteMs":ABSOLUTE,"idleMs":IDLE})]
 
 
 def seed_registration(current=mapped):
     store.clear()
-    store.update(epoch="3", challenge=json.dumps({"challenge": "one-use"}), legacyKeys=legacy)
+    store.update(epoch="3", generation="generation-a", legacyKeys=legacy,
+                 challenge=json.dumps({"challenge":"one-use", "sessionKey":"session", "grantKey":"grant", "createdAt":NOW-100}),
+                 session=json.dumps({"level":"mfa", "epoch":3, "generation":"generation-a", "createdAt":NOW-1000, "lastSeenAt":NOW-100, "passkeyVerifiedAt":NOW-500}),
+                 grant=json.dumps({"sessionKey":"session", "generation":"generation-a", "epoch":3, "action":"add", "target":"", "verifiedAt":NOW-100, "expiresAt":NOW+10000}))
     if current is not None:
         store["currentKeys"] = current
 
@@ -184,6 +190,20 @@ for current in [None, "[]", '{"malformed":true}', '[{"malformed":true}]']:
           f"managed registration does not replace missing or malformed keys: {current}")
 seed_registration()
 original = dict(store)
-check(run(register, registration_keys, [*registration_args[:3], "bootstrap"]) == 0
+check(run(register, registration_keys, [*registration_args[:3], "bootstrap", *registration_args[4:]]) == 0
       and store == original, "Lua rejects the removed bootstrap mode without changing credentials")
+for label, change in [
+    ("revoked managed session", {"session": None}),
+    ("revoked managed generation", {"generation": "generation-b"}),
+    ("missing fresh proof", {"grant": None}),
+    ("proof from an earlier generation", {"grant": json.dumps({"sessionKey":"session","generation":"earlier-generation","epoch":3,"action":"add","target":"","verifiedAt":NOW-100,"expiresAt":NOW+10000})}),
+    ("expired fresh proof", {"grant": json.dumps({"sessionKey":"session","generation":"generation-a","epoch":3,"action":"add","target":"","verifiedAt":NOW-300000,"expiresAt":NOW})}),
+    ("proof for a different action", {"grant": json.dumps({"sessionKey":"session","generation":"generation-a","epoch":3,"action":"delete","target":"backup","verifiedAt":NOW-100,"expiresAt":NOW+10000})}),
+]:
+    seed_registration()
+    for key, value in change.items():
+        if value is None: store.pop(key, None)
+        else: store[key] = value
+    original = dict(store)
+    check(run(register, registration_keys, registration_args) == 0 and store == original, label + " prevents managed registration")
 print(f"{count} Lua authorization assertions passed")

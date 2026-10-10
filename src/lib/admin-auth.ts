@@ -1,13 +1,15 @@
 import { randomBytes, createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { getRedis } from "@/lib/redis";
+import type { SessionContext } from "../../security-console/shared/credential-grants";
 
-const COOKIE_NAME = "speedzone_admin";
+const COOKIE_NAME = process.env.NODE_ENV === "production" ? "__Host-speedzone_admin" : "speedzone_admin";
 const SESSION_PREFIX = "speedzone:admin-session:";
 const GENERATION_KEY = "speedzone:admin-session-generation";
 const CREDENTIAL_EPOCH_KEY = "speedzone:admin-credential-epoch";
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
 const SESSION_IDLE_TTL_SECONDS = 60 * 30;
+const SETUP_TTL_SECONDS = 5 * 60;
 type AdminSession = { createdAt: number; lastSeenAt: number; generation: string; credentialEpoch: number; purpose: "setup" | "passkey" };
 function sessionKey(token: string) { return `${SESSION_PREFIX}${createHash("sha256").update(token).digest("hex")}`; }
 async function getCookieToken(request?: Request) {
@@ -35,30 +37,31 @@ local raw = redis.call('GET', KEYS[1])
 local current = redis.call('GET', KEYS[2])
 if not raw or not current then return 0 end
 local session = cjson.decode(raw)
-local purposeMatches = session.purpose == ARGV[4] or (ARGV[4] == 'authenticated' and (session.purpose == 'setup' or session.purpose == 'passkey'))
+local purposeMatches = session.purpose == ARGV[4] or (ARGV[4] == 'authenticated' and session.purpose == 'passkey')
 if session.generation ~= current or tostring(session.credentialEpoch) ~= redis.call('GET', KEYS[3]) or not purposeMatches then return 0 end
 local now = tonumber(ARGV[1])
 local created = tonumber(session.createdAt)
 local lastSeen = tonumber(session.lastSeenAt)
-if not created or not lastSeen or now - created >= tonumber(ARGV[2]) or now - lastSeen >= tonumber(ARGV[3]) then
+local absolute = session.purpose == 'setup' and 300000 or tonumber(ARGV[2])
+if not created or not lastSeen or created>now or lastSeen>now or now - created >= absolute or now - lastSeen >= tonumber(ARGV[3]) then
   redis.call('DEL', KEYS[1])
   return 0
 end
 session.lastSeenAt = now
-local remaining = math.max(1, math.ceil((tonumber(ARGV[2]) - (now - created)) / 1000))
+local remaining = math.max(1, math.ceil((absolute - (now - created)) / 1000))
 redis.call('SET', KEYS[1], cjson.encode(session), 'EX', remaining)
 return 1
 `;
 
-export async function createAdminSession(credentialEpoch: number, purpose: "setup" | "passkey") {
+export async function createAdminSession(credentialEpoch: number, purpose: "setup" | "passkey", expectedGeneration?: string) {
   const redis = getRedis();
-  const current = await generation();
+  const current = expectedGeneration ?? await generation();
   if (!redis || !current) return null;
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
   const created = JSON.stringify({ createdAt: now, lastSeenAt: now, generation: current, credentialEpoch, purpose } satisfies AdminSession);
   try {
-    const stored = await redis.eval(createSessionScript, [sessionKey(token), GENERATION_KEY, CREDENTIAL_EPOCH_KEY], [current, created, SESSION_TTL_SECONDS, credentialEpoch]);
+    const stored = await redis.eval(createSessionScript, [sessionKey(token), GENERATION_KEY, CREDENTIAL_EPOCH_KEY], [current, created, purpose === "setup" ? SETUP_TTL_SECONDS : SESSION_TTL_SECONDS, credentialEpoch]);
     return Number(stored) === 1 ? token : null;
   } catch {
     return null;
@@ -90,9 +93,17 @@ export async function isAdminSetup(request?: Request) { return isValidSessionPur
 export async function isAdminAuthenticated(request?: Request) {
   return isValidSessionPurpose(await getCookieToken(request), "authenticated");
 }
+export async function adminSessionContext(request?: Request, purpose: "setup" | "passkey" = "passkey"): Promise<SessionContext | null> {
+  const token = await getCookieToken(request);
+  if (!await isValidSessionPurpose(token, purpose)) return null;
+  const session = await getRedis()?.get<AdminSession>(sessionKey(token!));
+  if (!session || session.purpose !== purpose) return null;
+  return { sessionKey: sessionKey(token!), generationKey: GENERATION_KEY, generation: session.generation, epochKey: CREDENTIAL_EPOCH_KEY, epoch: session.credentialEpoch,
+    policy: { field: "purpose", value: purpose, absoluteMs: (purpose === "setup" ? SETUP_TTL_SECONDS : SESSION_TTL_SECONDS) * 1000, idleMs: SESSION_IDLE_TTL_SECONDS * 1000 } };
+}
 export async function revokeAdminSession(request?: Request) { const token = await getCookieToken(request); if (token) await getRedis()?.del(sessionKey(token)); }
 export async function revokeAllAdminSessions() { const redis = getRedis(); if (redis) await redis.set(GENERATION_KEY, randomBytes(16).toString("hex")); }
 export const adminCookie = { name: COOKIE_NAME, maxAge: SESSION_TTL_SECONDS };
 export function clearAdminCookie() { return { name: COOKIE_NAME, value: "", maxAge: 0 }; }
-export function adminCookieOptions() { return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, path: "/", maxAge: SESSION_TTL_SECONDS }; }
+export function adminCookieOptions(purpose: "setup" | "passkey" = "passkey") { return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, path: "/", maxAge: purpose === "setup" ? SETUP_TTL_SECONDS : SESSION_TTL_SECONDS }; }
 export function privateResponseHeaders() { return { "Cache-Control": "private, no-store, max-age=0" }; }

@@ -78,7 +78,13 @@ function classify(snapshot: CredentialSnapshot): CredentialState {
 function keys() { return [credentialKey, legacyOverrideKey, legacyCredentialKey, credentialStateKey, epochKey]; }
 async function snapshot(redis: NonNullable<ReturnType<typeof getRedis>>) { return parseSnapshot(await redis.eval(snapshotScript, keys(), [])); }
 
-export function recoveryConfigured() { return Boolean(recoveryEmail && process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN); }
+export function recoveryConfigured() {
+  try {
+    const origin = new URL(process.env.WEBAUTHN_ORIGIN || "");
+    return Boolean(recoveryEmail && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(recoveryEmail) && process.env.RESEND_PASSWORD_RESET_API_KEY && process.env.RESEND_EMAIL_DOMAIN
+      && origin.protocol === "https:" && origin.origin === process.env.WEBAUTHN_ORIGIN && !origin.username && !origin.password);
+  } catch { return false; }
+}
 const consumeRecoveryTokenScript = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return 0 end

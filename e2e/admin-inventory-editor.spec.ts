@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+
+test.use({ baseURL: "http://localhost:4184" });
 for (const width of [390, 768, 1280]) {
   test(`inventory editor fits and saves VIN at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -10,7 +12,7 @@ for (const width of [390, 768, 1280]) {
       if (route.request().method() === "PATCH") {
         vehicle = { ...vehicle, ...route.request().postDataJSON() };
         await route.fulfill({ json: vehicle, headers: { etag: "updated" } });
-      } else await route.fulfill({ json: [vehicle], headers: { etag: "initial" } });
+      } else await route.fulfill({ json: { vehicles: [vehicle], revision: "initial" }, headers: { etag: "initial" } });
     });
     await page.goto("/admin");
     await page.getByRole("button", { name: "Edit listing", exact: true }).click();

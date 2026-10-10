@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { getSecurityRedis } from "./redis";
+import type { SessionContext } from "../shared/credential-grants";
 
 export const SECURITY_COOKIE = "__Host-speedzone_security";
 const PREFIX = "speedzone:security-console:session:v1:";
@@ -94,6 +95,15 @@ export async function passwordSessionContext(request?: Request) {
   const session = await redis.get<Session>(sessionKey);
   if (session?.level !== "password") return null;
   return { sessionKey, generationKey: GENERATION_KEY, absoluteMs: ABSOLUTE_SECONDS * 1000, idleMs: IDLE_SECONDS * 1000 };
+}
+export async function mfaSessionContext(request?: Request): Promise<SessionContext | null> {
+  if (!await validateSecuritySession(request, "mfa")) return null;
+  const value = await token(request); const redis = getSecurityRedis();
+  if (!value || !redis) return null;
+  const session = await redis.get<Session>(key(value));
+  if (!session || session.level !== "mfa") return null;
+  return { sessionKey: key(value), generationKey: GENERATION_KEY, generation: session.generation, epochKey: "speedzone:security-console:credential-epoch:v1", epoch: session.epoch,
+    policy: { field: "level", value: "mfa", absoluteMs: ABSOLUTE_SECONDS * 1000, idleMs: IDLE_SECONDS * 1000 } };
 }
 export async function revokeAllSecuritySessions() { await getSecurityRedis()?.set(GENERATION_KEY, randomBytes(16).toString("hex")); }
 export async function upgradeSecuritySession(request: Request, verifiedEpoch: number) {

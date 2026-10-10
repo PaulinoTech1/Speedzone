@@ -6,7 +6,9 @@ import {
   type AuthenticatorTransport,
   type CredentialDeviceType,
 } from "@simplewebauthn/server";
-import { passwordSessionContext, validateSecuritySession } from "./auth";
+import { randomBytes } from "node:crypto";
+import { passwordSessionContext, mfaSessionContext } from "./auth";
+import { credentialGrantKey, issueCredentialGrant, rotateOtherSessionsLua, sessionGuardLua, type CredentialAction, type SessionContext } from "../shared/credential-grants";
 import { currentCredentialEpoch } from "./password";
 import { getSecurityRedis } from "./redis";
 import { recoveryCodeMatches, recoveryGrant, recoveryUsedKey } from "./passkey-recovery";
@@ -32,7 +34,8 @@ type StoredCredential = {
   name: string;
   credentialEpoch: number;
 };
-type ChallengeRecord = { challenge: string; credentialEpoch: number; createdAt: number; origin: string };
+type ChallengeRecord = { challenge: string; credentialEpoch: number; createdAt: number; origin: string; sessionKey?: string; grantKey?: string; action?: CredentialAction; target?: string };
+const grantPrefix = "speedzone:security-console:credential-grant:";
 
 function parseAllowedOrigins(raw: string | undefined): string[] {
   return (raw ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
@@ -106,13 +109,17 @@ async function getChallenge(kind: "registration" | "authentication", challenge: 
   const record = await client.get<ChallengeRecord>(challengeKey(kind, challenge));
   return record && record.challenge === challenge && Number.isSafeInteger(record.credentialEpoch) && record.credentialEpoch > 0 && typeof record.createdAt === "number" ? record : null;
 }
-const registrationCommitScript = `
+const registrationCommitScript = `${sessionGuardLua}
+local now=tonumber(ARGV[5])
+if not liveSession(KEYS[4],KEYS[5],KEYS[2],now,cjson.decode(ARGV[6])) then return 0 end
 local epoch = redis.call('GET', KEYS[2])
 if not epoch or epoch ~= ARGV[1] then return 0 end
 local raw = redis.call('GET', KEYS[3])
 if not raw then return 0 end
 local okChallenge, challengeRecord = pcall(cjson.decode, raw)
 if not okChallenge or type(challengeRecord) ~= 'table' or challengeRecord.challenge ~= ARGV[2] then return 0 end
+if challengeRecord.sessionKey~=KEYS[4] or challengeRecord.grantKey~=KEYS[6] or now-challengeRecord.createdAt>=120000 or challengeRecord.createdAt>now then return 0 end
+if not actionGrant(KEYS[6],KEYS[4],epoch,'add','',now) then return 0 end
 local credentials = {}
 local existing = redis.call('GET', KEYS[1])
 if existing then
@@ -132,6 +139,7 @@ if ARGV[4] == 'managed' then
   table.insert(credentials, cjson.decode(ARGV[3]))
   redis.call('SET', KEYS[1], cjson.encode(credentials))
   redis.call('DEL', KEYS[3])
+  redis.call('DEL', KEYS[6])
   return 1
 end
 return 0
@@ -185,14 +193,25 @@ export async function listPasskeys(): Promise<AdminPasskeySummary[]> {
   if (!credentials || epoch === null) return [];
   return usable(credentials, epoch).map(({ id, deviceType, backedUp, name }) => ({ id, deviceType, backedUp, name }));
 }
-export async function deletePasskey(id: string) {
+export async function deletePasskey(id: string, request?: Request, grant?: unknown) {
+  const context = await mfaSessionContext(request); const grantKey = credentialGrantKey(grantPrefix, grant);
+  if (!context || !grantKey) return { deleted: false, reason: "Verify an established passkey before removing a key" };
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
   if (!client || !credentials || epoch === null) return { deleted: false, reason: "Passkey storage unavailable" };
   const current = usable(credentials, epoch);
   if (!current.some((credential) => credential.id === id)) return { deleted: false, reason: "Passkey not found" };
   if (current.length <= 1) return { deleted: false, reason: "The final active passkey cannot be removed" };
   const next = credentials.filter((credential) => credential.id !== id || !isUsableCredential(credential, epoch));
-  const result = await client.eval("local epoch = redis.call('GET', KEYS[2]); if not epoch or epoch ~= ARGV[1] then return 0 end; local current = redis.call('GET', KEYS[1]); if not current or current ~= ARGV[2] then return 0 end; local parsed = cjson.decode(current); local active = 0; for _, item in ipairs(parsed) do if tostring(item.credentialEpoch) == ARGV[1] then active = active + 1 end end; if active <= 1 then return -2 end; redis.call('SET', KEYS[1], ARGV[3]); return 1", [credentialsKey, epochKey], [String(epoch), JSON.stringify(credentials), JSON.stringify(next)]);
+  const result = await client.eval(`${sessionGuardLua}
+local now=tonumber(ARGV[4]); local epoch=redis.call('GET',KEYS[2])
+if epoch~=ARGV[1] or not liveSession(KEYS[3],KEYS[4],KEYS[2],now,cjson.decode(ARGV[5])) or not actionGrant(KEYS[5],KEYS[3],epoch,'delete',ARGV[6],now) then return 0 end
+local current=redis.call('GET',KEYS[1]); if not current or current~=ARGV[2] then return 0 end
+local parsed=cjson.decode(current); local active=0
+for _,item in ipairs(parsed) do if tostring(item.credentialEpoch)==epoch then active=active+1 end end
+if active<=1 then return -2 end
+redis.call('SET',KEYS[1],ARGV[3]); redis.call('DEL',KEYS[5]); ${rotateOtherSessionsLua}; return 1`,
+    [credentialsKey, epochKey, context.sessionKey, context.generationKey, grantKey],
+    [String(epoch), JSON.stringify(credentials), JSON.stringify(next), Date.now(), JSON.stringify(context.policy), id, randomBytes(16).toString("hex")]);
   return Number(result) === 1 ? { deleted: true } : { deleted: false, reason: Number(result) === -2 ? "The final active passkey cannot be removed" : "Passkey changed; retry" };
 }
 function storedFromVerification(info: NonNullable<Awaited<ReturnType<typeof verifyRegistrationResponse>>["registrationInfo"]>, name: string, epoch: number, fallbackName: string): StoredCredential {
@@ -354,30 +373,34 @@ export async function verifyRecoveryRegistration(request: Request, response: unk
     return Number(result) === 1 ? { verified: true as const } : recoveryError;
   } catch { return recoveryError; }
 }
-export async function registrationOptions(config: WebAuthnConfig, origin: string) {
-  if (!await validateSecuritySession(undefined, "mfa")) return { error: "Verify your established passkey first" as const };
+export async function registrationOptions(config: WebAuthnConfig, origin: string, request?: Request, grant?: unknown) {
+  const context = await mfaSessionContext(request); const grantKey = credentialGrantKey(grantPrefix, grant);
+  if (!context || !grantKey) return { error: "Verify your established passkey first" as const };
   if (!config.origins.includes(origin)) return { error: "Verify your established passkey first" as const };
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey storage is not configured" as const };
   const active = usable(credentials, epoch);
   if (!active.length) return { error: "Verify your established passkey first" as const };
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "security@speedzonemotorsports", userDisplayName: "SpeedZone security operator", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: active.map((item) => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
-  await client.set(challengeKey("registration", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), origin } satisfies ChallengeRecord, { ex: challengeTtl });
+  await client.set(challengeKey("registration", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), origin, sessionKey: context.sessionKey, grantKey } satisfies ChallengeRecord, { ex: challengeTtl });
   return { options };
 }
-export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig) {
-  if (!await validateSecuritySession(undefined, "mfa")) return { error: "Verify your established passkey first" as const };
+export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig, request?: Request, grant?: unknown) {
+  const context = await mfaSessionContext(request); const grantKey = credentialGrantKey(grantPrefix, grant);
+  if (!context || !grantKey) return { error: "Verify your established passkey first" as const };
   const client = redis(); if (!client) return { error: "Passkey storage is not configured" as const };
   try {
     const clientData = (response as { response?: { clientDataJSON?: string } }).response?.clientDataJSON;
     if (!clientData) return { error: "Invalid passkey response" as const };
     const challenge = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge as string;
     const record = await getChallenge("registration", challenge);
-    if (!record || !config.origins.includes(record.origin)) return { error: "Passkey setup expired" as const };
+    if (!record || !config.origins.includes(record.origin) || record.sessionKey !== context.sessionKey) return { error: "Passkey setup expired" as const };
     const verification = await verifyRegistrationResponse({ response: response as Parameters<typeof verifyRegistrationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: record.origin, expectedRPID: config.rpID, requireUserVerification: true });
     if (!verification.verified || !verification.registrationInfo) return { error: "Passkey could not be verified" as const };
     const stored = storedFromVerification(verification.registrationInfo, name, record.credentialEpoch, "Unnamed passkey");
-    const result = await client.eval(registrationCommitScript, [credentialsKey, epochKey, challengeKey("registration", challenge)], [String(record.credentialEpoch), record.challenge, JSON.stringify(stored), "managed"]);
+    const result = await client.eval(registrationCommitScript,
+      [credentialsKey, epochKey, challengeKey("registration", challenge), context.sessionKey, context.generationKey, grantKey],
+      [String(record.credentialEpoch), record.challenge, JSON.stringify(stored), "managed", Date.now(), JSON.stringify(context.policy)]);
     if (Number(result) === -2) return { error: "Verify your established passkey first" as const };
     return Number(result) === 1 ? { verified: true, credentialEpoch: record.credentialEpoch } : { error: "Passkey setup expired" as const };
   } catch { return { error: "Passkey could not be verified" as const }; }
@@ -392,7 +415,7 @@ export async function authenticationOptions(config: WebAuthnConfig, origin: stri
   await client.set(challengeKey("authentication", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), origin } satisfies ChallengeRecord, { ex: challengeTtl });
   return { options };
 }
-export async function verifyAuthentication(response: unknown, config: WebAuthnConfig) {
+export async function verifyAuthentication(response: unknown, config: WebAuthnConfig, mutation?: { context: SessionContext; action: CredentialAction; target: string }) {
   const client = redis(); const credentials = await getCredentials(); const epoch = await currentCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey login is not configured" as const };
   try {
@@ -403,6 +426,8 @@ export async function verifyAuthentication(response: unknown, config: WebAuthnCo
     const challenge = JSON.parse(Buffer.from(clientData, "base64url").toString()).challenge as string;
     const record = await getChallenge("authentication", challenge);
     if (!record || record.credentialEpoch !== epoch || !config.origins.includes(record.origin)) return { error: "Passkey login expired" as const };
+    if (record.createdAt > Date.now() || Date.now() - record.createdAt >= 120_000) return { error: "Passkey login expired" as const };
+    if (mutation ? record.sessionKey !== mutation.context.sessionKey || record.action !== mutation.action || record.target !== mutation.target : !!record.action) return { error: "Passkey login expired" as const };
     const verification = await verifyAuthenticationResponse({ response: response as Parameters<typeof verifyAuthenticationResponse>[0]["response"], expectedChallenge: record.challenge, expectedOrigin: record.origin, expectedRPID: config.rpID, requireUserVerification: true, credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, "base64url"), counter: credential.counter, transports: credential.transports } });
     if (!verification.verified) return { error: "Passkey could not be verified" as const };
     const result = await client.eval(counterCommitScript, [credentialsKey, epochKey, challengeKey("authentication", challenge)], [String(epoch), record.challenge, credential.id, String(credential.counter), String(verification.authenticationInfo.newCounter)]);
@@ -410,3 +435,22 @@ export async function verifyAuthentication(response: unknown, config: WebAuthnCo
   } catch { return { error: "Passkey could not be verified" as const }; }
 }
 export const acceptedPasskeyTypes = "Platform passkeys (Touch ID, Face ID, Windows Hello, Android screen lock) and roaming FIDO2 security keys (USB, NFC, or Bluetooth). Passwords, SMS codes, OTPs, and magic links are not passkeys.";
+
+export async function credentialActionOptions(request: Request, config: WebAuthnConfig, origin: string, action: CredentialAction, target: string) {
+  const context = await mfaSessionContext(request); const client = redis();
+  if (!context || !client) return { error: "Unauthorized" as const };
+  const result = await authenticationOptions(config, origin);
+  if (!("options" in result) || !result.options) return result;
+  await client.set(challengeKey("authentication", result.options.challenge), {
+    challenge: result.options.challenge, credentialEpoch: context.epoch, createdAt: Date.now(), origin, sessionKey: context.sessionKey, action, target,
+  } satisfies ChallengeRecord, { ex: challengeTtl });
+  return result;
+}
+
+export async function verifyCredentialAction(request: Request, response: unknown, config: WebAuthnConfig, action: CredentialAction, target: string) {
+  const context = await mfaSessionContext(request); const client = redis();
+  if (!context || !client) return { error: "Unauthorized" as const };
+  const result = await verifyAuthentication(response, config, { context, action, target });
+  if (!("verified" in result) || !result.verified) return result;
+  return { grant: await issueCredentialGrant(client, grantPrefix, context, action, target) };
+}
