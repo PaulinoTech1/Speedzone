@@ -2,6 +2,8 @@
 
 Assessment date: 2026-10-10. Reviewed base commit: `1d920e9552760ad0c8faaf8eaaf79f02a47736eb`.
 
+For the complete change register, exact Vercel setting edits, validation results, and responsible-role handoff, see [security-remediation-summary-2026-10-10.md](security-remediation-summary-2026-10-10.md).
+
 ## Changes and remaining work
 
 | Finding | Remediation | Release requirement |
