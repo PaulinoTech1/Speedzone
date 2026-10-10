@@ -15,7 +15,7 @@ function discover(directory) {
 }
 discover(path.join(workspace, 'node_modules'));
 if (!packages.length) process.exit(0);
-const ts = require('typescript');
+const ts = require('typescript5');
 const marker = '// SpeedZone glob memoization and step budget v1';
 const helpers = `
 const speedzoneGlobContexts = new WeakMap();
