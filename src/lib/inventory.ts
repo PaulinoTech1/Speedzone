@@ -1,5 +1,22 @@
-import { get, put } from "@vercel/blob";
+import { BlobPreconditionFailedError, get, put } from "@vercel/blob";
+import { randomUUID } from "node:crypto";
 import { maxInventoryPhotoCount } from "@/lib/inventory-photos";
+import { getRedis } from "@/lib/redis";
+import { canonicalInventoryPhotoUrl, inventoryCommitScript, inventoryPhotoStateKey, inventoryStateKey } from "@/lib/inventory-state";
+
+/**
+ * Normalize an ETag for comparison. The Blob API returns etags unquoted, but
+ * HTTP ETag/If-Match headers are conventionally quoted (and Vercel's edge
+ * quotes them when serving). The UI echoes back whatever the ETag header
+ * carried, so comparisons must be quote-insensitive or every conditional
+ * write fails with revision_conflict.
+ */
+export function normalizeEtag(value: string | null | undefined): string {
+  const trimmed = (value || "").trim();
+  return trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1)
+    : trimmed;
+}
 
 export type Vehicle = {
   id: string;
@@ -47,26 +64,53 @@ export async function readInventory(): Promise<Vehicle[]> {
 export async function readInventorySnapshot(): Promise<{ vehicles: Vehicle[]; revision: string }> {
   const fixture = readBrowserFixture();
   if (fixture) return { vehicles: fixture, revision: "fixture" };
+  const current = await getRedis()?.get<{ version: number; revision: string; vehicles: Vehicle[] }>(inventoryStateKey);
+  if (current) {
+    if (current.version !== 2 || typeof current.revision !== "string" || !validInventory(current.vehicles)) throw new Error("Invalid inventory state");
+    return { vehicles: current.vehicles, revision: current.revision };
+  }
+  // Keep legacy listings visible during a controlled migration, but never use
+  // a CDN snapshot as the basis of an authoritative edit or destructive cleanup.
   const result = await get(catalogPath, { access: "public" });
-  if (!result) return { vehicles: [], revision: "absent" };
+  if (!result) return { vehicles: [], revision: "legacy-read-only" };
   if (result.statusCode !== 200 || !result.blob.etag) throw new Error("Unable to read inventory catalog");
   const data: unknown = await new Response(result.stream).json();
-  if (!Array.isArray(data) || data.some(item => !item || typeof item.id !== "string" || !Array.isArray(item.photos))) {
+  if (!validInventory(data)) {
     throw new Error("Invalid inventory catalog; refusing to overwrite it");
   }
-  return { vehicles: data as Vehicle[], revision: result.blob.etag };
+  return { vehicles: data, revision: "legacy-read-only" };
+}
+
+export function validInventory(data: unknown): data is Vehicle[] {
+  return Array.isArray(data) && data.length <= 500 && data.every(item => item && typeof item.id === "string" && Array.isArray(item.photos)
+    && item.photos.length <= maxInventoryPhotoCount && item.photos.every((url: unknown) => typeof url === "string"));
+}
+export class InventoryReadOnlyError extends Error {
+  constructor() { super("Inventory is temporarily read-only. Please contact the site administrator."); }
 }
 
 export async function writeInventory(vehicles: Vehicle[], revision: string) {
-  if (!revision) throw new Error("Inventory revision is required");
-  return put(catalogPath, JSON.stringify(vehicles, null, 2), {
+  const redis = getRedis();
+  if (!redis || revision === "legacy-read-only" || !revision) throw new InventoryReadOnlyError();
+  if (!validInventory(vehicles)) throw new Error("Invalid inventory");
+  vehicles = vehicles.map(vehicle => ({ ...vehicle, photos: vehicle.photos.map(canonicalInventoryPhotoUrl) }));
+  const nextRevision = randomUUID();
+  const document = JSON.stringify({ version: 2, revision: nextRevision, vehicles });
+  if (Buffer.byteLength(document) > 512 * 1024) throw new Error("Inventory is too large");
+  // Immutable public-data backups are written before committing the pointer.
+  // A rejected concurrent write may leave an unused backup, never lost data.
+  await put(`inventory/history/${nextRevision}.json`, document, {
     access: "public",
     addRandomSuffix: false,
     contentType: "application/json",
-    cacheControlMaxAge: 60,
-    allowOverwrite: revision !== "absent",
-    ...(revision === "absent" ? {} : { ifMatch: revision }),
+    cacheControlMaxAge: 31536000,
+    allowOverwrite: false,
   });
+  const photoKeys = [...new Set(vehicles.flatMap(vehicle => vehicle.photos))].map(inventoryPhotoStateKey);
+  const result = Number(await redis.eval(inventoryCommitScript, [inventoryStateKey, ...photoKeys], [revision, document]));
+  if (result === -1) throw new Error("A selected photo is no longer available. Upload it again.");
+  if (result !== 1) throw new BlobPreconditionFailedError();
+  return { etag: nextRevision };
 }
 
 export function sanitizeVehicleInput(input: Record<string, unknown>, photos: string[] = []): Vehicle {

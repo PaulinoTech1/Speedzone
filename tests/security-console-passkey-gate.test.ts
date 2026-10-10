@@ -5,11 +5,16 @@ vi.mock("../security-console/lib/auth", () => ({ validateSecuritySession: mocks.
   SECURITY_COOKIE: "__Host-speedzone_security", securityCookieOptions: { secure: true, httpOnly: true, sameSite: "strict", path: "/" }, privateHeaders: { "Cache-Control": "private, no-store" } }));
 vi.mock("../security-console/lib/rate-limit", () => ({ enforceRateLimit: async () => ({ allowed: true }) }));
 vi.mock("../security-console/lib/console-audit", () => ({ recordConsoleAudit: vi.fn() }));
-vi.mock("../security-console/lib/passkeys", () => ({ getWebAuthnConfig: () => ({ rpID: "www.speedzonems.com", origin: "https://www.speedzonems.com" }),
+vi.mock("../security-console/lib/passkeys", () => ({ getWebAuthnConfig: () => ({ rpID: "www.speedzonems.com", origins: ["https://www.speedzonems.com"] }),
+  requestOrigin: (request: Request, config: { origins: string[] }) => { const origin = request.headers.get("origin"); return origin && config.origins.includes(origin) ? origin : null; },
   verifyAuthentication: mocks.verify, verifyRegistration: mocks.register, registrationOptions: vi.fn(), authenticationOptions: mocks.options, deletePasskey: vi.fn(), listPasskeys: vi.fn() }));
 import { POST } from "../src/app/Security_Console/api/auth/passkeys/route";
 beforeEach(() => vi.resetAllMocks());
-function request(action: string) { return new Request("https://www.speedzonems.com/Security_Console/api/auth/passkeys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, response: {} }) }); }
+function request(action: string, origin = "https://www.speedzonems.com") {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (origin) headers["Origin"] = origin;
+  return new Request("https://www.speedzonems.com/Security_Console/api/auth/passkeys", { method: "POST", headers, body: JSON.stringify({ action, response: {} }) });
+}
 
 it.each(["register", "registration-options"])("password-only sessions cannot use %s", async action => {
   mocks.validate.mockImplementation(async (_request, level) => level === "password");
@@ -29,9 +34,15 @@ it.each(["replace", "replacement-options"])("password-only replacement actions a
 });
 it.each(["bootstrap", "bootstrap-options"])("requires a same-origin setup request (%s)", async action => {
   mocks.validate.mockResolvedValue(true);
-  const response = await POST(request(action));
+  const response = await POST(request(action, ""));
   expect(response.status).toBe(403);
   expect(response.headers.get("set-cookie")).toBeNull();
+  expect(mocks.upgrade).not.toHaveBeenCalled();
+});
+it("rejects a cross-origin setup request", async () => {
+  mocks.validate.mockResolvedValue(true);
+  const response = await POST(request("bootstrap-options", "https://evil.example.com"));
+  expect(response.status).toBe(403);
   expect(mocks.upgrade).not.toHaveBeenCalled();
 });
 it.each([{ error: "Invalid assertion" }, { verified: false, credentialEpoch: 3 }])("failed assertions never issue MFA sessions (%j)", async result => {

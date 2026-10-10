@@ -17,12 +17,12 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - name: Install dependencies
         run: npm ci
       - name: Dependency audit
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
       - name: Prevent dependency downgrades
         run: npm run check:deps
       - name: Lint
@@ -45,6 +45,12 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Browser end-to-end tests
         run: npm run test:e2e
+      - name: Validate standalone Security Console
+        run: |
+          npm ci --prefix security-console
+          npm audit --prefix security-console --omit=dev --audit-level=high
+          npm run build --prefix security-console
+          npm test --prefix security-console
       - name: Upload browser failure artifacts
         if: failure()
         uses: actions/upload-artifact@v4

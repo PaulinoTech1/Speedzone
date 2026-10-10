@@ -1,11 +1,16 @@
 import { withDiagnostics } from "@/lib/diagnostics";
-import { get, list } from "@vercel/blob";
+import { del, get, list } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import type { TestDriveSubmission } from "@/app/api/test-drive/route";
 import { isAdminAuthenticated, privateResponseHeaders } from "@/lib/admin-auth";
 import { decryptTestDrivePayload } from "@/lib/test-drive-crypto";
+import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
 const token = () => process.env.TEST_DRIVE_BLOB_READ_WRITE_TOKEN;
+
+// Pathnames are generated server-side as test-drive/requests/<uuid-v4>.enc.
+// Only that exact shape may be deleted; anything else is rejected.
+const TEST_DRIVE_PATHNAME = /^test-drive\/requests\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.enc$/i;
 
 async function diagnosedGET(request: Request) {
   if (!(await isAdminAuthenticated(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -54,3 +59,32 @@ async function diagnosedGET(request: Request) {
 }
 
 export async function GET(request: Request) { return withDiagnostics("CUSTOMER_REQUEST_INBOX_READ", () => diagnosedGET(request)); }
+
+async function diagnosedDELETE(request: Request) {
+  if (!(await isAdminAuthenticated(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const privateToken = token();
+  if (!privateToken) return NextResponse.json({ error: "Test-drive storage is not configured" }, { status: 503 });
+  const pathname = new URL(request.url).searchParams.get("pathname") ?? "";
+  if (!TEST_DRIVE_PATHNAME.test(pathname)) return NextResponse.json({ error: "Invalid submission reference" }, { status: 400 });
+  try {
+    await del(pathname, { token: privateToken });
+    return NextResponse.json({ deleted: true }, { headers: privateResponseHeaders() });
+  } catch (error) {
+    console.error("[v0] test-drive admin delete failed", error);
+    return NextResponse.json({ error: "Unable to delete test-drive request" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  const response = await withDiagnostics("CUSTOMER_REQUEST_INBOX_DELETE", () => diagnosedDELETE(request));
+  const pathname = new URL(request.url).searchParams.get("pathname") ?? "";
+  await writeSecurityEvent({
+    ...securityRequestContext(request),
+    event: "test-drive.deletion",
+    outcome: response.ok ? "allowed" : response.status >= 500 ? "failed" : "denied",
+    actor: response.ok ? "admin" : "anonymous",
+    reason: "delete",
+    ...(response.ok && TEST_DRIVE_PATHNAME.test(pathname) ? { metadata: { submission_reference: pathname } } : {}),
+  });
+  return response;
+}

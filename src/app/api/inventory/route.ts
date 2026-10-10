@@ -1,7 +1,9 @@
 import { withDiagnostics } from "@/lib/diagnostics";
 import { BlobPreconditionFailedError } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import { appendVehiclePhotos, readInventorySnapshot, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
+import { appendVehiclePhotos, InventoryReadOnlyError, normalizeEtag, readInventorySnapshot, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
+import { validAdminMutation } from "@/lib/admin-mutation";
+import { readBoundedJson, RequestBodyError } from "../../../../security-console/shared/mutation-request";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { diagnoseInventoryPhotoUrl, isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
@@ -10,9 +12,12 @@ async function diagnosedGET(request: Request) {
   try {
     const { vehicles: inventory, revision } = await readInventorySnapshot();
     const adminRequest = await isAdminAuthenticated(request);
-    return NextResponse.json(inventory, {
+    // Revision is in the body (not just the ETag header) because the header
+    // is not reliably readable via response.headers in all browsers/proxies.
+    return NextResponse.json({ vehicles: inventory, revision }, {
       headers: {
         "ETag": revision,
+        "Access-Control-Expose-Headers": "ETag",
         "Cache-Control": adminRequest ? "private, no-store" : "public, max-age=60",
       },
     });
@@ -25,8 +30,9 @@ async function diagnosedGET(request: Request) {
 async function diagnosedPOST(request: Request) {
   const context=securityRequestContext(request,true);
   if (!(await isAdminAuthenticated(request))) {await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"denied",actor:"anonymous",reason:"authentication_required",metadata:{operation:"create"}});return NextResponse.json({ error: "Unauthorized" }, { status: 401 });}
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   try {
-    const body = (await request.json()) as { vehicle?: unknown; photos?: unknown };
+    const body = (await readBoundedJson(request)) as { vehicle?: unknown; photos?: unknown };
     const payload = body.vehicle && typeof body.vehicle === "object"
       ? body.vehicle as Record<string, unknown>
       : {};
@@ -40,24 +46,27 @@ async function diagnosedPOST(request: Request) {
     const photos = body.photos as string[];
     const vehicle = sanitizeVehicleInput({ ...payload, id: crypto.randomUUID(), createdAt: new Date().toISOString() }, photos);
     const { vehicles, revision } = await readInventorySnapshot();
-    if (request.headers.get("if-match") !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"create",catalog_revision:revision} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
+    const ifMatchRaw = request.headers.get("if-match");
+    if (normalizeEtag(ifMatchRaw) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"create",catalog_revision:revision,if_match_received:ifMatchRaw} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
     const saved = await writeInventory([vehicle, ...vehicles], revision);
     await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "allowed", actor: "admin", reason: "vehicle_created", metadata: { photo_count: photos.length, catalog_revision_before:revision,catalog_revision_after:saved.etag } });
     return NextResponse.json(vehicle, { status: 201, headers: { ETag: saved.etag } });
-  } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"create_failed",metadata:{failure_class:error instanceof Error?error.name:"UnknownError"}});return mutationError(error); }
+  } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"create_failed",metadata:{failure_class:error instanceof Error?(error.constructor?.name||error.name):"UnknownError"}});return mutationError(error); }
 }
 
 async function handlePATCH(request: Request) {
   const context=securityRequestContext(request,true);
   if (!(await isAdminAuthenticated(request))) {await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"denied",actor:"anonymous",reason:"authentication_required",metadata:{operation:"update"}});return NextResponse.json({ error: "Unauthorized" }, { status: 401 });}
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   try {
-    const body = (await request.json()) as { id?: unknown; photos?: unknown } & Record<string, unknown>;
+    const body = (await readBoundedJson(request)) as { id?: unknown; photos?: unknown } & Record<string, unknown>;
     if (typeof body.id !== "string" || !body.id) {
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
 
     const { vehicles, revision } = await readInventorySnapshot();
-    if (request.headers.get("if-match") !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"update",catalog_revision:revision} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
+    const ifMatchRaw = request.headers.get("if-match");
+    if (normalizeEtag(ifMatchRaw) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"update",catalog_revision:revision,if_match_received:ifMatchRaw} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
     if (body.photos === undefined) {
       const existing = vehicles.find((vehicle) => vehicle.id === body.id);
       if (!existing) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
@@ -79,7 +88,7 @@ async function handlePATCH(request: Request) {
     await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"allowed",actor:"admin",reason:"photos_attached",metadata:{photo_count:(body.photos as string[]).length,catalog_revision_before:revision,catalog_revision_after:saved.etag}});
     return NextResponse.json(updated.vehicle, { headers: { ETag: saved.etag } });
   } catch (error) {
-    await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"update_failed",metadata:{failure_class:error instanceof Error?error.name:"UnknownError"}});
+    await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"update_failed",metadata:{failure_class:error instanceof Error?(error.constructor?.name||error.name):"UnknownError"}});
     return mutationError(error);
   }
 }
@@ -87,10 +96,12 @@ async function handlePATCH(request: Request) {
 async function handleDELETE(request: Request) {
   const context=securityRequestContext(request,true);
   if (!(await isAdminAuthenticated(request))) {await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"denied",actor:"anonymous",reason:"authentication_required",metadata:{operation:"delete"}});return NextResponse.json({ error: "Unauthorized" }, { status: 401 });}
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   try {
-  const body = await request.json().catch(() => ({})) as { id?: unknown; photos?: unknown };
+  const body = await readBoundedJson(request) as { id?: unknown; photos?: unknown };
   const { vehicles, revision } = await readInventorySnapshot();
-    if (request.headers.get("if-match") !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"delete",catalog_revision:revision} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
+    const ifMatchRaw = request.headers.get("if-match");
+    if (normalizeEtag(ifMatchRaw) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"delete",catalog_revision:revision,if_match_received:ifMatchRaw} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
   const vehicle = vehicles.find((item) => item.id === body.id);
   if (!vehicle) return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
 
@@ -105,16 +116,28 @@ async function handleDELETE(request: Request) {
     const updatedVehicle = { ...vehicle, photos: vehicle.photos.filter((photo) => !selectedPhotos.includes(photo)) };
     const saved = await writeInventory(vehicles.map((item) => item.id === vehicle.id ? updatedVehicle : item), revision);
     await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"allowed",actor:"admin",reason:"photos_removed_from_listing",metadata:{photo_count:selectedPhotos.length,catalog_revision_before:revision,catalog_revision_after:saved.etag}});
+    await deletePhotoBlobs(selectedPhotos, context, "photo_blobs_deleted");
     return NextResponse.json(updatedVehicle, { headers: { ETag: saved.etag } });
   }
 
   const saved = await writeInventory(vehicles.filter((item) => item.id !== body.id), revision);
   await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"allowed",actor:"admin",reason:"vehicle_deleted",metadata:{photo_count:vehicle.photos.length,catalog_revision_before:revision,catalog_revision_after:saved.etag}});
+  await deletePhotoBlobs(vehicle.photos, context, "photo_blobs_deleted");
   return NextResponse.json({ ok: true }, { headers: { ETag: saved.etag } });
-  } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"delete_failed",metadata:{failure_class:error instanceof Error?error.name:"UnknownError"}});return mutationError(error); }
+  } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"delete_failed",metadata:{failure_class:error instanceof Error?(error.constructor?.name||error.name):"UnknownError"}});return mutationError(error); }
+}
+
+// Physical deletion is deferred to coordinated, age-gated orphan cleanup.
+// An immediate delete can race a new reference from another listing.
+async function deletePhotoBlobs(urls: string[], context: ReturnType<typeof securityRequestContext>, reason: string) {
+  const targets = [...new Set(urls)].filter((url) => isInventoryPhotoBlobOriginUrl(url));
+  if (!targets.length) return;
+  await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "allowed", actor: "admin", reason: "photo_cleanup_deferred", metadata: { operation: reason, blobs_pending: targets.length } });
 }
 
 function mutationError(error: unknown) {
+  if (error instanceof InventoryReadOnlyError) return NextResponse.json({ error: error.message }, { status: 503 });
+  if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
   if (error instanceof BlobPreconditionFailedError || (error instanceof Error && /already exists/i.test(error.message))) return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 });
   return NextResponse.json({ error: "Unable to save inventory. Check your input and reload before retrying." }, { status: 400 });
 }

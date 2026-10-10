@@ -1,7 +1,7 @@
 import { withDiagnostics } from "@/lib/diagnostics";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { adminCookieOptions, clearAdminCookie, createAdminSession, revokeAdminSession } from "@/lib/admin-auth";
+import { adminCookie, adminCookieOptions, clearAdminCookie, createAdminSession, revokeAdminSession } from "@/lib/admin-auth";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { verifyAdminPassword } from "@/lib/admin-recovery";
 import { hasCurrentPasskey } from "@/lib/admin-passkeys";
@@ -50,7 +50,7 @@ async function diagnosedPOST(request: Request) {
   const session = await createAdminSession(verification.credentialEpoch, "setup");
   if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
   await writeSecurityEvent({ ...context, event: "admin.session.created", outcome: "allowed", actor: "admin", reason: "setup_session_created", metadata: { auth_factor: "password", credential_epoch: verification.credentialEpoch } });
-  (await cookies()).set("speedzone_admin", session, adminCookieOptions());
+  (await cookies()).set(adminCookie.name, session, adminCookieOptions("setup"));
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
 

@@ -18,6 +18,7 @@ function getLimiter() {
     redis: new Redis({ url, token }),
     limiter: Ratelimit.slidingWindow(MAX_ATTEMPTS, `${WINDOW_SECONDS} s`),
     prefix: "speedzone:admin-login",
+    timeout: 2000,
   });
   return limiter;
 }
@@ -25,7 +26,10 @@ function getLimiter() {
 export async function checkAdminLoginRateLimit(identifier: string) {
   const currentLimiter = getLimiter();
   if (!currentLimiter) return { success: false, retryAfter: WINDOW_SECONDS, configured: false };
-  const result = await currentLimiter.limit(identifier);
+  let result;
+  try { result = await currentLimiter.limit(identifier); }
+  catch { return { success: false, retryAfter: 30, configured: false }; }
+  if (result.reason === "timeout") return { success: false, retryAfter: 30, configured: false };
   return {
     success: result.success,
     retryAfter: Math.max(1, Math.ceil((result.reset - Date.now()) / 1000)),

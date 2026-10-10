@@ -12,6 +12,7 @@ export const diagnosticOperations = {
   INVENTORY_PHOTO_FETCH: "Fetch photo: check origin allowlist, signature, size and upstream availability.",
   CUSTOMER_REQUEST_ACCEPT: "Accept request: check private Blob, encryption key, limiter and UUID reuse.",
   CUSTOMER_REQUEST_INBOX_READ: "Read inbox: check authenticated admin session and private Blob/encryption settings.",
+  CUSTOMER_REQUEST_INBOX_DELETE: "Delete request: check authenticated admin session and private Blob settings.",
   CUSTOMER_REQUEST_EMAIL_NOTIFY: "Notify staff: check Resend configuration/provider. Do not reverse acceptance.",
   ADMIN_PASSWORD_BOOTSTRAP: "Bootstrap enrollment: inspect Redis, credential state and login limiter.",
   ADMIN_SESSION_LOGOUT: "Revoke session: check Redis availability and cookie expiry.",

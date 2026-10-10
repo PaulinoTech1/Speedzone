@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
+test.use({ baseURL: "http://localhost:4184" });
+
 const onePixelJpeg = Buffer.from(
   "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EH//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EH//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/EH//2Q==",
   "base64",
@@ -51,7 +53,7 @@ test("an admin can read and preview JPEG, PNG, and WebP photos", async ({ page }
   await page.route("**/api/inventory", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
-    body: JSON.stringify([]),
+    body: JSON.stringify({ vehicles: [], revision: "fixture" }),
   }));
 
   await signIn(page);
@@ -150,7 +152,7 @@ test("the Add photos button uploads sequentially and appends to an existing list
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(inventory),
+      body: JSON.stringify({ vehicles: inventory, revision: "fixture" }),
     });
   });
 
@@ -173,7 +175,5 @@ test("the Add photos button uploads sequentially and appends to an existing list
   expect(inventory[0]?.photos[0]).toBe(existingPhoto);
 
   await page.reload();
-  await page.getByLabel("Password").fill("test-password");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.locator(".admin-listing", { hasText: "2022 Honda Civic" })).toContainText("3 photos");
 });

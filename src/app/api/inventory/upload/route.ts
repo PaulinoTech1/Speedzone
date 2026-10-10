@@ -9,6 +9,10 @@ import {
   maxInventoryPhotoSize,
 } from "@/lib/inventory-photos";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
+import { validAdminMutation } from "@/lib/admin-mutation";
+import { getRedis } from "@/lib/redis";
+import { inventoryPhotoStateKey } from "@/lib/inventory-state";
+import { readBoundedJson, RequestBodyError } from "../../../../../security-console/shared/mutation-request";
 
 function uploadConfigurationError() {
   if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {
@@ -37,14 +41,16 @@ export async function GET(request: Request) {
 }
 
 async function diagnosedPOST(request: Request) {
+  if (!(await isAdminAuthenticated(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   let parsedBody: unknown;
 
   try {
-    parsedBody = await request.json();
-  } catch {
+    parsedBody = await readBoundedJson(request);
+  } catch (error) {
     return NextResponse.json(
       { error: "Invalid upload request" },
-      { status: 400, headers: privateResponseHeaders() },
+      { status: error instanceof RequestBodyError ? error.status : 400, headers: privateResponseHeaders() },
     );
   }
 
@@ -93,6 +99,11 @@ async function diagnosedPOST(request: Request) {
   }
 
   try {
+    const redis = getRedis();
+    if (!redis) throw new Error("Upload coordination is unavailable");
+    const url = `${getInventoryBlobOrigin()}/${body.payload.pathname}`;
+    const key = inventoryPhotoStateKey(url);
+    if (!await redis.set(key, "uploading", { nx: true, ex: 86400 })) throw new Error("Photo path is already reserved");
     const response = await handleUpload({
       body,
       request,
@@ -100,6 +111,8 @@ async function diagnosedPOST(request: Request) {
         allowedContentTypes: inventoryPhotoContentTypes,
         maximumSizeInBytes: maxInventoryPhotoSize,
         addRandomSuffix: false,
+        allowOverwrite: false,
+        validUntil: Date.now() + 60 * 60 * 1000,
         cacheControlMaxAge: 60 * 60 * 24 * 30,
       }),
     });

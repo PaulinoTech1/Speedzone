@@ -71,6 +71,7 @@ img {
   background: color-mix(in srgb, var(--ink) 94%, transparent);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   padding-top: env(safe-area-inset-top);
 }
 
@@ -176,6 +177,13 @@ h3 {
   scroll-snap-type: inline proximity;
 }
 
+/* Fallback for browsers without flexbox gap (Safari < 14.1) */
+@supports not (gap: 0.25rem) {
+  .nav-track a + a {
+    margin-left: 0.25rem;
+  }
+}
+
 .nav-track::-webkit-scrollbar {
   display: none;
 }
@@ -185,7 +193,8 @@ h3 {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  padding-inline: 0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
   color: #d7d7d4;
   font-size: 0.76rem;
   font-weight: 750;
@@ -1800,9 +1809,16 @@ body:has(.error-page) {
     gap: 0.75rem;
   }
 
+  @supports not (gap: 0.25rem) {
+    .nav-track a + a {
+      margin-left: 0.75rem;
+    }
+  }
+
   .nav-track a,
   .nav-track a:first-child {
-    padding-inline: 0.5rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
   }
 
   .header-call {

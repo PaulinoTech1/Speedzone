@@ -23,8 +23,8 @@ async function handlePOST(request: Request) {
   if (!limit.success) return NextResponse.json({ error: "Too many recovery attempts. Try again later." }, { status: 429, headers: { ...noStore, "Retry-After": String(limit.retryAfter) } });
   const body = await request.json().catch(() => ({}));
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  if (email !== recoveryEmail) return NextResponse.json({ ok: true, message: "If the request is eligible, an email will be sent." }, { headers: noStore });
   if (!recoveryConfigured()) return NextResponse.json({ error: "Recovery is temporarily unavailable" }, { status: 503, headers: noStore });
+  if (email !== recoveryEmail) return NextResponse.json({ ok: true, message: "If the request is eligible, an email will be sent." }, { headers: noStore });
   const token = await createRecoveryToken();
   if (!token) return NextResponse.json({ error: "Recovery is temporarily unavailable" }, { status: 503, headers: noStore });
   const domain = process.env.RESEND_EMAIL_DOMAIN;
@@ -37,10 +37,10 @@ async function handlePOST(request: Request) {
     from: `SpeedZone Admin <admin@${domain}>`,
     to: [recoveryEmail],
     subject: "SpeedZone admin password recovery",
-    text: `A password recovery was requested for SpeedZone inventory admin. Reset your password here: ${new URL(`/admin?recovery=${encodeURIComponent(token)}`, request.url)}\n\nThis link expires in ${Math.floor(recoveryTtlSeconds / 60)} minutes and can only be used once.`,
+    text: `A password recovery was requested for SpeedZone inventory admin. Reset your password here: ${new URL(`/admin?recovery=${encodeURIComponent(token)}`, process.env.WEBAUTHN_ORIGIN!)}\n\nThis link expires in ${Math.floor(recoveryTtlSeconds / 60)} minutes and can only be used once.`,
   }, { idempotencyKey: `admin-recovery/${token}` });
   if (error) return NextResponse.json({ error: "Unable to send recovery email" }, { status: 502, headers: noStore });
-  return NextResponse.json({ ok: true, message: `If recovery is available, a link was sent to ${recoveryEmail}.` }, { headers: noStore });
+  return NextResponse.json({ ok: true, message: "If the request is eligible, an email will be sent." }, { headers: noStore });
 }
 
 async function diagnosedPOST(request: Request) { return auditRoute(request, "admin.recovery", () => handlePOST(request), "post"); }

@@ -14,6 +14,7 @@ export type SecurityEventName =
   | "inventory.mutation"
   | "inventory.upload"
   | "test-drive.submission"
+  | "test-drive.deletion"
   | "test-drive.notification"
   | "bug-report.submission";
 
