@@ -102,6 +102,7 @@ export function diagnoseInventoryPhotoUrl(value: unknown) {
   } catch {
     return "photo URL is not a valid URL";
   }
+  if (value !== url.href) return "photo URL must use its canonical form";
 
   if (url.protocol !== "https:") return `photo URL must use HTTPS (received ${url.protocol || "no protocol"})`;
   if (!url.hostname.endsWith(publicBlobHostSuffix)) return `photo URL is not a Vercel public Blob URL (host: ${url.hostname})`;

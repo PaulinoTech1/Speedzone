@@ -3,8 +3,8 @@ import { getRedis } from "@/lib/redis";
 import { createHmac } from "node:crypto";
 
 const redis = getRedis();
-const ipLimiter = redis ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, "1 h"), prefix: "speedzone:test-drive:ip", analytics: false }) : null;
-const contactLimiter = redis ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, "1 h"), prefix: "speedzone:test-drive:contact", analytics: false }) : null;
+const ipLimiter = redis ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, "1 h"), prefix: "speedzone:test-drive:ip", analytics: false, timeout: 2000 }) : null;
+const contactLimiter = redis ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, "1 h"), prefix: "speedzone:test-drive:contact", analytics: false, timeout: 2000 }) : null;
 
 export function getRequestKeys(request: Request, email: string, phone: string) {
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -20,7 +20,10 @@ export function getRequestKeys(request: Request, email: string, phone: string) {
 
 export async function limitTestDriveSubmission(keys: { ip: string; contact: string }) {
   if (!ipLimiter || !contactLimiter) return { success: false, configured: false, retryAfter: 3600 };
-  const [ipResult, contactResult] = await Promise.all([ipLimiter.limit(keys.ip), contactLimiter.limit(keys.contact)]);
+  let ipResult, contactResult;
+  try { [ipResult, contactResult] = await Promise.all([ipLimiter.limit(keys.ip), contactLimiter.limit(keys.contact)]); }
+  catch { return { success: false, configured: false, retryAfter: 30 }; }
+  if (ipResult.reason === "timeout" || contactResult.reason === "timeout") return { success: false, configured: false, retryAfter: 30 };
   const reset = Math.max(...[ipResult, contactResult].filter(result => !result.success).map(result => result.reset), Date.now());
   return {
     success: ipResult.success && contactResult.success,

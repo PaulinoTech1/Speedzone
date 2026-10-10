@@ -7,7 +7,7 @@
     "dev": "next dev --hostname localhost --port 4173",
     "build": "next build",
     "check:deps": "node scripts/check-deps.js",
-    "prebuild": "npm run check:deps",
+    "prebuild": "npm run check:deps && npm run check:security-config",
     "postinstall": "node scripts/patch-tar.cjs && node scripts/patch-toml.cjs && node scripts/patch-yaml.cjs && node scripts/patch-glob.cjs",
     "start": "next start --hostname localhost --port 4173",
     "typecheck": "tsc --noEmit",
@@ -17,10 +17,12 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "vercel": "vercel",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "check:security-config": "node scripts/check-security-config.mjs",
+    "migrate:inventory": "node scripts/migrate-inventory.mjs"
   },
   "engines": {
-    "node": "22.x"
+    "node": "24.x"
   },
   "overrides": {
     "@tootallnate/once": "^2.0.1",
@@ -28,7 +30,9 @@
     "smol-toml": "^1.7.1",
     "js-yaml": "$js-yaml",
     "minimatch@>=3 <4": "^3.1.5",
-    "minimatch@>=10 <11": "^10.2.6"
+    "minimatch@>=10 <11": "^10.2.6",
+    "sharp": "^0.35.5",
+    "source-map-js": "^1.2.2"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^14.0.0",
@@ -37,7 +41,7 @@
     "@upstash/redis": "^1.38.4",
     "@vercel/blob": "^2.8.0",
     "argon2": "^0.44.0",
-    "next": "^16.3.4",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "resend": "^6.26.0"
@@ -48,7 +52,7 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "eslint": "^9.39.5",
-    "eslint-config-next": "16.3.1",
+    "eslint-config-next": "16.3.8",
     "js-yaml": "^4.3.2",
     "typescript": "5.9.3",
     "vercel": "^59.16.0",

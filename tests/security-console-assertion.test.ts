@@ -1,8 +1,11 @@
+import { credentialGrantKey } from "../security-console/shared/credential-grants";
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), eval: vi.fn(), verify: vi.fn(), options: vi.fn(), session: vi.fn() }));
 vi.mock("../security-console/lib/redis", () => ({ getSecurityRedis: () => mocks }));
 vi.mock("../security-console/lib/password", () => ({ currentCredentialEpoch: async () => 3 }));
-vi.mock("../security-console/lib/auth", () => ({ validateSecuritySession: mocks.session }));
+const context = { sessionKey: "session", generationKey: "generation", generation: "synthetic-generation", epochKey: "epoch", epoch: 3, policy: { field: "level", value: "mfa", absoluteMs: 14400000, idleMs: 900000 } };
+const grant = "g".repeat(43);
+vi.mock("../security-console/lib/auth", () => ({ validateSecuritySession: mocks.session, mfaSessionContext: async () => await mocks.session() ? context : null }));
 vi.mock("@simplewebauthn/server", () => ({ generateAuthenticationOptions: mocks.options, verifyAuthenticationResponse: mocks.verify,
   generateRegistrationOptions: vi.fn(), verifyRegistrationResponse: vi.fn() }));
 import { authenticationOptions, establishedPasskeyCount, verifyAuthentication, registrationOptions, verifyRegistration } from "../security-console/lib/passkeys";
@@ -12,7 +15,7 @@ const key = { id: "established-key", publicKey: "AQID", counter: 7, credentialEp
 const assertion = { id: key.id, response: { clientDataJSON: Buffer.from(JSON.stringify({ challenge: "one-use-challenge" })).toString("base64url") } };
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.get.mockImplementation(async name => name.endsWith("passkeys:v1") ? [key] : { challenge: "one-use-challenge", credentialEpoch: 3, createdAt: Date.now(), origin });
+  mocks.get.mockImplementation(async name => name.endsWith("passkeys:v1") ? [key] : { challenge: "one-use-challenge", credentialEpoch: 3, createdAt: Date.now(), origin, sessionKey: "session", grantKey: credentialGrantKey("speedzone:security-console:credential-grant:", grant) });
   mocks.options.mockResolvedValue({ challenge: "one-use-challenge" });
   mocks.verify.mockResolvedValue({ verified: true, authenticationInfo: { newCounter: 8 } }); mocks.eval.mockResolvedValue(1);
 });
@@ -38,12 +41,12 @@ it("does not fall back to enrollment when established credentials are unavailabl
 });
 it("password-only sessions cannot enroll or verify a new registration", async () => {
   mocks.session.mockResolvedValue(false);
-  expect(await registrationOptions(config, origin)).toHaveProperty("error");
+  expect(await registrationOptions(config, origin, undefined, grant)).toHaveProperty("error");
   expect(await verifyRegistration({}, "Replacement", config)).toHaveProperty("error");
   expect(mocks.eval).not.toHaveBeenCalled();
 });
 it.each([undefined, 2])("accepts established credentials with schema marker %s", async schema => {
-  mocks.get.mockImplementation(async name => name.endsWith("passkeys:v1") ? [{ ...key, schema }] : { challenge: "one-use-challenge", credentialEpoch: 3, createdAt: Date.now(), origin });
+  mocks.get.mockImplementation(async name => name.endsWith("passkeys:v1") ? [{ ...key, schema }] : { challenge: "one-use-challenge", credentialEpoch: 3, createdAt: Date.now(), origin, sessionKey: "session", grantKey: credentialGrantKey("speedzone:security-console:credential-grant:", grant) });
   expect(await establishedPasskeyCount()).toBe(1);
   expect(await authenticationOptions(config, origin)).toHaveProperty("options");
   expect(await verifyAuthentication(assertion, config)).toEqual({ verified: true, credentialEpoch: 3 });
@@ -60,13 +63,13 @@ it("preserves supported transports when an MFA user adds a passkey", async () =>
   const { generateRegistrationOptions, verifyRegistrationResponse } = await import("@simplewebauthn/server");
   mocks.session.mockResolvedValue(true);
   vi.mocked(generateRegistrationOptions).mockResolvedValue({ challenge: "one-use-challenge" } as never);
-  expect(await registrationOptions(config, origin)).toHaveProperty("options");
+  expect(await registrationOptions(config, origin, undefined, grant)).toHaveProperty("options");
   expect(generateRegistrationOptions).toHaveBeenCalledWith(expect.objectContaining({ excludeCredentials: [{ id: key.id, transports: key.transports }] }));
   vi.mocked(verifyRegistrationResponse).mockResolvedValue({ verified: true, registrationInfo: {
     credential: { id: "new-key", publicKey: new Uint8Array([1, 2, 3]), counter: 0, transports: ["internal", "usb", "future-transport"] },
     credentialDeviceType: "singleDevice", credentialBackedUp: false,
   } } as never);
-  expect(await verifyRegistration(assertion, "Backup", config)).toEqual({ verified: true, credentialEpoch: 3 });
+  expect(await verifyRegistration(assertion, "Backup", config, undefined, grant)).toEqual({ verified: true, credentialEpoch: 3 });
   expect(mocks.eval).toHaveBeenCalledTimes(1);
   const stored = JSON.parse(mocks.eval.mock.calls[0]![2][2]);
   expect(stored).toMatchObject({ id: "new-key", transports: ["internal", "usb"], credentialEpoch: 3 });

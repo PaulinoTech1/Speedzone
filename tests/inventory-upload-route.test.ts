@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   handleUpload: vi.fn<(options: unknown) => Promise<unknown>>(),
+  set: vi.fn(),
   isAdminAuthenticated: vi.fn<() => Promise<boolean>>(),
 }));
 
+vi.mock("@/lib/redis", () => ({ getRedis: () => ({ set: mocks.set }) }));
 vi.mock("@vercel/blob/client", () => ({ handleUpload: mocks.handleUpload }));
 vi.mock("@/lib/admin-auth", () => ({
   isAdminAuthenticated: mocks.isAdminAuthenticated,
@@ -16,7 +18,7 @@ import { GET, POST } from "@/app/api/inventory/upload/route";
 function tokenRequest(pathname: string) {
   return new Request("https://speedzone.example/api/inventory/upload", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: "https://speedzone.example" },
     body: JSON.stringify({
       type: "blob.generate-client-token",
       payload: { pathname, multipart: false, clientPayload: null },
@@ -29,6 +31,7 @@ describe("inventory photo upload route", () => {
   const originalToken = process.env.BLOB_READ_WRITE_TOKEN;
 
   beforeEach(() => {
+    mocks.set.mockReset(); mocks.set.mockResolvedValue("OK");
     mocks.handleUpload.mockReset();
     mocks.isAdminAuthenticated.mockReset();
     process.env.INVENTORY_BLOB_ORIGIN = "https://speedzone.public.blob.vercel-storage.com";
@@ -60,7 +63,7 @@ describe("inventory photo upload route", () => {
     expect(mocks.isAdminAuthenticated).toHaveBeenCalledWith(request);
   });
 
-  it("preserves readiness for password/setup-authorized inventory sessions", async () => {
+  it("preserves readiness for passkey-authorized inventory sessions", async () => {
     mocks.isAdminAuthenticated.mockResolvedValue(true);
     const response = await GET(new Request("https://speedzone.example/api/inventory/upload"));
     expect(response.status).toBe(200);
@@ -76,15 +79,16 @@ describe("inventory photo upload route", () => {
     expect(await response.json()).toEqual({ ready: false, error: "Inventory photo storage is missing BLOB_READ_WRITE_TOKEN" });
   });
 
-  it("rejects malformed token requests", async () => {
+  it("rejects malformed token requests after authentication", async () => {
+    mocks.isAdminAuthenticated.mockResolvedValue(true);
     const response = await POST(new Request("https://speedzone.example/api/inventory/upload", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", origin: "https://speedzone.example" },
       body: "null",
     }));
 
     expect(response.status).toBe(400);
-    expect(mocks.isAdminAuthenticated).not.toHaveBeenCalled();
+    expect(mocks.isAdminAuthenticated).toHaveBeenCalled();
     expect(mocks.handleUpload).not.toHaveBeenCalled();
   });
 

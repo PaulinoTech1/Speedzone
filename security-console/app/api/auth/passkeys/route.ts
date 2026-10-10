@@ -6,6 +6,8 @@ import { enforceRateLimit } from "../../../../lib/rate-limit";
 import { recordConsoleAudit } from "../../../../lib/console-audit";
 import { logAuthenticationFailure } from "../../../../lib/auth-health";
 import { firstPasskeyOptions, verifyFirstPasskey, recoveryRegistrationOptions, verifyRecoveryRegistration } from "../../../../lib/passkeys";
+import { credentialActionOptions, verifyCredentialAction } from "../../../../lib/passkeys";
+import { readBoundedJson, validMutationOrigin, RequestBodyError } from "../../../../shared/mutation-request";
 
 export async function GET(request: Request) {
   if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
@@ -15,9 +17,20 @@ export async function POST(request: Request) {
   try {
   const rate = await enforceRateLimit(request, "passkey", 12, 300);
   if (!rate.allowed) { await recordConsoleAudit(request,"console.passkey","denied","rate_limited"); return NextResponse.json({ error: "Too many attempts" }, { status: 429, headers: { ...privateHeaders, "Retry-After": String(rate.retryAfter) } }); }
-  const body = await request.json().catch(() => ({})) as { action?: string; response?: unknown; name?: string; code?: unknown };
+  const body = await readBoundedJson(request) as { action?: string; response?: unknown; name?: string; code?: unknown; operation?: string; id?: string; grant?: unknown };
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   const config = getWebAuthnConfig(await headers());
   const origin = requestOrigin(request, config);
+  if (!validMutationOrigin(request, config.origins)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403, headers: privateHeaders });
+  if (body.action === "reauthentication-options" || body.action === "reauthenticate") {
+    if (body.operation !== "add" && body.operation !== "delete") return NextResponse.json({ error: "Invalid credential action" }, { status: 400 });
+    const target = body.operation === "delete" && typeof body.id === "string" ? body.id : "";
+    if (body.operation === "delete" && !target) return NextResponse.json({ error: "Passkey not found" }, { status: 400 });
+    const result = body.action === "reauthentication-options"
+      ? await credentialActionOptions(request, config, origin!, body.operation, target)
+      : await verifyCredentialAction(request, body.response, config, body.operation, target);
+    return NextResponse.json(result, { status: "error" in result ? 403 : 200, headers: privateHeaders });
+  }
   if (body.action === "bootstrap-options" || body.action === "bootstrap") {
     if (!origin || request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
       return NextResponse.json({ error: "Invalid setup request" }, { status: 403, headers: privateHeaders });
@@ -49,11 +62,12 @@ export async function POST(request: Request) {
   if (body.action === "registration-options") {
     if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Verify your established passkey first" }, { status: 401, headers: privateHeaders });
     if (!origin) return NextResponse.json({ error: "Invalid setup request" }, { status: 403, headers: privateHeaders });
-    return NextResponse.json(await registrationOptions(config, origin), { headers: privateHeaders });
+    const result = await registrationOptions(config, origin, request, body.grant);
+    return NextResponse.json(result, { status: "error" in result ? 403 : 200, headers: privateHeaders });
   }
   if (body.action === "register") {
     if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Verify your established passkey first" }, { status: 401, headers: privateHeaders });
-    const verified = await verifyRegistration(body.response, String(body.name ?? "Security passkey").slice(0, 80), config);
+    const verified = await verifyRegistration(body.response, String(body.name ?? "Security passkey").slice(0, 80), config, request, body.grant);
     if (!("verified" in verified) || verified.verified !== true) return NextResponse.json(verified, { status: 400, headers: privateHeaders });
     await recordConsoleAudit(request,"console.passkey","allowed","registered");
     return NextResponse.json({ verified: true }, { headers: privateHeaders });
@@ -84,7 +98,8 @@ export async function POST(request: Request) {
     const response = NextResponse.json({ verified: true }, { headers: privateHeaders }); response.cookies.set(SECURITY_COOKIE, session, securityCookieOptions); return response;
   }
   return NextResponse.json({ error: "Unsupported action" }, { status: 400, headers: privateHeaders });
-  } catch {
+  } catch (error) {
+    if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status, headers: privateHeaders });
     await logAuthenticationFailure("storage_unavailable");
     return NextResponse.json({ error: "Security Console authentication is unavailable. Please try again later." }, { status: 503, headers: privateHeaders });
   }
@@ -92,5 +107,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   if (!await validateSecuritySession(request, "mfa")) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: privateHeaders });
   const id = new URL(request.url).searchParams.get("id") ?? "";
-  const result = await deletePasskey(id); if(result.deleted)await recordConsoleAudit(request,"console.passkey","allowed","removed"); return NextResponse.json(result, { status: result.deleted ? 200 : 409, headers: privateHeaders });
+  const config = getWebAuthnConfig(request.headers);
+  if (!validMutationOrigin(request, config.origins)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403, headers: privateHeaders });
+  const result = await deletePasskey(id, request, request.headers.get("x-passkey-grant")); if(result.deleted)await recordConsoleAudit(request,"console.passkey","allowed","removed"); return NextResponse.json(result, { status: result.deleted ? 200 : 409, headers: privateHeaders });
 }

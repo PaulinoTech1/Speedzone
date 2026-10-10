@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import argon2 from "argon2";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ store: {} as Record<string,string>, cookie: "", changeLegacyEpoch: false, recoveryRace: "", bootstrapRace: "" }));
+const state = vi.hoisted(() => ({ store: {} as Record<string,string>, cookie: "", changeLegacyEpoch: false, recoveryRace: "", bootstrapRace: "", managedRevoked: false }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => state.cookie ? { value: state.cookie } : undefined }), headers: async () => new Headers({ host: "www.speedzonems.com" }) }));
 vi.mock("../security-console/lib/redis", () => ({
   securityRedisConfiguration: () => ({ status: "SET", source: "ADMIN_SECURITY" }),
@@ -46,6 +46,7 @@ vi.mock("../security-console/lib/redis", () => ({
           state.store[keys[4]!] = JSON.stringify(session);
         }
       }
+      if (state.managedRevoked && keys[5]?.includes("credential-grant:")) { delete state.store[keys[3]!]; state.managedRevoked=false; }
       if (state.changeLegacyEpoch && keys[0] === "speedzone:security-console:credential:v1") state.store["speedzone:security-console:credential-epoch"] = "4";
       const output = execFileSync("python", [resolve("tests/helpers/security-lua.py")], {
         input: JSON.stringify({ script, keys, args, store: state.store }), encoding: "utf8",
@@ -65,6 +66,24 @@ import IntegrityPage from "../src/app/Security_Console/integrity/page";
 import ReportsPage from "../src/app/Security_Console/reports/page";
 import { SECURITY_COOKIE, validateSecuritySession } from "../security-console/lib/auth";
 import { firstPasskeyAvailable } from "../security-console/lib/passkeys";
+
+async function mfaLogin() {
+  await passwordLogin(); const response = await assertion();
+  const verified = await passkey(request('/api/auth/passkeys', { action:'authenticate', response }));
+  expect(verified.status).toBe(200);state.cookie=verified.headers.get('set-cookie')!.split(';')[0]!.split('=')[1]!;
+}
+async function authorizeCredentialChange(operation: 'add'|'delete', id='') {
+  const optionsResponse = await passkey(request('/api/auth/passkeys',{action:'reauthentication-options',operation,id}));
+  expect(optionsResponse.status).toBe(200);const {options}=await optionsResponse.json();
+  const clientData=Buffer.from(JSON.stringify({type:'webauthn.get',challenge:options.challenge,origin:'https://www.speedzonems.com'}));
+  const currentCounter=JSON.parse(state.store[`${prefix}passkeys:v1`]!).find((item:{id:string})=>item.id===credential.id).counter;
+  const counter=Buffer.alloc(4);counter.writeUInt32BE(currentCounter+1);
+  const authenticatorData=Buffer.concat([createHash('sha256').update('www.speedzonems.com').digest(),Buffer.from([5]),counter]);
+  const signature=sign('sha256',Buffer.concat([authenticatorData,createHash('sha256').update(clientData).digest()]),keys.privateKey);
+  const response={id:credential.id,rawId:credential.id,type:'public-key',clientExtensionResults:{},response:{clientDataJSON:clientData.toString('base64url'),authenticatorData:authenticatorData.toString('base64url'),signature:signature.toString('base64url')}};
+  const verified=await passkey(request('/api/auth/passkeys',{action:'reauthenticate',operation,id,response}));
+  expect(verified.status).toBe(200);return (await verified.json()).grant as string;
+}
 const prefix = "speedzone:security-console:";
 const password = "SyntheticIntegrationPassword!42";
 const keys = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
@@ -82,7 +101,8 @@ async function assertion(selectedId = credential.id) {
   expect(options.allowCredentials.map((item: {id:string}) => item.id)).toContain(selectedId);
   expect(options.userVerification).toBe("required");
   const clientData = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: options.challenge, origin: "https://www.speedzonems.com", crossOrigin: false }));
-  const counter = Buffer.alloc(4); counter.writeUInt32BE(8);
+  const currentCounter = JSON.parse(state.store[`${prefix}passkeys:v1`] || "[]").find((item: {id:string}) => item.id === selectedId)?.counter ?? 7;
+  const counter = Buffer.alloc(4); counter.writeUInt32BE(currentCounter + 1);
   const authenticatorData = Buffer.concat([createHash("sha256").update("www.speedzonems.com").digest(), Buffer.from([5]), counter]);
   const signature = sign("sha256", Buffer.concat([authenticatorData, createHash("sha256").update(clientData).digest()]), keys.privateKey);
   return { id: selectedId, rawId: selectedId, type: "public-key", clientExtensionResults: {}, response: { clientDataJSON: clientData.toString("base64url"), authenticatorData: authenticatorData.toString("base64url"), signature: signature.toString("base64url") } };
@@ -91,7 +111,37 @@ beforeEach(async () => {
   vi.stubEnv("NEXT_PUBLIC_SECURITY_CONSOLE_BASE_PATH", "/Security_Console");
   vi.stubEnv("EMBEDDED_SECURITY_WEBAUTHN_RP_ID", "www.speedzonems.com"); vi.stubEnv("EMBEDDED_SECURITY_WEBAUTHN_ORIGIN", "https://www.speedzonems.com");
   vi.stubEnv("SECURITY_PASSKEY_RECOVERY", "");
-  state.cookie = ""; state.changeLegacyEpoch = false; state.recoveryRace = ""; state.bootstrapRace = ""; state.store = { [`${prefix}credential:v1`]: await argon2.hash(password), [`${prefix}credential-epoch:v1`]: "3", [`${prefix}passkeys:v1`]: JSON.stringify([credential]) };
+  state.managedRevoked = false; state.cookie = ""; state.changeLegacyEpoch = false; state.recoveryRace = ""; state.bootstrapRace = ""; state.store = { [`${prefix}credential:v1`]: await argon2.hash(password), [`${prefix}credential-epoch:v1`]: "3", [`${prefix}passkeys:v1`]: JSON.stringify([credential]) };
+});
+
+it('an old stolen console MFA session cannot add a key without a fresh action proof',async()=>{
+  await mfaLogin();const key=sessionKey();const session=JSON.parse(state.store[key]!);
+  session.createdAt=Date.now()-3_700_000;session.passkeyVerifiedAt=Date.now()-3_600_000;state.store[key]=JSON.stringify(session);
+  expect((await passkey(request('/api/auth/passkeys',{action:'registration-options'}))).status).toBe(403);
+  expect(JSON.parse(state.store[`${prefix}passkeys:v1`]!)).toHaveLength(1);
+});
+it('fresh established-key proof permits a single managed registration',async()=>{
+  await mfaLogin();const grant=await authorizeCredentialChange('add');
+  const response=await recoveryResponse(Buffer.from('managed-backup').toString('base64url'),'registration-options',grant);
+  expect((await passkey(request('/api/auth/passkeys',{action:'register',response,grant}))).status).toBe(200);
+  expect(JSON.parse(state.store[`${prefix}passkeys:v1`]!)).toHaveLength(2);
+  expect((await passkey(request('/api/auth/passkeys',{action:'register',response,grant}))).status).toBe(400);
+});
+it('console session revocation at managed commit blocks the new key',async()=>{
+  await mfaLogin();const grant=await authorizeCredentialChange('add');
+  const response=await recoveryResponse(Buffer.from('revoked-managed-backup').toString('base64url'),'registration-options',grant);
+  state.managedRevoked=true;
+  expect((await passkey(request('/api/auth/passkeys',{action:'register',response,grant}))).status).toBe(400);
+  expect(JSON.parse(state.store[`${prefix}passkeys:v1`]!)).toHaveLength(1);
+});
+it('a scoped console removal keeps the current session and revokes other sessions',async()=>{
+  await mfaLogin();const other=state.cookie;await mfaLogin();const current=state.cookie;
+  state.store[`${prefix}passkeys:v1`]=JSON.stringify([credential,{...credential,id:'backup'}]);
+  const grant=await authorizeCredentialChange('delete','backup');
+  const removal=new Request('https://www.speedzonems.com/Security_Console/api/auth/passkeys?id=backup',{method:'DELETE',headers:{cookie:`${SECURITY_COOKIE}=${current}`,origin:'https://www.speedzonems.com','x-passkey-grant':grant}});
+  const { DELETE } = await import('../src/app/Security_Console/api/auth/passkeys/route');
+  expect((await DELETE(removal)).status).toBe(200);expect(await validateSecuritySession()).toBe(true);
+  state.cookie=other;expect(await validateSecuritySession()).toBe(false);
 });
 function legacyState() {
   state.store[`${prefix}password`] = state.store[`${prefix}credential:v1`]!;
@@ -181,8 +231,8 @@ const recoveryCode = "R".repeat(43);
 function enableRecovery() {
   vi.stubEnv("SECURITY_PASSKEY_RECOVERY", JSON.stringify({ sha256: createHash("sha256").update(recoveryCode).digest("hex"), expiresAt: Date.now() + 3_600_000 }));
 }
-async function recoveryResponse(id = Buffer.from("recovered-key").toString("base64url"), action = "recovery-options") {
-  const response = await passkey(request("/api/auth/passkeys", { action, code: recoveryCode }));
+async function recoveryResponse(id = Buffer.from("recovered-key").toString("base64url"), action = "recovery-options", grant?: string) {
+  const response = await passkey(request("/api/auth/passkeys", { action, code: recoveryCode, grant }));
   expect(response.status).toBe(200);
   const { options } = await response.json();
   expect(options.authenticatorSelection.userVerification).toBe("required");
@@ -309,7 +359,7 @@ it("requires password login, origin, and JSON for first-passkey setup", async ()
   await passwordLogin(); delete state.store[`${prefix}passkeys:v1`];
   for (const header of ["origin", "content-type"]) {
     const invalid = request("/api/auth/passkeys", { action: "bootstrap-options" }); invalid.headers.delete(header);
-    expect((await passkey(invalid)).status).toBe(403);
+    expect((await passkey(invalid)).status).toBe(header === "content-type" ? 415 : 403);
   }
   expect(state.store[`${prefix}passkeys:v1`]).toBeUndefined();
 });

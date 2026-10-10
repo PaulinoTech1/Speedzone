@@ -31,4 +31,6 @@ lua.globals().cjson = lua.table_from({"decode": lambda raw: lua.table_from(json.
 lua.globals().KEYS = lua.table_from(data["keys"])
 lua.globals().ARGV = lua.table_from([str(arg) for arg in data["args"]])
 result = lua.execute(data["script"])
-print(json.dumps({"result": result, "store": store}))
+reply = unpack(result)
+if hasattr(result, "items") and not dict(result.items()): reply = []
+print(json.dumps({"result": reply, "store": store}))

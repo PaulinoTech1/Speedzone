@@ -1,7 +1,9 @@
 import { withDiagnostics } from "@/lib/diagnostics";
-import { BlobPreconditionFailedError, del } from "@vercel/blob";
+import { BlobPreconditionFailedError } from "@vercel/blob";
 import { NextResponse } from "next/server";
-import { appendVehiclePhotos, normalizeEtag, readInventorySnapshot, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
+import { appendVehiclePhotos, InventoryReadOnlyError, normalizeEtag, readInventorySnapshot, sanitizeVehicleInput, writeInventory } from "@/lib/inventory";
+import { validAdminMutation } from "@/lib/admin-mutation";
+import { readBoundedJson, RequestBodyError } from "../../../../security-console/shared/mutation-request";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { diagnoseInventoryPhotoUrl, isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
@@ -28,8 +30,9 @@ async function diagnosedGET(request: Request) {
 async function diagnosedPOST(request: Request) {
   const context=securityRequestContext(request,true);
   if (!(await isAdminAuthenticated(request))) {await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"denied",actor:"anonymous",reason:"authentication_required",metadata:{operation:"create"}});return NextResponse.json({ error: "Unauthorized" }, { status: 401 });}
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   try {
-    const body = (await request.json()) as { vehicle?: unknown; photos?: unknown };
+    const body = (await readBoundedJson(request)) as { vehicle?: unknown; photos?: unknown };
     const payload = body.vehicle && typeof body.vehicle === "object"
       ? body.vehicle as Record<string, unknown>
       : {};
@@ -54,8 +57,9 @@ async function diagnosedPOST(request: Request) {
 async function handlePATCH(request: Request) {
   const context=securityRequestContext(request,true);
   if (!(await isAdminAuthenticated(request))) {await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"denied",actor:"anonymous",reason:"authentication_required",metadata:{operation:"update"}});return NextResponse.json({ error: "Unauthorized" }, { status: 401 });}
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   try {
-    const body = (await request.json()) as { id?: unknown; photos?: unknown } & Record<string, unknown>;
+    const body = (await readBoundedJson(request)) as { id?: unknown; photos?: unknown } & Record<string, unknown>;
     if (typeof body.id !== "string" || !body.id) {
       return NextResponse.json({ error: "Vehicle not found" }, { status: 404 });
     }
@@ -92,8 +96,9 @@ async function handlePATCH(request: Request) {
 async function handleDELETE(request: Request) {
   const context=securityRequestContext(request,true);
   if (!(await isAdminAuthenticated(request))) {await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"denied",actor:"anonymous",reason:"authentication_required",metadata:{operation:"delete"}});return NextResponse.json({ error: "Unauthorized" }, { status: 401 });}
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   try {
-  const body = await request.json().catch(() => ({})) as { id?: unknown; photos?: unknown };
+  const body = await readBoundedJson(request) as { id?: unknown; photos?: unknown };
   const { vehicles, revision } = await readInventorySnapshot();
     const ifMatchRaw = request.headers.get("if-match");
     if (normalizeEtag(ifMatchRaw) !== revision) { await writeSecurityEvent({ ...context, event:"inventory.mutation",outcome:"denied",actor:"admin",reason:"revision_conflict",metadata:{operation:"delete",catalog_revision:revision,if_match_received:ifMatchRaw} }); return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 }); }
@@ -122,21 +127,17 @@ async function handleDELETE(request: Request) {
   } catch (error) { await writeSecurityEvent({...context,event:"inventory.mutation",outcome:"failed",actor:"admin",reason:"delete_failed",metadata:{failure_class:error instanceof Error?(error.constructor?.name||error.name):"UnknownError"}});return mutationError(error); }
 }
 
-// Delete photo blobs from storage after they are removed from the inventory.
-// Best-effort: the inventory JSON is the source of truth, so a blob deletion
-// failure is logged (not thrown) to avoid orphaned references on retry.
+// Physical deletion is deferred to coordinated, age-gated orphan cleanup.
+// An immediate delete can race a new reference from another listing.
 async function deletePhotoBlobs(urls: string[], context: ReturnType<typeof securityRequestContext>, reason: string) {
   const targets = [...new Set(urls)].filter((url) => isInventoryPhotoBlobOriginUrl(url));
   if (!targets.length) return;
-  try {
-    await del(targets);
-    await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "allowed", actor: "admin", reason, metadata: { blobs_deleted: targets.length } });
-  } catch (error) {
-    await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "failed", actor: "admin", reason, metadata: { blobs_failed: targets.length, failure_class: error instanceof Error ? (error.constructor?.name || error.name) : "UnknownError" } });
-  }
+  await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "allowed", actor: "admin", reason: "photo_cleanup_deferred", metadata: { operation: reason, blobs_pending: targets.length } });
 }
 
 function mutationError(error: unknown) {
+  if (error instanceof InventoryReadOnlyError) return NextResponse.json({ error: error.message }, { status: 503 });
+  if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
   if (error instanceof BlobPreconditionFailedError || (error instanceof Error && /already exists/i.test(error.message))) return NextResponse.json({ error: "Inventory changed. Reload inventory and review your edit before retrying." }, { status: 409 });
   return NextResponse.json({ error: "Unable to save inventory. Check your input and reload before retrying." }, { status: 400 });
 }
