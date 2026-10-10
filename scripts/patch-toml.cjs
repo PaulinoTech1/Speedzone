@@ -6,7 +6,7 @@ if (!fs.existsSync(root)) {
   if (!fs.existsSync(path.resolve(__dirname, '../node_modules/vercel'))) process.exit(0);
   throw new Error('Expected Vercel TOML dependency is missing.');
 }
-const ts = require('typescript');
+const ts = require('typescript5');
 const marker = '// SpeedZone TOML EOF and cursor guards v1';
 const helpers = `
 function speedzoneTomlError(ctx, code, message, ptr = ctx.p) {
