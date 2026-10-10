@@ -4,6 +4,11 @@ SpeedZone Motorsports serves the public dealership site and the security console
 
 The root application uses Next.js 16, React 19, Node.js 22, TypeScript, Vercel Blob, Upstash Redis, SimpleWebAuthn, Argon2id, Resend, Vitest, and Playwright. These services support the application architecture rather than representing a generic dependency list: Blob stores inventory and private test-drive objects, Redis stores authentication and rate-limit state, SimpleWebAuthn provides passkeys, Argon2id hashes the bootstrap password, Resend sends configured notifications and recovery messages, and Vitest/Playwright cover unit and browser behavior.
 
+## Current status
+
+- **Security telemetry verified in production (2026-09-16).** With `SECURITY_LOG_PROVIDER=axiom`, site events ingest to the Axiom `vercel` dataset as single-element JSON arrays and are queryable through the security console. Event integrity hashes verify on recompute. Operational notes: the ingest URL must be the dataset `/ingest` endpoint (the `/query` endpoint returns HTTP 400 for event payloads), and environment-variable changes require a redeploy to take effect.
+- **Test-drive submission is failing (2026-09-16, under investigation).** Public submissions currently return an error instead of a confirmation reference. Notification-email and encrypted-storage behavior are otherwise unchanged.
+
 ## Project functionality
 
 The public site currently includes:
@@ -86,7 +91,7 @@ The event structure has an optional `previousHash` field, but the current applic
 
 Raw IP addresses and complete user-agent strings are not written to application security events. Network context is added only to administrator and inventory-security events, using a keyed HMAC supplied through `SECURITY_IP_HASH_SECRET`. Public test-drive and bug-report events do not receive this client fingerprint.
 
-`writeSecurityEvent()` supports best-effort Axiom-style HTTP ingestion when `SECURITY_LOG_PROVIDER=axiom` and the ingest URL and token are configured. The delivery path is fail-open with respect to the business request: logging failures do not block the request. Authentication, credential, inventory, report-receipt, customer-request, and notification-delivery outcomes are instrumented.
+`writeSecurityEvent()` supports best-effort Axiom HTTP ingestion when `SECURITY_LOG_PROVIDER=axiom` and the ingest URL and token are configured. Each delivery POSTs a single-element JSON array (`[event]`) to the dataset `/ingest` endpoint; the `/query` endpoint rejects event payloads with HTTP 400. The delivery path is fail-open with respect to the business request: logging failures do not block the request. Authentication, credential, inventory, report-receipt, customer-request, and notification-delivery outcomes are instrumented. Ingestion is configured and verified in production (2026-09-16): events land in the Axiom `vercel` dataset with valid recomputable integrity hashes and are readable through the security console's query configuration.
 
 See [`docs/security-logging.md`](docs/security-logging.md) for additional architectural notes.
 
