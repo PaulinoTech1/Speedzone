@@ -1,5 +1,9 @@
 # SpeedZone Motorsports
 
+## TL;DR
+
+A security-hardened dealership website (speedzonems.com): passkey-first admin, integrity-checked telemetry, metadata-only customer notifications. Goal: a cheap-to-run site a nontechnical owner can maintain, doubling as a reusable security blueprint for small businesses.
+
 SpeedZone Motorsports serves the public dealership site and the security console at `https://www.speedzonems.com/Security_Console`. Thin route files under `src/app/Security_Console/` mount the single console implementation in `security-console/`. The console retains independent password and passkey authentication, Redis sessions, and its own host-only session cookie.
 
 The root application uses Next.js 16, React 19, Node.js 22, TypeScript, Vercel Blob, Upstash Redis, SimpleWebAuthn, Argon2id, Resend, Vitest, and Playwright. These services support the application architecture rather than representing a generic dependency list: Blob stores inventory and private test-drive objects, Redis stores authentication and rate-limit state, SimpleWebAuthn provides passkeys, Argon2id hashes the bootstrap password, Resend sends configured notifications and recovery messages, and Vitest/Playwright cover unit and browser behavior.
