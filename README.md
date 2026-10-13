@@ -11,7 +11,7 @@ The root application uses Next.js 16, React 19, Node.js 22, TypeScript, Vercel B
 ## Current status
 
 - **Security telemetry verified in production (2026-09-16).** With `SECURITY_LOG_PROVIDER=axiom`, site events ingest to the Axiom `vercel` dataset as single-element JSON arrays and are queryable through the security console. Event integrity hashes verify on recompute. Operational notes: the ingest URL must be the dataset `/ingest` endpoint (the `/query` endpoint returns HTTP 400 for event payloads), and environment-variable changes require a redeploy to take effect.
-- **Test-drive submission is failing (2026-09-16, under investigation).** Public submissions return a 5xx with a support reference. Code paths pass unit and browser tests and production configuration presence is enforced at build, so the remaining suspects are runtime configuration (private Blob store access mode/token, Upstash limiter reachability, or encryption-key format). Failed submissions now emit a `test-drive.submission` security event with `failure_stage` and `error_class`, and `/api/admin/config-health` reports `testDriveStorage` and `testDriveLimiter`; use those or the Vercel log for the reference to confirm the cause.
+- **Test-drive submission verified working (2026-10-13).** An end-to-end production submission succeeded: it was stored, appeared in the admin inbox, and triggered the Resend notification email. The earlier 2026-09-16 failure note was stale. If submissions fail in future, the `test-drive.submission` security event reports `failure_stage` and `error_class`, and `/api/admin/config-health` reports `testDriveStorage` and `testDriveLimiter`.
 
 ## Project functionality
 
