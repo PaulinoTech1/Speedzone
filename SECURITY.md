@@ -130,3 +130,8 @@ Individual event hashes detect modification when the trusted original hash is av
 ## Reporting
 
 Report suspected vulnerabilities privately to the repository owner. Include the affected route or component, reproduction steps, impact, and relevant timestamps without including secret values or personal test-drive data. If a credential or token may have been exposed, revoke or rotate it at the provider, replace it in the deployment secret manager, redeploy, and review recent usage.
+
+## Integrations (DealerCenter import, Meta catalog feed)
+
+- `POST /api/admin/inventory-import` requires a passkey admin session (setup/password sessions are refused) and a same-origin request. It is rate limited to 30 requests per 10 minutes, and the limiter fails closed. Bodies are limited to about 1.06 MB, with a 1 MB CSV of at most 600 rows. Apply must echo the preview's SHA-256 digest and the catalog revision (If-Match). Customer, contact and cost columns are discarded before their values are read. There is no public ingest endpoint.
+- `GET /api/feeds/meta-vehicles` returns 404 unless `META_FEED_TOKEN` (32+ characters) is set. It accepts the token only via HTTP Basic or Bearer, never via the query string, because query strings reach platform logs. The token is compared in constant time over HMAC digests. After 10 failures per 15 minutes per keyed network identifier, requests get 429 before the token is checked; that limiter also fails closed. Responses are `private, no-store` (including the CDN-specific headers) with `Vary: Authorization`, so Vercel's CDN cannot replay the feed. The feed holds public listing and dealership fields only, and only `https://` image URLs.

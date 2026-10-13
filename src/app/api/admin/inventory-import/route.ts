@@ -8,6 +8,7 @@ import { readBoundedJson, RequestBodyError } from "../../../../../security-conso
 import { CsvError, csvLimits } from "@/lib/integrations/dealercenter/csv";
 import { parseMappingOverride } from "@/lib/integrations/dealercenter/mapping";
 import { planInventoryImport } from "@/lib/integrations/dealercenter/import";
+import { limitInventoryImport } from "@/lib/integration-rate-limit";
 
 // JSON envelope overhead on top of the 1 MB CSV limit.
 const bodyLimit = csvLimits.maxBytes + 64 * 1024;
@@ -26,6 +27,11 @@ async function handlePOST(request: Request) {
     return NextResponse.json({ error: "A passkey session is required to import inventory." }, { status: 401, headers });
   }
   if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403, headers });
+  const limit = await limitInventoryImport();
+  if (!limit.allowed) {
+    await writeSecurityEvent({ ...context, event: "inventory.mutation", outcome: "denied", actor: "admin", reason: "import_rate_limited" });
+    return NextResponse.json({ error: "Too many import requests. Try again shortly." }, { status: 429, headers: { ...headers, "Retry-After": String(limit.retryAfter) } });
+  }
   let mode = "preview";
   try {
     const body = await readBoundedJson(request, bodyLimit) as { csv?: unknown; mode?: unknown; fullImport?: unknown; mapping?: unknown; digest?: unknown };

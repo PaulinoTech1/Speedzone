@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ isAdmin: vi.fn(), read: vi.fn(), write: vi.fn(), event: vi.fn() }));
+const mocks = vi.hoisted(() => ({ isAdmin: vi.fn(), read: vi.fn(), write: vi.fn(), event: vi.fn(), limit: vi.fn() }));
+vi.mock("@/lib/integration-rate-limit", () => ({ limitInventoryImport: mocks.limit }));
 vi.mock("@/lib/admin-auth", () => ({ isAdmin: mocks.isAdmin, privateResponseHeaders: () => ({ "Cache-Control": "private, no-store, max-age=0" }) }));
 vi.mock("@/lib/security-events", () => ({ securityRequestContext: () => ({}), writeSecurityEvent: mocks.event }));
 vi.mock("@/lib/diagnostics", () => ({ withDiagnostics: (_: string, handler: () => Promise<Response>) => handler() }));
@@ -21,6 +22,21 @@ describe("admin inventory import route", () => {
     mocks.isAdmin.mockResolvedValue(true);
     mocks.read.mockResolvedValue({ vehicles: [], revision: "rev-1" });
     mocks.write.mockResolvedValue({ etag: "rev-2" });
+    mocks.limit.mockResolvedValue({ allowed: true, retryAfter: 0 });
+  });
+
+  it("rate limits import requests and fails closed when the limiter is unavailable", async () => {
+    mocks.limit.mockResolvedValue({ allowed: false, retryAfter: 42 });
+    const response = await POST(request({ csv, mode: "preview" }));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
+  it("checks authentication before the limiter, so anonymous callers cannot exhaust it", async () => {
+    mocks.isAdmin.mockResolvedValue(false);
+    await POST(request({ csv, mode: "preview" }));
+    expect(mocks.limit).not.toHaveBeenCalled();
   });
 
   it("requires a passkey session and audits the denial", async () => {

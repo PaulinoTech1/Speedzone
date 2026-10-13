@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ read: vi.fn(), event: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), event: vi.fn(), blocked: vi.fn(), fail: vi.fn() }));
+vi.mock("@/lib/integration-rate-limit", () => ({ networkKey: () => "net", feedFailuresBlocked: mocks.blocked, recordFeedFailure: mocks.fail }));
 vi.mock("@/lib/inventory", async original => ({ ...(await original<typeof import("@/lib/inventory")>()), readInventory: mocks.read }));
 vi.mock("@/lib/security-events", () => ({ securityRequestContext: () => ({}), writeSecurityEvent: mocks.event }));
 import { GET } from "@/app/api/feeds/meta-vehicles/route";
@@ -40,7 +41,7 @@ describe("Meta vehicle feed mapping", () => {
 });
 
 describe("feed route", () => {
-  beforeEach(() => { vi.resetAllMocks(); mocks.read.mockResolvedValue([car()]); });
+  beforeEach(() => { vi.resetAllMocks(); mocks.read.mockResolvedValue([car()]); mocks.blocked.mockResolvedValue({ blocked: false, retryAfter: 0 }); });
   afterEach(() => vi.unstubAllEnvs());
 
   it("is disabled (404) when the token is unset or too short", async () => {
@@ -51,17 +52,36 @@ describe("feed route", () => {
   });
   it("rejects missing or wrong tokens without reading inventory", async () => {
     vi.stubEnv("META_FEED_TOKEN", token);
-    for (const response of [await GET(req()), await GET(req(basic("x".repeat(40)))), await GET(req({}, "?token=nope"))]) expect(response.status).toBe(401);
+    for (const response of [await GET(req()), await GET(req(basic("x".repeat(40)))), await GET(req({}, "?token=nope"))]) {
+      expect(response.status).toBe(401);
+      expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+    }
     expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.fail).toHaveBeenCalledTimes(3);
+    expect(JSON.stringify(mocks.event.mock.calls)).not.toContain("nope");
     expect(mocks.event).toHaveBeenCalledWith(expect.objectContaining({ outcome: "denied", reason: "catalog_feed_token_rejected" }));
   });
-  it("serves CSV via Basic auth, Bearer, or query token with no-store caching", async () => {
+  it("ignores a correct token in the query string (it would land in request logs)", async () => {
     vi.stubEnv("META_FEED_TOKEN", token);
-    for (const request of [req(basic(token)), req({ authorization: `Bearer ${token}` }), req({}, `?token=${token}`)]) {
+    expect((await GET(req({}, `?token=${token}`))).status).toBe(401);
+  });
+  it("blocks a network after repeated failures before checking the token or reading data", async () => {
+    vi.stubEnv("META_FEED_TOKEN", token);
+    mocks.blocked.mockResolvedValue({ blocked: true, retryAfter: 120 });
+    const response = await GET(req(basic(token)));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("120");
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+  it("serves CSV via Basic auth or Bearer with CDN-proof no-store caching", async () => {
+    vi.stubEnv("META_FEED_TOKEN", token);
+    for (const request of [req(basic(token)), req({ authorization: `Bearer ${token}` })]) {
       const response = await GET(request);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("text/csv");
-      expect(response.headers.get("cache-control")).toContain("no-store");
+      expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+      expect(response.headers.get("vercel-cdn-cache-control")).toBe("no-store");
+      expect(response.headers.get("vary")).toBe("Authorization");
       expect(await response.text()).toContain("1HGCM82633A004352");
     }
   });

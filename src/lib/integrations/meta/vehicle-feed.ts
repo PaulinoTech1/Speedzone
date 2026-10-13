@@ -101,9 +101,9 @@ export function feedTokenMatches(supplied: string | null | undefined, expected: 
 }
 
 /**
- * Accepts HTTP Basic auth (any username, token as password) or a `token`
- * query parameter. Commerce Manager scheduled feeds take a URL and optional
- * username/password; prefer Basic auth so the token stays out of URLs.
+ * Accepts HTTP Basic auth (any username, token as password) or a Bearer
+ * header. A `?token=` query parameter is deliberately NOT accepted: query
+ * strings are written to platform request logs and can leak via referrers.
  */
 export function suppliedFeedToken(request: Request) {
   const header = request.headers.get("authorization");
@@ -115,5 +115,5 @@ export function suppliedFeedToken(request: Request) {
     } catch { /* fall through */ }
   }
   if (header?.startsWith("Bearer ")) return header.slice(7);
-  return new URL(request.url).searchParams.get("token");
+  return null;
 }
