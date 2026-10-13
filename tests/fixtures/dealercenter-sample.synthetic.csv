@@ -1,0 +1,4 @@
+StockNumber,VIN,Year,Make,Model,Trim,Body Style,Exterior Color,Interior Color,Transmission,Drivetrain,Fuel Type,Mileage,Price,Status,Description,ImageURLs,Customer Name,Customer Phone,Cost,Notes
+SYN-001,1HGCM82633A004352,2019,Honda,Accord,EX-L,4dr Sedan,Lunar Silver,Black,Automatic CVT,FWD,Gasoline,"48,210","$18,995",Active,"SYNTHETIC TEST ROW, not a real vehicle",https://example.com/a1.jpg|https://example.com/a2.jpg,Jane Synthetic,555-0100,12000,do not import
+SYN-002,2T3W1RFV8KW000001,2019,Toyota,RAV4,XLE,Sport Utility,Blue,Gray,Automatic,All Wheel Drive,Gas,"36,000",24500,Pending,SYNTHETIC TEST ROW,,,,15000,
+SYN-003,,2016,Ford,F-150,XLT,Crew Cab Pickup,Red,Tan,6-Speed Automatic,4x4,Flex Fuel,"91,500",22995,Active,SYNTHETIC TEST ROW,,,,,
