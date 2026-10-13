@@ -1,47 +1,31 @@
 import { expect, test } from "@playwright/test";
 
-const base = "/Security_Console";
-
-test.describe("dedicated console host", () => {
-test.use({ baseURL: "http://localhost:4185" });
-test("console entry redirects to its own login and renders the form", async ({ page, request }) => {
-  const headers = { Host: "security-console.speedzonems.com" };
-  const response = await request.get(base, { headers, maxRedirects: 0 });
-  expect(response.status()).toBe(307);
-  expect(response.headers().location).toBe(`${base}/login`);
-  await page.goto(base);
-  await expect(page).toHaveURL(new RegExp(`${base}/login$`));
-  await expect(page.getByRole("heading", { name: "Security console", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue to passkey" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "First-time setup" })).toHaveCount(0);
-  expect((await request.get(`${base}/setup`, { headers })).status()).toBe(404);
-  expect((await request.post(`${base}/api/auth/setup`, { headers, data: {} })).status()).toBe(404);
+// The console now runs as its own Vercel project. Its former mount and
+// subdomain on the primary site must 404 and never redirect to the new host.
+test.describe("retired console subdomain", () => {
+  test.use({ baseURL: "http://localhost:4185" });
+  test("every path 404s without redirecting", async ({ request }) => {
+    for (const path of ["/", "/login", "/Security_Console", "/Security_Console/login", "/api/auth/login", "/api/events"]) {
+      const response = await request.get(path, { maxRedirects: 0 });
+      expect(response.status(), path).toBe(404);
+      expect(response.headers().location, path).toBeUndefined();
+    }
+  });
 });
 
-test("admin cookies do not unlock console pages or APIs", async ({ request }) => {
-  const headers = { Host: "security-console.speedzonems.com", Cookie: `__Host-speedzone_admin=${"a".repeat(43)}` };
-  for (const path of ["", "/reports", "/integrity", "/events/example", "/passkeys", "/login/passkey"]) {
-    const response = await request.get(`${base}${path}`, { headers, maxRedirects: 0 });
-    expect(response.status(), path).toBe(307);
-    expect(response.headers().location).toBe(`${base}/login`);
-  }
-  for (const path of ["/api/events", "/api/auth/sessions", "/api/auth/passkeys"]) {
-    const response = await request.get(`${base}${path}`, { headers });
-    expect(response.status(), path).toBe(401);
-    expect(response.headers()["cache-control"]).toContain("no-store");
-    expect(response.headers()["set-cookie"]).toBeUndefined();
-  }
-  const delivery = await request.post(`${base}/api/delivery-test`, { headers });
-  expect(delivery.status()).toBe(401);
-});
-});
-
-test("portals are absent from the public host and retired APIs stay absent", async ({ request }) => {
+test("console mount is absent from the public host and retired APIs stay absent", async ({ request }) => {
   const response = await request.get("/");
   expect(response.status()).toBe(200);
-  expect(await response.text()).not.toContain('href="https://www.speedzonems.com/Security_Console"');
-  expect((await request.get(base, { maxRedirects: 0 })).status()).toBe(404);
+  const html = await response.text();
+  expect(html).not.toContain("Security_Console");
+  expect(html).not.toContain("speedzone-security-console");
+  for (const path of ["/Security_Console", "/Security_Console/login", "/Security_Console/api/auth/login", "/Security_Console/api/events"]) {
+    for (const method of ["GET", "POST"]) {
+      const res = await request.fetch(path, { method, maxRedirects: 0 });
+      expect(res.status(), `${method} ${path}`).toBe(404);
+      expect(res.headers().location).toBeUndefined();
+    }
+  }
   expect((await request.get("/admin", { maxRedirects: 0 })).status()).toBe(404);
   for (const path of ["events", "delivery-test", "auth/login", "auth/logout", "auth/setup", "auth/passkeys", "auth/sessions"]) {
     for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]) {

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { readBoundedJson, validMutationOrigin } from "../security-console/shared/mutation-request";
+import { readBoundedJson, validMutationOrigin } from "../src/lib/shared/mutation-request";
 const origin = "https://admin.speedzone.example";
 it("rejects a sibling origin even when both are allowed console origins", () => {
   const request = new Request(origin, { headers: { origin: "https://www.speedzone.example", "sec-fetch-site": "same-site" } });

@@ -3,7 +3,7 @@ import { BlobPreconditionFailedError } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { appendVehiclePhotos, InventoryReadOnlyError, normalizeEtag, readInventorySnapshot, sanitizeVehicleInput, vehicleDetailKeys, writeInventory } from "@/lib/inventory";
 import { validAdminMutation } from "@/lib/admin-mutation";
-import { readBoundedJson, RequestBodyError } from "../../../../security-console/shared/mutation-request";
+import { readBoundedJson, RequestBodyError } from "@/lib/shared/mutation-request";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { diagnoseInventoryPhotoUrl, isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";

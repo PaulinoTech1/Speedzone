@@ -12,7 +12,7 @@ import { securityRequestContext, writeSecurityEvent } from "@/lib/security-event
 import { validAdminMutation } from "@/lib/admin-mutation";
 import { getRedis } from "@/lib/redis";
 import { inventoryPhotoStateKey } from "@/lib/inventory-state";
-import { readBoundedJson, RequestBodyError } from "../../../../../security-console/shared/mutation-request";
+import { readBoundedJson, RequestBodyError } from "@/lib/shared/mutation-request";
 
 function uploadConfigurationError() {
   if (!process.env.BLOB_READ_WRITE_TOKEN?.trim()) {

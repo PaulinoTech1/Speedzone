@@ -11,13 +11,6 @@ const PORTALS: Array<{ hosts: string[]; prefix: string }> = [
     ],
     prefix: "/admin",
   },
-  {
-    hosts: [
-      "security-console.speedzonems.com",
-      "www.security-console.speedzonems.com",
-    ],
-    prefix: "/Security_Console",
-  },
 ];
 
 // Portal paths exist only on their dedicated subdomains. On any other host
@@ -54,10 +47,26 @@ function portalRewriteTarget(request: NextRequest): URL | null {
   return null;
 }
 
+// The security console moved to its own Vercel project. Its former mount and
+// subdomain on this site 404 rather than redirect, so they never reveal it.
+const RETIRED_HOSTS = new Set([
+  "security-console.speedzonems.com",
+  "www.security-console.speedzonems.com",
+]);
+
+function isRetiredConsolePath(pathname: string): boolean {
+  const lower = pathname.toLowerCase();
+  return lower === "/security_console" || lower.startsWith("/security_console/");
+}
+
 export function proxy(request: NextRequest) {
   const host =
     (request.headers.get("host") ?? "").toLowerCase().split(":")[0] ?? "";
   const { pathname } = request.nextUrl;
+
+  if (RETIRED_HOSTS.has(host) || isRetiredConsolePath(pathname)) {
+    return new NextResponse("Not Found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
 
   if (isPortalPath(pathname) && !PORTAL_HOSTS.has(host)) {
     return new NextResponse("Not Found", { status: 404 });

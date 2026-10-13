@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ constructed: vi.fn() }));
 vi.mock("@upstash/redis", () => ({ Redis: class { constructor(options: unknown) { mocks.constructed(options); } } }));
 import { getSecurityRedis, resetSecurityRedisForTests, securityRedisConfiguration } from "../security-console/lib/redis";
-import { POST as login } from "../src/app/Security_Console/api/auth/login/route";
+import { POST as login } from "../security-console/app/api/auth/login/route";
 const names = ["ADMIN_SECURITY_KV_REST_API_URL", "ADMIN_SECURITY_KV_REST_API_TOKEN", "SECURITY_KV_REST_API_URL", "SECURITY_KV_REST_API_TOKEN", "ADMIN_SECURITY_KV_REST_API_READ_ONLY_TOKEN", "ADMIN_SECURITY_KV_URL", "ADMIN_SECURITY_REDIS_URL"];
 beforeEach(() => { vi.clearAllMocks(); resetSecurityRedisForTests(); names.forEach(name => vi.stubEnv(name, "")); });
 afterEach(() => vi.unstubAllEnvs());

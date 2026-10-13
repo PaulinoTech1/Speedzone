@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { getRedis } from "@/lib/redis";
-import type { SessionContext } from "../../security-console/shared/credential-grants";
+import type { SessionContext } from "@/lib/shared/credential-grants";
 
 const COOKIE_NAME = process.env.NODE_ENV === "production" ? "__Host-speedzone_admin" : "speedzone_admin";
 const SESSION_PREFIX = "speedzone:admin-session:";

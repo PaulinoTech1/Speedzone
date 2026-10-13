@@ -5,7 +5,7 @@ vi.mock("../security-console/lib/guards", () => ({ requireMfa: mocks.guard }));
 vi.mock("../security-console/lib/security-store", async importOriginal => ({ ...await importOriginal<object>(), readEvents: mocks.events }));
 vi.mock("../security-console/lib/console-audit", () => ({ readConsoleAudit: async () => [] }));
 vi.mock("../security-console/lib/auth", () => ({ listSecuritySessions: async () => [] }));
-import Dashboard from "../src/app/Security_Console/page";
+import Dashboard from "../security-console/app/page";
 beforeEach(() => { vi.resetAllMocks(); mocks.events.mockResolvedValue([]); });
 it("never loads dashboard data when the MFA guard rejects the session", async () => {
   mocks.guard.mockRejectedValue(new Error("Passkey required"));

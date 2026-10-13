@@ -8,7 +8,7 @@ import {
 } from "@simplewebauthn/server";
 import { adminSessionContext } from "@/lib/admin-auth";
 import { randomBytes } from "node:crypto";
-import { credentialGrantKey, issueCredentialGrant, rotateOtherSessionsLua, sessionGuardLua, type CredentialAction, type SessionContext } from "../../security-console/shared/credential-grants";
+import { credentialGrantKey, issueCredentialGrant, rotateOtherSessionsLua, sessionGuardLua, type CredentialAction, type SessionContext } from "@/lib/shared/credential-grants";
 import { getCredentialEpoch, parseCredentialEpoch } from "@/lib/admin-recovery";
 import { getRedis } from "@/lib/redis";
 

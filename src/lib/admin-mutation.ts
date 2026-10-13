@@ -1,4 +1,4 @@
-import { validMutationOrigin } from "../../security-console/shared/mutation-request";
+import { validMutationOrigin } from "@/lib/shared/mutation-request";
 
 export function validAdminMutation(request: Request) {
   const origin = process.env.WEBAUTHN_ORIGIN?.trim();

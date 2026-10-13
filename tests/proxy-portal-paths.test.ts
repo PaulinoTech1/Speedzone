@@ -25,15 +25,34 @@ describe("proxy portal path gating", () => {
     try {
       proxy(subdomainRequest("admin-inventory.speedzonems.com", "/"));
       proxy(subdomainRequest("www.admin-inventory.speedzonems.com", "/reports"));
-      proxy(subdomainRequest("security-console.speedzonems.com", "/"));
-      proxy(subdomainRequest("www.security-console.speedzonems.com", "/"));
-      expect(rewrite).toHaveBeenCalledTimes(4);
+      expect(rewrite).toHaveBeenCalledTimes(2);
       const pathnames = rewrite.mock.calls.map((call) => new URL(call[0] as URL).pathname);
-      const [first, second, third, fourth] = pathnames;
+      const [first, second] = pathnames;
       expect(first?.startsWith("/admin")).toBe(true);
       expect(second).toBe("/admin/reports");
-      expect(third?.startsWith("/Security_Console")).toBe(true);
-      expect(fourth?.startsWith("/Security_Console")).toBe(true);
+    } finally {
+      rewrite.mockRestore();
+    }
+  });
+
+  it("returns 404 for the retired console mount and subdomain on every host", () => {
+    const rewrite = vi.spyOn(NextResponse, "rewrite");
+    try {
+      for (const [host, path] of [
+        ["www.speedzonems.com", "/Security_Console"],
+        ["www.speedzonems.com", "/Security_Console/login"],
+        ["www.speedzonems.com", "/security_console/api/events"],
+        ["speedzone-five.vercel.app", "/Security_Console/passkeys"],
+        ["security-console.speedzonems.com", "/"],
+        ["security-console.speedzonems.com", "/login"],
+        ["www.security-console.speedzonems.com", "/api/auth/login"],
+        ["security-console.speedzonems.com", "/Security_Console"],
+      ] as Array<[string, string]>) {
+        const response = proxy(new NextRequest(`https://${host}${path}`, { headers: { host } }));
+        expect(response.status, `${host}${path}`).toBe(404);
+        expect(response.headers.get("location")).toBeNull();
+      }
+      expect(rewrite).not.toHaveBeenCalled();
     } finally {
       rewrite.mockRestore();
     }
