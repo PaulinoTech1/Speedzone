@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { put } from "@vercel/blob/client";
 import type { Vehicle } from "@/lib/inventory";
 import AdminPasskey from "@/components/admin/AdminPasskey";
+import VehicleDetailFields, { emptyVehicleDetails, vehicleDetailValues } from "@/components/admin/VehicleDetailFields";
 import {
   createInventoryPhotoPath,
   inventoryPhotoContentTypes,
@@ -11,7 +12,7 @@ import {
   maxInventoryPhotoSize,
 } from "@/lib/inventory-photos";
 
-const empty = { vin: "", year: "", make: "", model: "", price: "", mileage: "", condition: "Used", status: "available", description: "" };
+const empty = { vin: "", year: "", make: "", model: "", price: "", mileage: "", condition: "Used", status: "available", description: "", ...emptyVehicleDetails };
 const maxPhotoDimension = 2400;
 const webpQuality = 0.82;
 
@@ -371,7 +372,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   }
   function startEditing(vehicle: Vehicle) {
     setEditingVehicleId(vehicle.id);
-    setEditForms((current) => ({ ...current, [vehicle.id]: { vin: vehicle.vin || "", year: String(vehicle.year), make: vehicle.make, model: vehicle.model, price: String(vehicle.price), mileage: String(vehicle.mileage), condition: vehicle.condition, status: vehicle.status, description: vehicle.description } }));
+    setEditForms((current) => ({ ...current, [vehicle.id]: { vin: vehicle.vin || "", year: String(vehicle.year), make: vehicle.make, model: vehicle.model, price: String(vehicle.price), mileage: String(vehicle.mileage), condition: vehicle.condition, status: vehicle.status, description: vehicle.description, ...vehicleDetailValues(vehicle) } }));
   }
   function updateEditField(vehicleId: string, field: string, value: string) {
     setEditForms((current) => ({ ...current, [vehicleId]: { ...(current[vehicleId] || {}), [field]: value } }));
@@ -469,6 +470,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
             </div>
             <label>VIN<input name="vin" value={form.vin} onChange={(e) => setForm({ ...form, vin: e.target.value.toUpperCase() })} minLength={17} maxLength={17} pattern="[A-HJ-NPR-Z0-9]{17}" autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="17-character vehicle identification number" aria-describedby="new-vehicle-vin-help" /><small id="new-vehicle-vin-help" className="field-help">Optional. Enter 17 letters and numbers; I, O, and Q are not used.</small></label>
             <label>Condition<input value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} /></label>
+            <VehicleDetailFields idPrefix="new-vehicle" values={form} onChange={(key, value) => setForm({ ...form, [key]: value })} />
             <label>Description<textarea rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
             <label>
               Photos
@@ -515,6 +517,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
                       </div>
                       <label>VIN<input name="vin" value={editForms[vehicle.id]?.vin || ""} onChange={(event) => updateEditField(vehicle.id, "vin", event.target.value.toUpperCase())} minLength={17} maxLength={17} pattern="[A-HJ-NPR-Z0-9]{17}" autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="17-character vehicle identification number" aria-describedby={`vin-help-${vehicle.id}`} /><small id={`vin-help-${vehicle.id}`} className="field-help">Optional. Enter 17 letters and numbers; I, O, and Q are not used.</small></label>
                       <label>Condition<input value={editForms[vehicle.id]?.condition || ""} onChange={(event) => updateEditField(vehicle.id, "condition", event.target.value)} /></label>
+                      <VehicleDetailFields idPrefix={`edit-${vehicle.id}`} values={editForms[vehicle.id] || {}} onChange={(key, value) => updateEditField(vehicle.id, key, value)} />
                       <label>Description<textarea rows={4} value={editForms[vehicle.id]?.description || ""} onChange={(event) => updateEditField(vehicle.id, "description", event.target.value)} /></label>
                       <div className="admin-listing-actions"><button type="submit" className="button button-primary" disabled={inventoryBusy}>{updatingThisVehicle ? "Saving…" : "Save changes"}</button><button type="button" className="button button-secondary" disabled={updatingThisVehicle} onClick={() => cancelEditing(vehicle.id)}>Cancel</button></div>
                     </form>

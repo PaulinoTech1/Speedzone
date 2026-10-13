@@ -1,6 +1,8 @@
 import { BlobPreconditionFailedError, get, put } from "@vercel/blob";
 import { randomUUID } from "node:crypto";
 import { maxInventoryPhotoCount } from "@/lib/inventory-photos";
+import { sanitizeVehicleDetails, validDetail, vehicleDetailKeys, type VehicleDetails } from "@/lib/vehicle-details";
+export * from "@/lib/vehicle-details";
 import { getRedis } from "@/lib/redis";
 import { canonicalInventoryPhotoUrl, inventoryCommitScript, inventoryPhotoStateKey, inventoryStateKey } from "@/lib/inventory-state";
 
@@ -31,7 +33,8 @@ export type Vehicle = {
   status: "available" | "sold" | "pending";
   photos: string[];
   createdAt: string;
-};
+} & VehicleDetails;
+
 
 const catalogPath = "inventory/inventory.json";
 
@@ -44,6 +47,9 @@ const browserFixture: Vehicle = {
   mileage: 32_000,
   condition: "Used",
   description: "Synthetic browser-test inventory fixture.",
+  trim: "EX",
+  bodyStyle: "Sedan",
+  exteriorColor: "Silver",
   status: "available",
   photos: [],
   createdAt: "2026-09-09T00:00:00.000Z",
@@ -83,7 +89,8 @@ export async function readInventorySnapshot(): Promise<{ vehicles: Vehicle[]; re
 
 export function validInventory(data: unknown): data is Vehicle[] {
   return Array.isArray(data) && data.length <= 500 && data.every(item => item && typeof item.id === "string" && Array.isArray(item.photos)
-    && item.photos.length <= maxInventoryPhotoCount && item.photos.every((url: unknown) => typeof url === "string"));
+    && item.photos.length <= maxInventoryPhotoCount && item.photos.every((url: unknown) => typeof url === "string")
+    && vehicleDetailKeys.every(key => validDetail(key, item[key])));
 }
 export class InventoryReadOnlyError extends Error {
   constructor() { super("Inventory is temporarily read-only. Please contact the site administrator."); }
@@ -131,6 +138,7 @@ export function sanitizeVehicleInput(input: Record<string, unknown>, photos: str
     condition: text("condition") || "Used", description: text("description"),
     status: input.status === "sold" || input.status === "pending" ? input.status : "available",
     photos, createdAt: text("createdAt") || new Date().toISOString(),
+    ...sanitizeVehicleDetails(input),
   };
 }
 

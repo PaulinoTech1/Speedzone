@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { FormEvent, useMemo, useRef, useState } from "react";
 import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
@@ -61,9 +62,9 @@ export function TestDriveForm() {
           Thanks for reaching out. A SpeedZone team member will contact you to
           confirm availability and your appointment time.
         </p>
-        <a className="button button-primary" href="/inventory">
+        <Link className="button button-primary" href="/inventory">
           Browse inventory
-        </a>
+        </Link>
       </section>
     );
   }
