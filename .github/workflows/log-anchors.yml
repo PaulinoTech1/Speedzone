@@ -1,0 +1,67 @@
+name: log-anchors
+
+# Hourly external fingerprint of Axiom security events. Records live on the
+# orphan branch `log-anchors` (never main), so no Vercel build is triggered.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "anchor = append new windows; verify = recompute anchored windows from Axiom"
+        type: choice
+        options: [anchor, verify]
+        default: anchor
+      from:
+        description: "verify: start (ISO, optional)"
+        required: false
+      to:
+        description: "verify: end (ISO, optional)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: log-anchors
+  cancel-in-progress: false
+
+jobs:
+  anchor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AXIOM_QUERY_TOKEN: ${{ secrets.AXIOM_QUERY_TOKEN }}
+      AXIOM_DATASET: ${{ secrets.AXIOM_DATASET || vars.AXIOM_DATASET }}
+      AXIOM_QUERY_URL: ${{ vars.AXIOM_QUERY_URL }}
+      ANCHOR_DIR: ledger/anchors
+    steps:
+      - name: Check out scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          sparse-checkout: scripts/log-anchors
+          persist-credentials: false
+      - name: Check out ledger branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: log-anchors
+          path: ledger
+      - name: Anchor closed hourly windows
+        if: github.event_name == 'schedule' || inputs.mode == 'anchor'
+        run: node scripts/log-anchors/anchor.mjs
+      - name: Verify chain
+        run: node scripts/log-anchors/verify.mjs --chain-only
+      - name: Recompute anchored windows from Axiom
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'verify'
+        env:
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: node scripts/log-anchors/verify.mjs ${FROM:+--from "$FROM"} ${TO:+--to "$TO"}
+      - name: Push new anchors
+        if: github.event_name == 'schedule' || inputs.mode == 'anchor'
+        working-directory: ledger
+        run: |
+          git add anchors
+          git diff --cached --quiet && exit 0
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "anchor $(date -u +%Y-%m-%dT%H:00Z)"
+          git push origin HEAD:log-anchors
