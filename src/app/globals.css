@@ -2761,3 +2761,9 @@ body:has(.error-page) {
 .vehicle-specs dt { color: var(--muted); font-size: .85rem; }
 .vehicle-specs dd { margin: 0; font-weight: 600; }
 .admin-vehicle-details { border: 1px solid var(--line); border-radius: var(--radius); padding: .75rem 1rem; }
+
+/* Consent banner (rendered only when META_PIXEL_ENABLED=enabled) */
+.consent-banner { position: fixed; inset: auto 1rem 1rem 1rem; z-index: 50; max-width: 40rem; margin: 0 auto; padding: 1rem 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.consent-banner h2 { margin: 0 0 .4rem; font-size: 1.1rem; }
+.consent-actions { display: flex; gap: .75rem; justify-content: flex-end; flex-wrap: wrap; }
+.consent-reopen { position: fixed; left: 1rem; bottom: 1rem; z-index: 40; font-size: .8rem; padding: .35rem .7rem; background: var(--surface); color: inherit; border: 1px solid var(--line); border-radius: 999px; }

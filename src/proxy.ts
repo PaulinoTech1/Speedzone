@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { metaPixelConfig, metaPixelConnectSources } from "@/lib/meta-pixel-config";
 
 // The admin portals live on dedicated subdomains. Rewrite portal-bound hosts
 // to their app routes. Real routes (API, Next.js internals, static files) and
@@ -78,7 +79,10 @@ export function proxy(request: NextRequest) {
       ? "style-src 'self' 'unsafe-inline'"
       : `style-src 'self' 'nonce-${nonce}'`,
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDevelopment ? " 'unsafe-eval'" : ""}`,
-    "connect-src 'self' https://vercel.com",
+    // Pixel endpoints are allowed only when the feature flag is on, and only
+    // on public hosts. The script itself loads via 'strict-dynamic' from our
+    // nonce'd bundle after consent; no host is added to script-src.
+    `connect-src 'self' https://vercel.com${metaPixelConfig() && !PORTAL_HOSTS.has(host) ? ` ${metaPixelConnectSources.join(" ")}` : ""}`,
     "media-src 'none'",
     "worker-src 'none'",
     "manifest-src 'self'",
