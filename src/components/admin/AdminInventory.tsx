@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { put } from "@vercel/blob/client";
 import type { Vehicle } from "@/lib/inventory";
 import AdminPasskey from "@/components/admin/AdminPasskey";
+import AdminInventoryImport from "@/components/admin/AdminInventoryImport";
 import VehicleDetailFields, { emptyVehicleDetails, vehicleDetailValues } from "@/components/admin/VehicleDetailFields";
 import {
   createInventoryPhotoPath,
@@ -454,6 +455,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
         </section>
       )}
       <AdminPasskey authenticated={true} onAuthenticated={() => { setSetupRequired(false); onAuthChange?.(true); }} />
+      <AdminInventoryImport onApplied={() => { void load(); }} />
       <section className="admin-grid">
         <div className="admin-card">
           <h2>Add vehicle</h2>
