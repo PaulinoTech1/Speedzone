@@ -7,7 +7,7 @@ import { securityRequestContext, writeSecurityEvent } from "@/lib/security-event
 import { validAdminMutation } from "@/lib/admin-mutation";
 import { getRedis } from "@/lib/redis";
 import { canonicalInventoryPhotoUrl, inventoryCleanupClaimScript, inventoryPhotoGraceMs, inventoryPhotoStateKey, inventoryStateKey } from "@/lib/inventory-state";
-import { readBoundedJson, RequestBodyError } from "../../../../../security-console/shared/mutation-request";
+import { readBoundedJson, RequestBodyError } from "@/lib/shared/mutation-request";
 
 // Admin-only orphaned blob cleanup. Lists blobs under inventory/photos/ and
 // deletes those not referenced by any vehicle. GET returns the orphan list

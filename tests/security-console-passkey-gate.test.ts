@@ -8,7 +8,7 @@ vi.mock("../security-console/lib/console-audit", () => ({ recordConsoleAudit: vi
 vi.mock("../security-console/lib/passkeys", () => ({ getWebAuthnConfig: () => ({ rpID: "www.speedzonems.com", origins: ["https://www.speedzonems.com"] }),
   requestOrigin: (request: Request, config: { origins: string[] }) => { const origin = request.headers.get("origin"); return origin && config.origins.includes(origin) ? origin : null; },
   verifyAuthentication: mocks.verify, verifyRegistration: mocks.register, registrationOptions: vi.fn(), authenticationOptions: mocks.options, deletePasskey: vi.fn(), listPasskeys: vi.fn() }));
-import { POST } from "../src/app/Security_Console/api/auth/passkeys/route";
+import { POST } from "../security-console/app/api/auth/passkeys/route";
 beforeEach(() => vi.resetAllMocks());
 function request(action: string, origin = "https://www.speedzonems.com") {
   const headers: Record<string, string> = { "Content-Type": "application/json" };

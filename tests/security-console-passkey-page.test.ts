@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ guard: vi.fn(), count: vi.fn(), recovery: vi.f
 vi.mock("../security-console/lib/passkey-recovery", () => ({ passkeyRecoveryAvailable: mocks.recovery }));
 vi.mock("../security-console/lib/guards", () => ({ requirePasswordSession: mocks.guard }));
 vi.mock("../security-console/lib/passkeys", async importOriginal => ({ ...await importOriginal<object>(), establishedPasskeyCount: mocks.count, firstPasskeyAvailable: mocks.bootstrap }));
-import Page from "../src/app/Security_Console/login/passkey/page";
+import Page from "../security-console/app/login/passkey/page";
 beforeEach(() => vi.resetAllMocks());
 it("loads established-key counts only after password authorization", async () => {
   mocks.guard.mockRejectedValue(new Error("NEXT_REDIRECT"));

@@ -3,7 +3,7 @@ import { missingSecurityConfiguration } from "../scripts/check-security-config.m
 
 function configured(): Record<string, string> {
   const env: Record<string, string> = Object.fromEntries([
-    "WEBAUTHN_RP_ID", "BLOB_READ_WRITE_TOKEN", "TEST_DRIVE_BLOB_READ_WRITE_TOKEN", "RESEND_PASSWORD_RESET_API_KEY", "RESEND_EMAIL_DOMAIN", "ADMIN_SECURITY_KV_REST_API_URL", "ADMIN_SECURITY_KV_REST_API_TOKEN", "KV_REST_API_URL", "KV_REST_API_TOKEN",
+    "WEBAUTHN_RP_ID", "BLOB_READ_WRITE_TOKEN", "TEST_DRIVE_BLOB_READ_WRITE_TOKEN", "RESEND_PASSWORD_RESET_API_KEY", "RESEND_EMAIL_DOMAIN", "KV_REST_API_URL", "KV_REST_API_TOKEN",
   ].map(key => [key, "synthetic"]));
   return { ...env, WEBAUTHN_ORIGIN: "https://admin.example.test", BUG_REPORT_ORIGIN: "https://www.example.test", ADMIN_RECOVERY_EMAIL: "owner@example.test", TEST_DRIVE_ENCRYPTION_KEY: "a".repeat(43), BUG_REPORT_ENCRYPTION_KEY: "b".repeat(43), BUG_REPORT_RATE_LIMIT_SECRET: "c".repeat(43), SECURITY_CONSOLE_TEST_SECRET: "d".repeat(43), SECURITY_TEST_TARGET_URL: "https://www.example.test/api/internal/security-log-test" };
 }

@@ -28,4 +28,4 @@ The inbox loads 20 records per cursor page in Blob storage order and sorts withi
 
 Run lint, TypeScript, unit tests, build and Playwright. In isolated staging, verify first-passkey enrollment, login/reload/logout/expiry, concurrent inventory edits, photo removal during storage failure, synthetic customer submission and inbox retrieval, and notification delivery. Confirm provider retention, mailbox ownership and the factual privacy wording with the business owner. No live provider configuration or restore drill is implied by passing mocked tests.
 
-The separate security-console remains unfinished and must not be publicly exposed. Root TypeScript excludes it; a root build does not validate or secure it.
+The security console is a separate Vercel project rooted at security-console/ with its own npm manifest, checks and environment. Root TypeScript excludes it and the root build does not bundle it.

@@ -12,7 +12,7 @@ vi.mock("../security-console/lib/auth", () => ({
 vi.mock("../security-console/lib/rate-limit", () => ({ enforceRateLimit: async () => ({ allowed: true }) }));
 vi.mock("../security-console/lib/console-audit", () => ({ recordConsoleAudit: vi.fn() }));
 
-import { POST } from "../src/app/Security_Console/api/auth/login/route";
+import { POST } from "../security-console/app/api/auth/login/route";
 
 beforeEach(() => {
   vi.resetAllMocks();

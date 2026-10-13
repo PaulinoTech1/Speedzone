@@ -56,14 +56,14 @@ vi.mock("../security-console/lib/redis", () => ({
   }),
 }));
 vi.mock("../security-console/lib/security-store", () => ({ readEvents: async () => [] }));
-import { POST as login } from "../src/app/Security_Console/api/auth/login/route";
-import { POST as passkey, GET as listPasskeys } from "../src/app/Security_Console/api/auth/passkeys/route";
-import { GET as events } from "../src/app/Security_Console/api/events/route";
-import Dashboard from "../src/app/Security_Console/page";
-import PasskeysPage from "../src/app/Security_Console/passkeys/page";
-import PasskeyLoginPage from "../src/app/Security_Console/login/passkey/page";
-import IntegrityPage from "../src/app/Security_Console/integrity/page";
-import ReportsPage from "../src/app/Security_Console/reports/page";
+import { POST as login } from "../security-console/app/api/auth/login/route";
+import { POST as passkey, GET as listPasskeys } from "../security-console/app/api/auth/passkeys/route";
+import { GET as events } from "../security-console/app/api/events/route";
+import Dashboard from "../security-console/app/page";
+import PasskeysPage from "../security-console/app/passkeys/page";
+import PasskeyLoginPage from "../security-console/app/login/passkey/page";
+import IntegrityPage from "../security-console/app/integrity/page";
+import ReportsPage from "../security-console/app/reports/page";
 import { SECURITY_COOKIE, validateSecuritySession } from "../security-console/lib/auth";
 import { firstPasskeyAvailable } from "../security-console/lib/passkeys";
 
@@ -139,7 +139,7 @@ it('a scoped console removal keeps the current session and revokes other session
   state.store[`${prefix}passkeys:v1`]=JSON.stringify([credential,{...credential,id:'backup'}]);
   const grant=await authorizeCredentialChange('delete','backup');
   const removal=new Request('https://www.speedzonems.com/Security_Console/api/auth/passkeys?id=backup',{method:'DELETE',headers:{cookie:`${SECURITY_COOKIE}=${current}`,origin:'https://www.speedzonems.com','x-passkey-grant':grant}});
-  const { DELETE } = await import('../src/app/Security_Console/api/auth/passkeys/route');
+  const { DELETE } = await import('../security-console/app/api/auth/passkeys/route');
   expect((await DELETE(removal)).status).toBe(200);expect(await validateSecuritySession()).toBe(true);
   state.cookie=other;expect(await validateSecuritySession()).toBe(false);
 });

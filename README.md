@@ -4,7 +4,7 @@
 
 A security-hardened dealership website (speedzonems.com): passkey-first admin, integrity-checked telemetry, metadata-only customer notifications. Goal: a cheap-to-run site a nontechnical owner can maintain, doubling as a reusable security blueprint for small businesses.
 
-SpeedZone Motorsports serves the public dealership site and the security console at `https://www.speedzonems.com/Security_Console`. Thin route files under `src/app/Security_Console/` mount the single console implementation in `security-console/`. The console retains independent password and passkey authentication, Redis sessions, and its own host-only session cookie.
+SpeedZone Motorsports serves the public dealership site from this repository's root. The security console in `security-console/` is deployed as its own Vercel project (root directory `security-console`) on a host separate from the public site, with independent password and passkey authentication, Redis sessions, and its own host-only session cookie. The public site no longer mounts the console: the former `/Security_Console` paths and console subdomain return 404 and never redirect.
 
 The root application uses Next.js 16, React 19, Node.js 22, TypeScript, Vercel Blob, Upstash Redis, SimpleWebAuthn, Argon2id, Resend, Vitest, and Playwright. These services support the application architecture rather than representing a generic dependency list: Blob stores inventory and private test-drive objects, Redis stores authentication and rate-limit state, SimpleWebAuthn provides passkeys, Argon2id hashes the bootstrap password, Resend sends configured notifications and recovery messages, and Vitest/Playwright cover unit and browser behavior.
 
@@ -101,7 +101,7 @@ See [`docs/security-logging.md`](docs/security-logging.md) for additional archit
 
 ## Security console
 
-The console at `/Security_Console` uses the shared implementation in `security-console/`, with its own Redis database, password, passkeys, sessions, cookie, rate limits, audit records, and read-only operational UI. It includes:
+The standalone console in `security-console/` has with its own Redis database, password, passkeys, sessions, cookie, rate limits, audit records, and read-only operational UI. It includes:
 
 - Risk-focused overview metrics
 - Administrator access and credential history
@@ -126,7 +126,7 @@ ADMIN_SECURITY_KV_REST_API_TOKEN
 
 `SECURITY_KV_REST_API_URL` and `SECURITY_KV_REST_API_TOKEN` remain supported aliases. The writable REST token is required because console credentials, sessions, WebAuthn challenges, audit records, and rate-limit counters require writes. Provider-generated read-only and TCP variables do not replace this pair.
 
-The public footer points to `https://www.speedzonems.com/Security_Console`. Pages and browser APIs are mounted below `/Security_Console`; the deleted `/api/security-console` APIs remain absent. Set the console Redis and WebAuthn variables on the primary project. `EMBEDDED_SECURITY_WEBAUTHN_ORIGIN=https://www.speedzonems.com` and `EMBEDDED_SECURITY_WEBAUTHN_RP_ID=www.speedzonems.com` are supported mount-specific overrides; standalone builds continue to use `SECURITY_WEBAUTHN_ORIGIN` and `SECURITY_WEBAUTHN_RP_ID`. Existing console credentials are retained; old MFA sessions without assertion evidence must sign in again. Legacy passwords are migrated only after successful verification. The internal signed report and delivery-test endpoints remain available.
+The console is a separate Vercel project whose root directory is `security-console/`. Its Redis, WebAuthn (`SECURITY_WEBAUTHN_ORIGIN`, `SECURITY_WEBAUTHN_RP_ID`), bootstrap, recovery, and Axiom query (`SECURITY_LOG_QUERY_URL`, `SECURITY_LOG_QUERY_TOKEN`) variables are configured only on that project; see `security-console/.env.example`. The primary site keeps creating security events and delivering them with the Axiom ingest token, and keeps the signed `/api/internal/security-console/reports` and `/api/internal/security-log-test` endpoints the console calls (`SECURITY_CONSOLE_SERVICE_SECRET` and `SECURITY_CONSOLE_TEST_SECRET` must match in both projects). The former `/Security_Console` mount and the deleted `/api/security-console` APIs return 404 on the public site.
 
 Public first-time setup is disabled. Every login requires the existing console password followed by an assertion from an established passkey. Password-only sessions cannot view the dashboard or enroll replacement passkeys. Existing legacy passkeys are preserved and migrated only after matching password and credential-epoch checks. Console sessions have four-hour absolute and fifteen-minute idle expiry and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory-admin cookie and credentials are never accepted by the console.
 
@@ -144,10 +144,9 @@ The following is a deployment target, not a claim about controls currently provi
 
 **Security console**
 
-- Mounted in the primary Vercel deployment
-- `/Security_Console` on `www.speedzonems.com`
+- Separate Vercel project (root directory `security-console/`) on its own host
 - Separate Redis
-- Website WebAuthn RP with independently stored console credentials
+- Console-host WebAuthn RP with independently stored console credentials
 - Separate passkeys
 - Read-only security-log access
 
@@ -285,13 +284,13 @@ npx vitest run tests/glob-budget.test.ts
 
 ## Deployment
 
-Deploy the root directory as one Next.js project on Vercel using the repository lockfile and `npm run build`. This includes `/Security_Console`; no logs subdomain or second deployment is required. Configure the independent console Redis and WebAuthn settings in that project, then verify password/passkey login, protected pages and APIs, and the signed report and delivery-test integrations. The optional standalone build uses the same console source with root-relative URLs.
+Deploy the root directory as the primary Next.js project on Vercel using the repository lockfile and `npm run build`; the root build excludes `security-console/`. Deploy the console as a second Vercel project with root directory `security-console/` (its `vercel.json` skips builds when nothing under that directory changed), configure its own Redis, WebAuthn and Axiom query variables there, then verify password/passkey login, protected pages and APIs, and the signed report and delivery-test integrations.
 
 ## Repository layout
 
 ```text
 src/                 Root SpeedZone Next.js application
-security-console/    Single shared console implementation and optional standalone harness
+security-console/    Standalone security console (separate Vercel project)
 docs/                Architecture and operational notes
 tests/               Root application tests
 ```

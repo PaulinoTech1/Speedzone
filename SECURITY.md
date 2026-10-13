@@ -1,6 +1,6 @@
 # Security
 
-SpeedZone Motorsports serves the public dealership site and the security console at `https://www.speedzonems.com/Security_Console`. Thin route files under `src/app/Security_Console/` mount the single console implementation in `security-console/`. The console retains independent password and passkey authentication, Redis sessions, and its own host-only session cookie.
+SpeedZone Motorsports serves the public dealership site from this repository's root. The security console in `security-console/` is deployed as its own Vercel project (root directory `security-console`) on a host separate from the public site, with independent password and passkey authentication, Redis sessions, and its own host-only session cookie. The public site no longer mounts the console: the former `/Security_Console` paths and console subdomain return 404 and never redirect.
 
 ## Root application security model
 
@@ -26,7 +26,7 @@ See [`docs/security-logging.md`](docs/security-logging.md) for the current loggi
 
 ## Security console status
 
-`security-console/` is the shared security and operations implementation mounted at `/Security_Console` in the primary deployment. It has separate Redis configuration, password credentials, WebAuthn passkeys, sessions, cookie, rate-limit namespace, console audit records, and security headers. It exposes read-only views for administrator access, credential history, inventory activity, customer-request delivery, event integrity, configuration status, active console sessions, and encrypted bug reports. It fails closed when authentication storage or a required provider cannot be read.
+`security-console/` is the security and operations console, deployed as its own Vercel project. It has separate Redis configuration, password credentials, WebAuthn passkeys, sessions, cookie, rate-limit namespace, console audit records, and security headers. It exposes read-only views for administrator access, credential history, inventory activity, customer-request delivery, event integrity, configuration status, active console sessions, and encrypted bug reports. It fails closed when authentication storage or a required provider cannot be read.
 
 Its independent Redis configuration is:
 
@@ -37,7 +37,7 @@ ADMIN_SECURITY_KV_REST_API_TOKEN
 
 The console uses the writable `ADMIN_SECURITY_KV_REST_API_URL` and `ADMIN_SECURITY_KV_REST_API_TOKEN` pair. Provider-created read-only and TCP connection variables are not used because credentials, sessions, challenges, audit records, replay records, and rate-limit counters require writes. Public setup endpoints are removed. A password session can only authenticate an established passkey; passkey management and all operational pages/APIs require assertion-backed MFA. Registration cannot elevate a session. Older MFA sessions without assertion evidence are rejected and require a new password/passkey login. Elevation atomically checks the original session, verified credential epoch, generation, and expiry before rotating the cookie. Sessions have four-hour absolute and fifteen-minute idle expiry, support revocation, are indexed for authenticated visibility, and use the `__Host-speedzone_security` Secure, HTTP-only, SameSite=Strict cookie. The inventory cookie is not inspected or accepted.
 
-The public footer points to `https://www.speedzonems.com/Security_Console`. Pages and browser APIs are mounted below `/Security_Console`; the deleted `/api/security-console` APIs remain absent. Set the console Redis and WebAuthn variables on the primary project. `EMBEDDED_SECURITY_WEBAUTHN_ORIGIN=https://www.speedzonems.com` and `EMBEDDED_SECURITY_WEBAUTHN_RP_ID=www.speedzonems.com` are supported mount-specific overrides; standalone builds continue to use `SECURITY_WEBAUTHN_ORIGIN` and `SECURITY_WEBAUTHN_RP_ID`. Existing console credentials are retained; old MFA sessions without assertion evidence must sign in again. Legacy passwords are migrated only after successful verification. The internal signed report and delivery-test endpoints remain available.
+The console is a separate Vercel project whose root directory is `security-console/`. Its Redis, WebAuthn (`SECURITY_WEBAUTHN_ORIGIN`, `SECURITY_WEBAUTHN_RP_ID`), bootstrap, recovery, and Axiom query (`SECURITY_LOG_QUERY_URL`, `SECURITY_LOG_QUERY_TOKEN`) variables are configured only on that project; see `security-console/.env.example`. The primary site keeps creating security events and delivering them with the Axiom ingest token, and keeps the signed `/api/internal/security-console/reports` and `/api/internal/security-log-test` endpoints the console calls (`SECURITY_CONSOLE_SERVICE_SECRET` and `SECURITY_CONSOLE_TEST_SECRET` must match in both projects). The former `/Security_Console` mount and the deleted `/api/security-console` APIs return 404 on the public site.
 
 The event reader uses the configured external provider query API. Console Redis is used for console credentials, sessions, challenges, audit records, and rate limits. Delivery testing is server-to-server, signed with `SECURITY_CONSOLE_TEST_SECRET`, replay protected, and limited to two attempts per fifteen minutes. No ingest, query, Redis, bootstrap, or HMAC secret reaches the browser.
 
@@ -59,7 +59,7 @@ Encrypted bug reports are removed from the inventory-admin diagnostics response.
 The intended deployment boundary is:
 
 - Primary application: normal SpeedZone deployment with inventory/admin Redis and inventory-admin credentials.
-- Security console: `/Security_Console` in the primary deployment, independent Redis, password, passkeys and session cookie, with read-only security-log access. Sharing the origin does not provide cross-origin isolation from the inventory application.
+- Security console: separate Vercel project and origin with independent Redis, password, passkeys and session cookie, and read-only security-log access.
 - External logging/integrity infrastructure: Axiom or Vercel Drain, immutable archival storage, Merkle roots, and signing with a key outside the application runtime.
 
 External Vercel Drain, Axiom, S3 Object Lock, KMS signing, DNS, alerting, and retention controls are not provisioned by this repository merely because they appear in architecture documentation. Configure and verify those controls independently.

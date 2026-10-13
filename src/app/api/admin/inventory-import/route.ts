@@ -4,7 +4,7 @@ import { isAdmin, privateResponseHeaders } from "@/lib/admin-auth";
 import { validAdminMutation } from "@/lib/admin-mutation";
 import { InventoryReadOnlyError, normalizeEtag, readInventorySnapshot, writeInventory } from "@/lib/inventory";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
-import { readBoundedJson, RequestBodyError } from "../../../../../security-console/shared/mutation-request";
+import { readBoundedJson, RequestBodyError } from "@/lib/shared/mutation-request";
 import { CsvError, csvLimits } from "@/lib/integrations/dealercenter/csv";
 import { parseMappingOverride } from "@/lib/integrations/dealercenter/mapping";
 import { planInventoryImport } from "@/lib/integrations/dealercenter/import";

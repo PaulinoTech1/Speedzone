@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { adminCookie, adminCookieOptions, createAdminSession, isAdmin } from "@/lib/admin-auth";
 import { authenticationOptions, credentialActionOptions, verifyCredentialAction, deletePasskey, getWebAuthnConfig, listPasskeys, registrationOptions, verifyAuthentication, verifyRegistration } from "@/lib/admin-passkeys";
 import { validAdminMutation } from "@/lib/admin-mutation";
-import { readBoundedJson, RequestBodyError } from "../../../../../security-console/shared/mutation-request";
+import { readBoundedJson, RequestBodyError } from "@/lib/shared/mutation-request";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { admitAuthenticationOptions, clientAddress } from "@/lib/passkey-options-rate-limit";
 
