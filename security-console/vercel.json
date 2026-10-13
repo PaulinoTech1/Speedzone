@@ -1,0 +1,4 @@
+{
+  "git": { "deploymentEnabled": { "log-anchors": false } },
+  "ignoreCommand": "exit 0"
+}
