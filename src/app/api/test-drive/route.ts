@@ -21,6 +21,19 @@ export type TestDriveSubmission = {
   createdAt: string;
 };
 
+// Failure attribution without customer data: the stage and the error class
+// name (e.g. BlobAccessError) are enough to separate configuration faults
+// from code faults in logs and the security console.
+function errorClass(error: unknown) {
+  const name = error instanceof Error ? error.name || error.constructor?.name : "UnknownError";
+  return /^[A-Za-z0-9_]{1,64}$/.test(name) ? name : "UnknownError";
+}
+async function reportFailure(request: Request, failureStage: string, errorName: string) {
+  try {
+    await writeSecurityEvent({ ...securityRequestContext(request), event: "test-drive.submission", outcome: "failed", actor: "anonymous", reason: `${failureStage}_failed`, metadata: { failure_stage: failureStage, error_class: errorName } });
+  } catch { /* telemetry is best effort */ }
+}
+
 async function diagnosedPOST(request: Request) {
   const token = privateToken();
   if (!token) return NextResponse.json({ error: "Test-drive storage is not configured" }, { status: 503 });
@@ -37,10 +50,12 @@ async function diagnosedPOST(request: Request) {
   try {
     rateLimit = await limitTestDriveSubmission(getRequestKeys(request, fields.email, fields.phone));
   } catch (error) {
-    console.error("[v0] test-drive rate limit failed", error);
+    console.error("[test-drive] contact protection failed", errorClass(error));
+    await reportFailure(request, "contact_protection", errorClass(error));
     return NextResponse.json({ error: "Submissions are temporarily unavailable." }, { status: 503 });
   }
   if (!rateLimit.configured) {
+    await reportFailure(request, "rate_limiter", "unavailable");
     return NextResponse.json({ error: "Submissions are temporarily unavailable." }, { status: 503 });
   }
   if (!rateLimit.success) {
@@ -70,10 +85,13 @@ async function diagnosedPOST(request: Request) {
     const matches = Object.entries(fields).every(([key, value]) => saved[key as keyof TestDriveSubmission] === value);
     return NextResponse.json(matches ? { ok: true, id: saved.id } : { error: "This reference was already used with different details. Refresh to start a new request." }, { status: matches ? 200 : 409 });
   }
+  let stage = "storage_read";
   try {
     const existing = await existingResponse();
     if (existing) return existing;
+    stage = "encryption";
     const encryptedPayload = await encryptTestDrivePayload(submission);
+    stage = "storage_write";
     await put(pathname, encryptedPayload, {
       access: "private",
       token,
@@ -83,7 +101,8 @@ async function diagnosedPOST(request: Request) {
     });
   } catch (error) {
     try { const existing = await existingResponse(); if (existing) return existing; } catch { /* retry remains safe */ }
-    console.error("[v0] test-drive submission failed", error instanceof Error ? error.name : "UnknownError");
+    console.error("[test-drive] submission failed", stage, errorClass(error));
+    await reportFailure(request, stage, errorClass(error));
     return NextResponse.json({ error: "Unable to submit your request right now." }, { status: 500 });
   }
 

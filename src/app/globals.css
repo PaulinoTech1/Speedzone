@@ -2753,3 +2753,11 @@ body:has(.error-page) {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* Vehicle detail page */
+.vehicle-detail .vehicle-card { max-width: 56rem; margin: 0 auto; }
+.vehicle-card h3 a { color: inherit; text-decoration: none; }
+.vehicle-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .5rem 1.5rem; margin: 1rem 0; }
+.vehicle-specs dt { color: var(--muted); font-size: .85rem; }
+.vehicle-specs dd { margin: 0; font-weight: 600; }
+.admin-vehicle-details { border: 1px solid var(--line); border-radius: var(--radius); padding: .75rem 1rem; }

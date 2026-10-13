@@ -50,7 +50,17 @@ describe("test-drive acceptance and notification", () => {
     mocks.put.mockRejectedValue(new Error("Storage unavailable"));
     expect((await POST(request())).status).toBe(500);
     expect(mocks.send).not.toHaveBeenCalled();
-    expect(mocks.event).not.toHaveBeenCalled();
+    expect(mocks.event).toHaveBeenCalledOnce();
+    expect(mocks.event).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed", reason: "storage_write_failed", metadata: { failure_stage: "storage_write", error_class: "Error" } }));
+  });
+
+  it("attributes encryption failures without customer data", async () => {
+    const crypto = await import("@/lib/test-drive-crypto");
+    vi.spyOn(crypto, "encryptTestDrivePayload").mockRejectedValueOnce(new TypeError("bad key"));
+    expect((await POST(request())).status).toBe(500);
+    const event = mocks.event.mock.calls[0]?.[0];
+    expect(event).toMatchObject({ reason: "encryption_failed", metadata: { failure_stage: "encryption", error_class: "TypeError" } });
+    expect(JSON.stringify(event)).not.toContain("customer@example.com");
   });
 
   it("sends readable notification text after storing the request", async () => {
