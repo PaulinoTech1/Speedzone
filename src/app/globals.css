@@ -2761,3 +2761,6 @@ body:has(.error-page) {
 .vehicle-specs dt { color: var(--muted); font-size: .85rem; }
 .vehicle-specs dd { margin: 0; font-weight: 600; }
 .admin-vehicle-details { border: 1px solid var(--line); border-radius: var(--radius); padding: .75rem 1rem; }
+.admin-import { margin-bottom: 1.5rem; }
+.import-preview ul { margin: .25rem 0 .75rem; padding-left: 1.2rem; }
+.import-preview h3 { margin: .75rem 0 .25rem; font-size: 1rem; }

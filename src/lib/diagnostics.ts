@@ -8,6 +8,7 @@ export const diagnosticOperations = {
   INVENTORY_LISTING_CREATE: "Create listing: check photo validation, revision and public Blob credentials.",
   INVENTORY_LISTING_UPDATE: "Update listing: compare browser revision with current catalog; check persistence.",
   INVENTORY_LISTING_REMOVE: "Remove references: check revision and Blob persistence. Photo objects are retained.",
+  INVENTORY_IMPORT: "Import inventory CSV: check passkey session, file limits, column mapping and catalog revision.",
   INVENTORY_PHOTO_UPLOAD_AUTHORIZE: "Issue upload token: check passkey session, photo path and public Blob origin.",
   INVENTORY_PHOTO_FETCH: "Fetch photo: check origin allowlist, signature, size and upstream availability.",
   CUSTOMER_REQUEST_ACCEPT: "Accept request: check private Blob, encryption key, limiter and UUID reuse.",

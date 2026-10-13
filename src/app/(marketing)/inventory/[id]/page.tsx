@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
+import { publicPhotos, serializeJsonLd, vehicleStructuredData } from "@/lib/vehicle-structured-data";
 import { SiteHeader, SiteFooter } from "@/components/public/SiteChrome";
 import { VehiclePhotoCarousel } from "@/components/public/VehiclePhotoCarousel";
 import { detailLabels, readInventory, vehicleDetailKeys, vehicleIdPattern, vehiclePath, type Vehicle } from "@/lib/inventory";
@@ -20,13 +22,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try { vehicle = await findVehicle(id); } catch { /* fall through to a generic title */ }
   if (!vehicle) return { title: "Vehicle not found", robots: { index: false } };
   const title = titleOf(vehicle);
+  const sold = vehicle.status === "sold";
+  const photos = publicPhotos(vehicle);
   return {
     title,
     description: `${title} with ${vehicle.mileage.toLocaleString("en-US")} miles at SpeedZone Motorsports.`,
     alternates: { canonical: vehiclePath(vehicle) },
     // Sold listings keep their stable URL (catalog feeds may still reference it) but leave the index.
     robots: vehicle.status === "sold" ? { index: false } : undefined,
-    openGraph: vehicle.photos[0] ? { images: [{ url: vehicle.photos[0] }] } : undefined,
+    openGraph: {
+      type: "website",
+      url: vehiclePath(vehicle),
+      title,
+      description: `${sold ? "Sold · " : `$${vehicle.price.toLocaleString("en-US")} · `}${vehicle.mileage.toLocaleString("en-US")} miles${vehicle.bodyStyle ? ` · ${vehicle.bodyStyle}` : ""}`,
+      ...(photos.length ? { images: photos.slice(0, 4).map(url => ({ url, alt: title })) } : {}),
+    },
+    twitter: photos.length ? { card: "summary_large_image", title, images: [photos[0]!] } : { card: "summary", title },
   };
 }
 
@@ -39,6 +50,7 @@ export default async function Page({ params }: Props) {
     return <><SiteHeader currentPage="inventory" /><main id="main"><section className="inventory-list"><div className="shell"><div className="inventory-unavailable" role="status"><h1>Inventory is temporarily unavailable.</h1><p>Please call us for current vehicle availability and pricing.</p><a className="button button-primary" href="tel:+15088269405">Call (508) 826-9405</a></div></div></section></main><SiteFooter currentPage="inventory" /></>;
   }
   if (!vehicle) notFound();
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   const title = titleOf(vehicle);
   const sold = vehicle.status === "sold";
   const specs: Array<[string, string]> = [
@@ -47,7 +59,7 @@ export default async function Page({ params }: Props) {
     ...(vehicle.vin ? [["VIN", vehicle.vin] as [string, string]] : []),
     ...vehicleDetailKeys.filter(key => vehicle[key]).map(key => [detailLabels[key], String(vehicle[key])] as [string, string]),
   ];
-  return <><SiteHeader currentPage="inventory" /><main id="main">
+  return <><script type="application/ld+json" nonce={nonce} dangerouslySetInnerHTML={{ __html: serializeJsonLd(vehicleStructuredData(vehicle)) }} /><SiteHeader currentPage="inventory" /><main id="main">
     <section className="inventory-list vehicle-detail"><div className="shell">
       <p><Link href="/inventory">← Back to inventory</Link></p>
       <article className="vehicle-card" data-testid="vehicle-detail">
