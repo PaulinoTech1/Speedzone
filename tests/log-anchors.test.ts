@@ -13,3 +13,29 @@ describe("log anchors", () => {
     await expect(import("../scripts/log-anchors/test.mjs")).resolves.toBeDefined();
   });
 });
+
+describe("log anchors APL fallback", () => {
+  it("falls back to a time-sorted APL query and masks tokens in errors", async () => {
+    // @ts-expect-error plain .mjs module without types
+    const { fetchWindow } = await import("../scripts/log-anchors/lib.mjs");
+    const calls: Array<{ url: string; body: { apl?: string } }> = [];
+    const okFetch = async (u: URL | string, init: { body: string }) => {
+      calls.push({ url: String(u), body: JSON.parse(init.body) });
+      if (calls.length === 1) return { ok: false, status: 403, text: async () => JSON.stringify({ message: "forbidden xaat-abc123-def" }) };
+      return { ok: true, json: async () => ({ matches: [{ _time: "2026-10-13T10:00:00Z", data: {} }] }) };
+    };
+    const rows = await fetchWindow(0, 3600_000, { url: "https://api.axiom.co/v1/datasets/sec'logs/query", token: "t", fetchImpl: okFetch });
+    expect(rows).toHaveLength(1);
+    expect(calls[1]?.url).toContain("/v1/datasets/_apl");
+    expect(calls[1]?.body.apl).toMatch(/^\['seclogs'\] \| sort by _time asc \| limit \d+$/);
+
+    let n = 0;
+    const badFetch = async () => ({ ok: false, status: ++n === 1 ? 401 : 403, text: async () => JSON.stringify({ message: "bad token xapt-SECRET-123 and xaat-OTHER-9" }) });
+    const err = await fetchWindow(0, 3600_000, { url: "https://api.axiom.co/v1/datasets/seclogs/query", token: "t", fetchImpl: badFetch }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain("HTTP 401");
+    expect(err.message).toContain("HTTP 403");
+    expect(err.message).toContain("[redacted]");
+    expect(err.message).not.toMatch(/SECRET|OTHER/);
+  });
+});

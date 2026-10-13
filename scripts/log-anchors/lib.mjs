@@ -61,7 +61,7 @@ export async function fetchWindow(start, end, { url, token, fetchImpl = fetch })
     const apl = new URL("/v1/datasets/_apl?format=legacy", u.origin);
     const res2 = await fetchImpl(apl, { method: "POST", redirect: "error", signal: AbortSignal.timeout(20000),
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ apl: `['${dataset.replace(/['\\]/g, "")}'] | limit ${LIMIT}`, startTime: new Date(start).toISOString(), endTime: new Date(end).toISOString() }) });
+      body: JSON.stringify({ apl: `['${dataset.replace(/['\\]/g, "")}'] | sort by _time asc | limit ${LIMIT}`, startTime: new Date(start).toISOString(), endTime: new Date(end).toISOString() }) });
     if (!res2.ok) throw new Error(`Axiom query failed (${legacy}; APL query HTTP ${res2.status}: ${await errorText(res2)})`);
     const body = await res2.json();
     rows = body.matches ?? [];
@@ -75,7 +75,7 @@ export async function fetchWindow(start, end, { url, token, fetchImpl = fetch })
 }
 
 // Axiom error bodies carry a short message; never echo request headers.
-async function errorText(res) {
+export async function errorText(res) {
   try { const t = await res.text(); let m = t; try { const j = JSON.parse(t); m = j.message ?? j.error ?? t; } catch {}
     return String(m).replace(/xaat-[A-Za-z0-9-]+|xapt-[A-Za-z0-9-]+/g, "[redacted]").slice(0, 300) || "(empty body)"; } catch { return "(unreadable body)"; }
 }
