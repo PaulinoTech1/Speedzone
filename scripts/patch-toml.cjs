@@ -7,7 +7,7 @@ if (!fs.existsSync(root)) {
   throw new Error('Expected Vercel TOML dependency is missing.');
 }
 const ts = require('typescript');
-const marker = '// SpeedZone TOML EOF and cursor guards v1';
+const marker = '// SpeedZone TOML EOF and cursor guards v2';
 const helpers = `
 function speedzoneTomlError(ctx, code, message, ptr = ctx.p) {
   const error = new TomlError(message, { toml: ctx.s, ptr });
@@ -45,23 +45,6 @@ const replacements = {
       skipComment(ctx);
     }
   }`,
-  skipUntil: `function skipUntil(ctx, sep, end) {
-    if (!end) {
-      const next = indexOfNewline(ctx.s, ctx.p);
-      ctx.p = next < 0 ? ctx.s.length : next;
-      return;
-    }
-    let previous = -1;
-    while (ctx.p < ctx.s.length) {
-      speedzoneProgress(ctx, previous);
-      previous = ctx.p;
-      const c = ctx.s.charCodeAt(ctx.p);
-      if (c === 35) skipComment(ctx);
-      else if (c === end || c === sep) return;
-      if (ctx.p < ctx.s.length) ctx.p++;
-    }
-    throw speedzoneTomlError(ctx, 'ERR_TOML_UNEXPECTED_EOF', 'Unexpected end of input in open structure');
-  }`,
 };
 for (const filename of ['util.js', 'struct.js', 'parse.js', 'index.cjs']) {
   const file = path.join(root, filename);
@@ -98,7 +81,7 @@ for (const filename of ['util.js', 'struct.js', 'parse.js', 'index.cjs']) {
     }
     if (replacement) { found.add(name); edits.push({ start: node.getStart(ast), end: node.end, replacement }); }
   }
-  const expected = filename === 'util.js' ? 3 : filename === 'struct.js' ? 2 : filename === 'parse.js' ? 1 : 6;
+  const expected = filename === 'util.js' ? 2 : filename === 'struct.js' ? 2 : filename === 'parse.js' ? 1 : 5;
   if (found.size !== expected) throw new Error(`TOML internals changed in ${filename}; review the patch.`);
   let output = source;
   for (const edit of edits.reverse()) output = output.slice(0, edit.start) + edit.replacement + output.slice(edit.end);
