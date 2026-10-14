@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+  buildContentSecurityPolicy,
+  CDN_DOCUMENT_PREFIX,
+  INTERNAL_RENDER_HEADER,
+  isPrivatePath,
+  NO_STORE_CACHE_CONTROL,
+  shouldServeCachedDocument,
+} from "@/lib/public-cache";
+
 // The admin portals live on dedicated subdomains. Rewrite portal-bound hosts
 // to their app routes. Real routes (API, Next.js internals, static files) and
 // paths already under the portal prefix are served untouched on every host.
@@ -72,41 +81,57 @@ export function proxy(request: NextRequest) {
     return new NextResponse("Not Found", { status: 404 });
   }
 
-  const nonce = crypto.randomUUID().replaceAll("-", "");
+  // The cached-document handler is only reachable through the rewrite below.
+  if (pathname === CDN_DOCUMENT_PREFIX || pathname.startsWith(`${CDN_DOCUMENT_PREFIX}/`)) {
+    return new NextResponse("Not Found", { status: 404, headers: { "Cache-Control": NO_STORE_CACHE_CONTROL } });
+  }
+
   const requestId = request.headers.get("x-request-id")?.match(/^[A-Za-z0-9._-]{8,96}$/)?.[0] ?? `req_${crypto.randomUUID()}`;
   const isDevelopment = process.env.NODE_ENV === "development";
-  const csp = [
-    "default-src 'self'",
-    "base-uri 'self'",
-    "object-src 'none'",
-    "frame-ancestors 'none'",
-    "form-action 'self'",
-    "img-src 'self' blob: data: https:",
-    "font-src 'self'",
-    isDevelopment
-      ? "style-src 'self' 'unsafe-inline'"
-      : `style-src 'self' 'nonce-${nonce}'`,
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDevelopment ? " 'unsafe-eval'" : ""}`,
-    "connect-src 'self' https://vercel.com",
-    "media-src 'none'",
-    "worker-src 'none'",
-    "manifest-src 'self'",
-    ...(isDevelopment ? [] : ["upgrade-insecure-requests"]),
-  ].join("; ");
-
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
-  requestHeaders.set("x-request-id", requestId);
-  requestHeaders.set("Content-Security-Policy", csp);
-
   const rewriteTarget = portalRewriteTarget(request);
+
+  // Anonymous public page navigations: the CDN-cached document carries its own
+  // hash-based CSP (see src/app/cdn-document). No nonce, no CSP set here.
+  if (!isDevelopment && shouldServeCachedDocument({ method: request.method, pathname, headers: request.headers, isPortalHost: PORTAL_HOSTS.has(host) })) {
+    const url = request.nextUrl.clone();
+    url.pathname = `${CDN_DOCUMENT_PREFIX}${pathname === "/" ? "" : pathname}`;
+    url.search = "";
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete("content-security-policy");
+    requestHeaders.delete("x-nonce");
+    requestHeaders.set("x-request-id", requestId);
+    const response = NextResponse.rewrite(url, { request: { headers: requestHeaders } });
+    response.headers.set("x-request-id", requestId);
+    return response;
+  }
+
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  const csp = buildContentSecurityPolicy({ nonce, isDevelopment });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+  if (request.headers.has(INTERNAL_RENDER_HEADER)) {
+    // Internal render for the document cache: render without a nonce. Strip any
+    // client-supplied CSP/nonce so the cached HTML never echoes one.
+    requestHeaders.delete("content-security-policy");
+    requestHeaders.delete("x-nonce");
+  } else {
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", csp);
+  }
+
   const response = rewriteTarget
     ? NextResponse.rewrite(rewriteTarget, { request: { headers: requestHeaders } })
     : NextResponse.next({ request: { headers: requestHeaders } });
+  // Anything not served from the document cache gets the per-request nonce
+  // CSP; a raw internal render therefore cannot execute scripts in a browser.
   response.headers.set("Content-Security-Policy", csp);
   response.headers.set("x-request-id", requestId);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  const effectivePath = rewriteTarget?.pathname ?? pathname;
+  if (PORTAL_HOSTS.has(host) || isPrivatePath(effectivePath) || request.headers.has(INTERNAL_RENDER_HEADER)) {
+    response.headers.set("Cache-Control", NO_STORE_CACHE_CONTROL);
+  }
 
   return response;
 }
