@@ -17,6 +17,8 @@ async function fill(page: Page) {
 }
 
 test("the real form passes the API boundary checks (origin, content type, size, strict schema)", async ({ page }) => {
+  const cspViolations: string[] = [];
+  page.on("console", message => { if (/Content Security Policy/i.test(message.text()) && /script-src|connect-src|worker-src|frame-src|child-src/.test(message.text())) cspViolations.push(message.text()); });
   await fill(page);
   const responsePromise = page.waitForResponse(response => response.url().endsWith("/api/test-drive") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Request a test drive" }).click();
@@ -28,6 +30,7 @@ test("the real form passes the API boundary checks (origin, content type, size, 
   // was accepted by every boundary check that runs before it; a boundary rejection would be 4xx.
   expect(response.status()).toBe(503);
   expect(response.headers()["cache-control"]).toContain("no-store");
+  expect(cspViolations).toEqual([]); // BotID client must not be blocked by the nonce CSP
 });
 
 test("the form shows confirmation when the API accepts the request", async ({ page }) => {

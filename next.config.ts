@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withBotId } from "botid/next/config";
 
 const isProduction = process.env.NODE_ENV === "production";
 const securityHeaders = [
@@ -37,7 +38,9 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      { source: "/:path*", headers: securityHeaders },
+      // BotID serves its challenge frame from this path and sets SAMEORIGIN itself.
+      { source: "/((?!149e9513-01fa-4fb0-aad4-566afd725d1b/).*)", headers: securityHeaders },
+      { source: "/149e9513-01fa-4fb0-aad4-566afd725d1b/:path*", headers: securityHeaders.filter((header) => header.key !== "X-Frame-Options") },
       {
         source: "/assets/:path*",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
@@ -46,4 +49,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBotId(nextConfig);

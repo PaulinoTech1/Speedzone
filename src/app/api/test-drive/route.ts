@@ -2,6 +2,7 @@ import { recordDiagnostic, withDiagnostics } from "@/lib/diagnostics";
 import { get, put } from "@vercel/blob";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
+import { checkBotId } from "botid/server";
 import { validateTestDriveFields, type TestDriveFields } from "@/lib/test-drive-validation";
 import { readTestDriveForm, TestDriveRequestError, validTestDriveOrigin } from "@/lib/test-drive-request";
 import { getRequestKeys, limitTestDriveSubmission } from "@/lib/test-drive-rate-limit";
@@ -43,6 +44,11 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 
 async function diagnosedPOST(request: Request) {
   if (!validTestDriveOrigin(request)) return json({ error: "Please submit from the website form." }, 403);
+  // BotID Basic (free). Enforced on Vercel deployments, where the challenge
+  // rewrites exist; off Vercel (local/e2e) there is nothing to verify against.
+  let bot = false;
+  if (process.env.VERCEL) { try { bot = (await checkBotId()).isBot; } catch { bot = true; } }
+  if (bot) return json({ error: "Automated submissions are not accepted. Reload the page and try again." }, 403);
   let requestId: string; let fields: TestDriveFields;
   try { ({ requestId, fields } = await readTestDriveForm(request)); }
   catch (error) { return json({ error: error instanceof TestDriveRequestError ? error.message : "Invalid form" }, error instanceof TestDriveRequestError ? error.status : 400); }

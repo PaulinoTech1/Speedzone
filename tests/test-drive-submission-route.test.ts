@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), send: vi.fn(), event: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), send: vi.fn(), event: vi.fn(), bot: vi.fn() }));
 vi.mock("@vercel/blob", () => ({ get: mocks.get, put: mocks.put }));
 vi.mock("resend", () => ({ Resend: class { emails = { send: mocks.send }; } }));
 vi.mock("@/lib/test-drive-crypto", () => ({ encryptTestDrivePayload: async (value: unknown) => JSON.stringify(value), decryptTestDrivePayload: async (value: string) => JSON.parse(value) }));
@@ -8,6 +8,7 @@ vi.mock("@/lib/test-drive-rate-limit", () => ({
   getRequestKeys: () => ({ ip: "test", contact: "test" }),
   limitTestDriveSubmission: async () => ({ configured: true, success: true }),
 }));
+vi.mock("botid/server", () => ({ checkBotId: mocks.bot }));
 vi.mock("@/lib/security-events", () => ({ securityRequestContext: () => ({}), writeSecurityEvent: mocks.event }));
 
 import { POST } from "@/app/api/test-drive/route";
@@ -25,6 +26,7 @@ describe("test-drive acceptance and notification", () => {
     vi.stubEnv("RESEND_EMAIL_DOMAIN", "example.com");
     vi.stubEnv("TEST_DRIVE_NOTIFICATION_EMAIL", "staff@example.com");
     mocks.get.mockResolvedValue(null);
+    mocks.bot.mockResolvedValue({ isBot: false });
     mocks.put.mockResolvedValue({});
     mocks.send.mockResolvedValue({ error: null });
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -114,6 +116,11 @@ describe("test-drive acceptance and notification", () => {
     it("rejects unknown and duplicate fields", async () => {
       await rejects(400)(request(new URLSearchParams({ ...valid, admin: "1" }).toString()));
       await rejects(400)(request(new URLSearchParams(valid).toString() + "&email=other%40example.com"));
+    });
+    it("rejects requests BotID classifies as bots, and fails closed if BotID errors", async () => {
+      vi.stubEnv("VERCEL", "1");
+      mocks.bot.mockResolvedValueOnce({ isBot: true }); await rejects(403)(request());
+      mocks.bot.mockRejectedValueOnce(new Error("unavailable")); await rejects(403)(request());
     });
     it("marks success responses no-store", async () => {
       const response = await POST(request());
