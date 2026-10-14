@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), send: vi.fn(), event: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), send: vi.fn(), event: vi.fn(), bot: vi.fn() }));
 vi.mock("@vercel/blob", () => ({ get: mocks.get, put: mocks.put }));
 vi.mock("resend", () => ({ Resend: class { emails = { send: mocks.send }; } }));
 vi.mock("@/lib/test-drive-crypto", () => ({ encryptTestDrivePayload: async (value: unknown) => JSON.stringify(value), decryptTestDrivePayload: async (value: string) => JSON.parse(value) }));
@@ -8,14 +8,14 @@ vi.mock("@/lib/test-drive-rate-limit", () => ({
   getRequestKeys: () => ({ ip: "test", contact: "test" }),
   limitTestDriveSubmission: async () => ({ configured: true, success: true }),
 }));
+vi.mock("botid/server", () => ({ checkBotId: mocks.bot }));
 vi.mock("@/lib/security-events", () => ({ securityRequestContext: () => ({}), writeSecurityEvent: mocks.event }));
 
 import { POST } from "@/app/api/test-drive/route";
 
-function request() {
-  const form = new FormData();
-  for (const [key, value] of Object.entries({ name: "Test Customer", email: "customer@example.com", phone: "5085550100", requestId: "11111111-1111-4111-8111-111111111111", vehicle: "Test vehicle", date: "2099-01-05", time: "10:00 AM", notes: "Synthetic request" })) form.set(key, value);
-  return new Request("https://speedzone.example/api/test-drive", { method: "POST", body: form });
+const valid = { name: "Test Customer", email: "customer@example.com", phone: "5085550100", requestId: "11111111-1111-4111-8111-111111111111", vehicle: "Test vehicle", date: "2099-01-05", time: "10:00 AM", notes: "Synthetic request" };
+function request(body: string = new URLSearchParams(valid).toString(), headers: Record<string, string> = {}) {
+  return new Request("https://www.speedzonems.com/api/test-drive", { method: "POST", body, headers: { origin: "https://www.speedzonems.com", "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded", ...headers } });
 }
 
 describe("test-drive acceptance and notification", () => {
@@ -26,6 +26,7 @@ describe("test-drive acceptance and notification", () => {
     vi.stubEnv("RESEND_EMAIL_DOMAIN", "example.com");
     vi.stubEnv("TEST_DRIVE_NOTIFICATION_EMAIL", "staff@example.com");
     mocks.get.mockResolvedValue(null);
+    mocks.bot.mockResolvedValue({ isBot: false });
     mocks.put.mockResolvedValue({});
     mocks.send.mockResolvedValue({ error: null });
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -88,5 +89,42 @@ describe("test-drive acceptance and notification", () => {
   it("does not fall back to the public inventory token", async () => {
     vi.stubEnv("TEST_DRIVE_BLOB_READ_WRITE_TOKEN", ""); vi.stubEnv("BLOB_READ_WRITE_TOKEN", "public-token");
     expect((await POST(request())).status).toBe(503); expect(mocks.put).not.toHaveBeenCalled();
+  });
+
+  describe("request boundary", () => {
+    const rejects = (status: number) => async (req: Request) => { const response = await POST(req); expect(response.status).toBe(status); expect(response.headers.get("cache-control")).toContain("no-store"); expect(mocks.put).not.toHaveBeenCalled(); expect(mocks.get).not.toHaveBeenCalled(); };
+    it("rejects a missing or foreign Origin", async () => {
+      await rejects(403)(request(undefined, { origin: "" }));
+      await rejects(403)(request(undefined, { origin: "https://evil.example" }));
+      await rejects(403)(request(undefined, { origin: "https://speedzonems.com" })); // allowlisted but not this host
+    });
+    it("rejects cross-site and same-site Fetch Metadata", async () => {
+      await rejects(403)(request(undefined, { "sec-fetch-site": "cross-site" }));
+      await rejects(403)(request(undefined, { "sec-fetch-site": "same-site" }));
+    });
+    it("enforces the form content type", async () => {
+      await rejects(415)(request(JSON.stringify(valid), { "content-type": "application/json" }));
+      const multipart = new FormData(); for (const [k, v] of Object.entries(valid)) multipart.set(k, v);
+      const req = new Request("https://www.speedzonems.com/api/test-drive", { method: "POST", body: multipart, headers: { origin: "https://www.speedzonems.com" } });
+      await rejects(415)(req);
+    });
+    it("caps the streamed body at 8 KB even without a content-length", async () => {
+      await rejects(413)(request(new URLSearchParams({ ...valid, notes: "x".repeat(9000) }).toString()));
+      const stream = new ReadableStream({ start(controller) { for (let i = 0; i < 20; i++) controller.enqueue(new TextEncoder().encode("notes=" + "y".repeat(1000) + "&")); controller.close(); } });
+      await rejects(413)(new Request("https://www.speedzonems.com/api/test-drive", { method: "POST", body: stream, duplex: "half", headers: { origin: "https://www.speedzonems.com", "content-type": "application/x-www-form-urlencoded" } } as RequestInit));
+    });
+    it("rejects unknown and duplicate fields", async () => {
+      await rejects(400)(request(new URLSearchParams({ ...valid, admin: "1" }).toString()));
+      await rejects(400)(request(new URLSearchParams(valid).toString() + "&email=other%40example.com"));
+    });
+    it("rejects requests BotID classifies as bots, and fails closed if BotID errors", async () => {
+      vi.stubEnv("VERCEL", "1");
+      mocks.bot.mockResolvedValueOnce({ isBot: true }); await rejects(403)(request());
+      mocks.bot.mockRejectedValueOnce(new Error("unavailable")); await rejects(403)(request());
+    });
+    it("marks success responses no-store", async () => {
+      const response = await POST(request());
+      expect(response.status).toBe(201); expect(response.headers.get("cache-control")).toContain("no-store");
+    });
   });
 });

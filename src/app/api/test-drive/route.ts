@@ -2,7 +2,9 @@ import { recordDiagnostic, withDiagnostics } from "@/lib/diagnostics";
 import { get, put } from "@vercel/blob";
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
-import { getTestDriveFields, validateTestDriveFields } from "@/lib/test-drive-validation";
+import { checkBotId } from "botid/server";
+import { validateTestDriveFields, type TestDriveFields } from "@/lib/test-drive-validation";
+import { readTestDriveForm, TestDriveRequestError, validTestDriveOrigin } from "@/lib/test-drive-request";
 import { getRequestKeys, limitTestDriveSubmission } from "@/lib/test-drive-rate-limit";
 import { decryptTestDrivePayload, encryptTestDrivePayload } from "@/lib/test-drive-crypto";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
@@ -34,17 +36,28 @@ async function reportFailure(request: Request, failureStage: string, errorName: 
   } catch { /* telemetry is best effort */ }
 }
 
-async function diagnosedPOST(request: Request) {
-  const token = privateToken();
-  if (!token) return NextResponse.json({ error: "Test-drive storage is not configured" }, { status: 503 });
+// Every response from this endpoint is private and uncacheable.
+const noStore = { "Cache-Control": "no-store" };
+function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
+  return NextResponse.json(body, { status, headers: { ...noStore, ...headers } });
+}
 
-  let form: FormData;
-  try { form = await request.formData(); } catch { return NextResponse.json({ error: "Invalid form" }, { status: 400 }); }
-  const requestId = String(form.get("requestId") || "");
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) return NextResponse.json({ error: "Invalid request reference. Refresh the form." }, { status: 400 });
-  const fields = getTestDriveFields(form);
+async function diagnosedPOST(request: Request) {
+  if (!validTestDriveOrigin(request)) return json({ error: "Please submit from the website form." }, 403);
+  // BotID Basic (free). Enforced on Vercel deployments, where the challenge
+  // rewrites exist; off Vercel (local/e2e) there is nothing to verify against.
+  let bot = false;
+  if (process.env.VERCEL) { try { bot = (await checkBotId()).isBot; } catch { bot = true; } }
+  if (bot) return json({ error: "Automated submissions are not accepted. Reload the page and try again." }, 403);
+  let requestId: string; let fields: TestDriveFields;
+  try { ({ requestId, fields } = await readTestDriveForm(request)); }
+  catch (error) { return json({ error: error instanceof TestDriveRequestError ? error.message : "Invalid form" }, error instanceof TestDriveRequestError ? error.status : 400); }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) return json({ error: "Invalid request reference. Refresh the form." }, 400);
   const validationError = validateTestDriveFields(fields);
-  if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
+  if (validationError) return json({ error: validationError }, 400);
+
+  const token = privateToken();
+  if (!token) return json({ error: "Test-drive storage is not configured" }, 503);
 
   let rateLimit;
   try {
@@ -52,17 +65,14 @@ async function diagnosedPOST(request: Request) {
   } catch (error) {
     console.error("[test-drive] contact protection failed", errorClass(error));
     await reportFailure(request, "contact_protection", errorClass(error));
-    return NextResponse.json({ error: "Submissions are temporarily unavailable." }, { status: 503 });
+    return json({ error: "Submissions are temporarily unavailable." }, 503);
   }
   if (!rateLimit.configured) {
     await reportFailure(request, "rate_limiter", "unavailable");
-    return NextResponse.json({ error: "Submissions are temporarily unavailable." }, { status: 503 });
+    return json({ error: "Submissions are temporarily unavailable." }, 503);
   }
   if (!rateLimit.success) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfter) } },
-    );
+    return json({ error: "Too many requests. Please try again later." }, 429, { "Retry-After": String(rateLimit.retryAfter) });
   }
 
   const submission: TestDriveSubmission = {
@@ -83,7 +93,7 @@ async function diagnosedPOST(request: Request) {
     if (!existing) return null;
     const saved = await decryptTestDrivePayload<TestDriveSubmission>(await new Response(existing.stream).text());
     const matches = Object.entries(fields).every(([key, value]) => saved[key as keyof TestDriveSubmission] === value);
-    return NextResponse.json(matches ? { ok: true, id: saved.id } : { error: "This reference was already used with different details. Refresh to start a new request." }, { status: matches ? 200 : 409 });
+    return json(matches ? { ok: true, id: saved.id } : { error: "This reference was already used with different details. Refresh to start a new request." }, matches ? 200 : 409);
   }
   let stage = "storage_read";
   try {
@@ -103,7 +113,7 @@ async function diagnosedPOST(request: Request) {
     try { const existing = await existingResponse(); if (existing) return existing; } catch { /* retry remains safe */ }
     console.error("[test-drive] submission failed", stage, errorClass(error));
     await reportFailure(request, stage, errorClass(error));
-    return NextResponse.json({ error: "Unable to submit your request right now." }, { status: 500 });
+    return json({ error: "Unable to submit your request right now." }, 500);
   }
 
   try {
@@ -143,7 +153,7 @@ async function diagnosedPOST(request: Request) {
   }
 
   await writeSecurityEvent({ ...securityRequestContext(request), event: "test-drive.submission", outcome: "allowed", actor: "anonymous", reason: "encrypted_submission_stored" });
-  return NextResponse.json({ ok: true, id: submission.id }, { status: 201 });
+  return json({ ok: true, id: submission.id }, 201);
 }
 
 export async function POST(request: Request) { return withDiagnostics("CUSTOMER_REQUEST_ACCEPT", () => diagnosedPOST(request)); }

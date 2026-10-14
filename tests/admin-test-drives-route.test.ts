@@ -23,7 +23,7 @@ describe("admin test-drive inbox", () => {
     vi.resetAllMocks();
     vi.stubEnv("TEST_DRIVE_BLOB_READ_WRITE_TOKEN", "synthetic-private-token");
     mocks.isAdminAuthenticated.mockResolvedValue(true);
-    mocks.get.mockImplementation(async (pathname: string) => pathname === "missing"
+    mocks.get.mockImplementation(async (pathname: string) => (pathname === "missing" || pathname === "test-drive/requests/11111111-1111-4111-8111-111111111111.enc")
       ? null
       : { stream: new Response(pathname).body });
     mocks.decrypt.mockImplementation(async (value: string) => {
@@ -66,10 +66,17 @@ describe("admin test-drive inbox", () => {
   });
 
   it("keeps the not-found response for an individual missing record", async () => {
-    const response = await GET(new Request(`${request().url}?pathname=missing`));
+    const response = await GET(new Request(`${request().url}?pathname=test-drive/requests/11111111-1111-4111-8111-111111111111.enc`));
 
     expect(response.status).toBe(404);
     expect(mocks.list).not.toHaveBeenCalled();
+  });
+  it("rejects pathnames outside the generated request shape", async () => {
+    for (const pathname of ["missing", "inventory/catalog.json", "test-drive/requests/../x.enc"]) {
+      const response = await GET(new Request(`${request().url}?pathname=${encodeURIComponent(pathname)}`));
+      expect(response.status).toBe(400);
+    }
+    expect(mocks.get).not.toHaveBeenCalled();
   });
   it("makes all 250 records reachable through bounded cursor pages", async () => {
     mocks.list.mockImplementation(async ({ cursor, limit }) => {

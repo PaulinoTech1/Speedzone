@@ -1,14 +1,14 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { getRedis } from "@/lib/redis";
 import { createHmac } from "node:crypto";
+import { trustedClientIp } from "@/lib/test-drive-request";
 
 const redis = getRedis();
 const ipLimiter = redis ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, "1 h"), prefix: "speedzone:test-drive:ip", analytics: false, timeout: 2000 }) : null;
 const contactLimiter = redis ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(3, "1 h"), prefix: "speedzone:test-drive:contact", analytics: false, timeout: 2000 }) : null;
 
 export function getRequestKeys(request: Request, email: string, phone: string) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const ip = forwardedFor || request.headers.get("x-real-ip") || "unknown";
+  const ip = trustedClientIp(request.headers);
   const secret = process.env.TEST_DRIVE_ENCRYPTION_KEY;
   if (!secret) throw new Error("Contact protection is not configured");
   const digest = (value: string) => createHmac("sha256", secret).update(`rate-limit:${value}`).digest("hex");

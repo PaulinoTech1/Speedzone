@@ -1,6 +1,7 @@
 import { withDiagnostics } from "@/lib/diagnostics";
 import { auditRoute } from "@/lib/security-events";
 import { NextResponse } from "next/server";
+import { validAdminMutation } from "@/lib/admin-mutation";
 import { Resend } from "resend";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { createRecoveryToken, recoveryConfigured, recoveryEmail, recoveryTtlSeconds } from "@/lib/admin-recovery";
@@ -12,6 +13,7 @@ function clientKey(request: Request) {
 const noStore = { "Cache-Control": "no-store" };
 
 async function handlePOST(request: Request) {
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   let limit;
   try {
     limit = await checkAdminLoginRateLimit(`recovery:${clientKey(request)}`);
@@ -21,6 +23,7 @@ async function handlePOST(request: Request) {
   }
   if (!limit.configured) return NextResponse.json({ error: "Recovery is temporarily unavailable" }, { status: 503, headers: noStore });
   if (!limit.success) return NextResponse.json({ error: "Too many recovery attempts. Try again later." }, { status: 429, headers: { ...noStore, "Retry-After": String(limit.retryAfter) } });
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") return NextResponse.json({ error: "JSON request required" }, { status: 415, headers: noStore });
   const body = await request.json().catch(() => ({}));
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!recoveryConfigured()) return NextResponse.json({ error: "Recovery is temporarily unavailable" }, { status: 503, headers: noStore });
