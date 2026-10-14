@@ -6,6 +6,7 @@ import { authenticationOptions, credentialActionOptions, verifyCredentialAction,
 import { validAdminMutation } from "@/lib/admin-mutation";
 import { readBoundedJson, RequestBodyError } from "@/lib/shared/mutation-request";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
+import { cancelPasskeyReset, getPasskeyReset, issueRecoveryCodes, notifyRecoveryMailbox } from "@/lib/admin-passkey-recovery";
 import { admitAuthenticationOptions, clientAddress } from "@/lib/passkey-options-rate-limit";
 
 async function handlePOST(request: Request, body: Record<string, unknown>) {
@@ -31,12 +32,14 @@ async function handlePOST(request: Request, body: Record<string, unknown>) {
   if (action === "register") {
     const result = await verifyRegistration(body.response, typeof body.name === "string" ? body.name.trim().slice(0, 80) : "", webAuthnConfig, request, body.grant);
     if (!result.verified) return NextResponse.json(result, { status: 400, headers: { "Cache-Control": "no-store" } });
+    // Each enrollment issues a fresh set of offline recovery codes, shown once.
+    const recoveryCodes = await issueRecoveryCodes();
     // Managed enrollment keeps the authorizing session. Initial setup can
     // exchange only the generation returned by its successful atomic commit.
-    if (!result.setupGeneration) return NextResponse.json({ verified: true }, { headers: { "Cache-Control": "no-store" } });
+    if (!result.setupGeneration) return NextResponse.json({ verified: true, recoveryCodes }, { headers: { "Cache-Control": "no-store" } });
     const session = await createAdminSession(result.credentialEpoch, "passkey", result.setupGeneration);
     if (!session) return NextResponse.json({ error: "Passkey added. Refresh and sign in with it to continue." }, { status: 503, headers: { "Cache-Control": "no-store" } });
-    const response = NextResponse.json({ verified: true }, { headers: { "Cache-Control": "no-store" } });
+    const response = NextResponse.json({ verified: true, recoveryCodes }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(adminCookie.name, session, adminCookieOptions());
     await writeSecurityEvent({ ...securityRequestContext(request,true), event: "admin.session.created", outcome: "allowed", actor: "admin", reason: "passkey_registration_session_created", metadata: { auth_factor: "passkey", credential_epoch: result.credentialEpoch } });
     return response;
@@ -65,6 +68,18 @@ async function handlePOST(request: Request, body: Record<string, unknown>) {
     return response;
   }
   if (!(await isAdmin())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (action === "recovery-status") {
+    const pending = await getPasskeyReset();
+    return NextResponse.json({ pendingReset: pending ? { executeAt: new Date(pending.executeAt).toISOString() } : null }, { headers: { "Cache-Control": "no-store" } });
+  }
+  if (action === "cancel-recovery") {
+    const cancelled = await cancelPasskeyReset();
+    if (cancelled) {
+      await writeSecurityEvent({ ...securityRequestContext(request,true), event: "admin.passkey", outcome: "denied", actor: "admin", reason: "recovery_reset_cancelled" });
+      await notifyRecoveryMailbox("SpeedZone admin passkey reset cancelled", "A pending reset of all SpeedZone admin passkeys was cancelled from a signed-in passkey session.");
+    }
+    return NextResponse.json({ cancelled }, { headers: { "Cache-Control": "no-store" } });
+  }
   if (action === "list") return NextResponse.json({ passkeys: await listPasskeys() }, { headers: { "Cache-Control": "no-store" } });
   if (action === "delete") {
     const result = await deletePasskey(typeof body.id === "string" ? body.id : "", request, body.grant);
@@ -83,9 +98,9 @@ async function diagnosedPOST(request: Request) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status: error instanceof RequestBodyError ? error.status : 400 });
   }
-  const actions = ["register", "authenticate", "delete", "list", "registration-options", "authentication-options", "reauthentication-options", "reauthenticate"];
+  const actions = ["register", "authenticate", "delete", "list", "recovery-status", "cancel-recovery", "registration-options", "authentication-options", "reauthentication-options", "reauthenticate"];
   const action = typeof body?.action === "string" && actions.includes(body.action) ? body.action : "invalid_action";
-  return auditRoute(request, "admin.passkey", () => handlePOST(request, body), action, ["authenticate", "register", "delete", "list"].includes(action) ? "admin" : "anonymous");
+  return auditRoute(request, "admin.passkey", () => handlePOST(request, body), action, ["authenticate", "register", "delete", "list", "recovery-status", "cancel-recovery"].includes(action) ? "admin" : "anonymous");
 }
 
 export async function POST(request: Request) { return withDiagnostics("ADMIN_PASSKEY_OPERATION", () => diagnosedPOST(request)); }
