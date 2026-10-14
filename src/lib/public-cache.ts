@@ -141,14 +141,14 @@ async function sha256Source(content: string): Promise<string> {
 export async function inlineContentHashes(html: string): Promise<{ scripts: string[]; styles: string[] }> {
   const scripts = new Set<string>();
   const styles = new Set<string>();
-  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script(?=[\s/>])[^>]*>/gi)) {
     const attributes = match[1] ?? "";
     if (attribute(attributes, "src") !== null) continue;
     const type = (attribute(attributes, "type") ?? "").trim().toLowerCase();
     if (!EXECUTABLE_SCRIPT_TYPES.has(type)) continue; // e.g. application/ld+json is data, not script
     scripts.add(await sha256Source(match[2] ?? ""));
   }
-  for (const match of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)) {
+  for (const match of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style(?=[\s/>])[^>]*>/gi)) {
     styles.add(await sha256Source(match[1] ?? ""));
   }
   return { scripts: [...scripts], styles: [...styles] };

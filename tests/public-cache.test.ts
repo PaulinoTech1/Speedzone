@@ -103,6 +103,13 @@ describe("content security policy", () => {
     expect(hashes.scripts).toEqual([sha("self.__next_f.push([0])"), sha("x()")]);
     expect(hashes.styles).toEqual([sha("p{}")]);
   });
+
+  it("ends scripts where browsers do, including end tags with whitespace or attributes", async () => {
+    const { createHash } = await import("node:crypto");
+    const sha = (value: string) => `'sha256-${createHash("sha256").update(value).digest("base64")}'`;
+    const hashes = await inlineContentHashes("<script>a()</script\t\n bar><script>b()</SCRIPT ><script>c()</scriptx></script>");
+    expect(hashes.scripts).toEqual([sha("a()"), sha("b()"), sha("c()</scriptx>")]);
+  });
 });
 
 describe("proxy cache and CSP selection", () => {
