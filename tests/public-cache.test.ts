@@ -135,6 +135,8 @@ describe("proxy cache and CSP selection", () => {
     expect(response.headers.get("x-middleware-request-content-security-policy")).toBeNull();
     expect(response.headers.get("Cache-Control")).toContain("no-store");
     expect(response.headers.get("x-speedzone-rendered")).toBe("1");
+    expect(response.headers.get("Content-Security-Policy")).not.toContain("nonce-");
+    expect(response.headers.get("Content-Security-Policy")).toContain("script-src 'self';");
     expect(proxy(new NextRequest("https://www.speedzonems.com/api/inventory")).headers.get("x-speedzone-rendered")).toBeNull();
   });
 

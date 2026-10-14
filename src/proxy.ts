@@ -124,8 +124,13 @@ export function proxy(request: NextRequest) {
     ? NextResponse.rewrite(rewriteTarget, { request: { headers: requestHeaders } })
     : NextResponse.next({ request: { headers: requestHeaders } });
   // Anything not served from the document cache gets the per-request nonce
-  // CSP; a raw internal render therefore cannot execute scripts in a browser.
-  response.headers.set("Content-Security-Policy", csp);
+  // CSP. Internal renders get a nonce-less policy instead: on Vercel a nonce
+  // here leaks into the render, and without hashes a raw internal render
+  // cannot execute any inline script in a browser.
+  response.headers.set(
+    "Content-Security-Policy",
+    request.headers.has(INTERNAL_RENDER_HEADER) ? buildContentSecurityPolicy({ isDevelopment }) : csp,
+  );
   response.headers.set("x-request-id", requestId);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
