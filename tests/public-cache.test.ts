@@ -165,6 +165,21 @@ describe("proxy cache and CSP selection", () => {
   });
 });
 
+describe("API route sources", () => {
+  it("never declare a public or shared-cache Cache-Control (except the public photo proxy)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const root = join(process.cwd(), "src/app/api");
+    const files: string[] = [];
+    const walk = (dir: string) => { for (const entry of readdirSync(dir)) { const path = join(dir, entry); if (statSync(path).isDirectory()) walk(path); else if (/^route\.tsx?$/.test(entry)) files.push(path); } };
+    walk(root);
+    for (const file of files) {
+      const route = "/api/" + relative(root, file).replace(/\/route\.tsx?$/, "");
+      if (PUBLIC_API_PATHS.has(route)) continue;
+      expect(readFileSync(file, "utf8"), route).not.toMatch(/public,\s*(max-age|s-maxage)|s-maxage|stale-while-revalidate/i);
+    }
+  });
+});
+
 describe("cached document handler", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
