@@ -1,6 +1,7 @@
 import { withDiagnostics } from "@/lib/diagnostics";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { validAdminMutation } from "@/lib/admin-mutation";
 import { adminCookie, adminCookieOptions, clearAdminCookie, createAdminSession, revokeAdminSession } from "@/lib/admin-auth";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { verifyAdminPassword } from "@/lib/admin-recovery";
@@ -14,6 +15,7 @@ function getClientIdentifier(request: Request) {
 }
 
 async function diagnosedPOST(request: Request) {
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   const context = securityRequestContext(request,true);
   const rateLimit = await checkAdminLoginRateLimit(`ip:${getClientIdentifier(request)}`);
   if (!rateLimit.configured) {

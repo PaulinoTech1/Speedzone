@@ -1,10 +1,12 @@
 import { withDiagnostics } from "@/lib/diagnostics";
 import { auditRoute, securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 import { NextResponse } from "next/server";
+import { validAdminMutation } from "@/lib/admin-mutation";
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { resetAdminPasswordWithToken } from "@/lib/admin-recovery";
 
 async function handlePOST(request: Request) {
+  if (!validAdminMutation(request)) return NextResponse.json({ error: "Invalid request origin" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   const client = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const limit = await checkAdminLoginRateLimit(`recovery-reset:${client}`);
   if (!limit.configured) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });

@@ -35,9 +35,13 @@ export function TestDriveForm() {
     pending.current = true; setSubmitting(true);
     setError("");
     try {
+    // URL-encoded with each field exactly once; the API rejects anything else.
+    const body = new URLSearchParams();
+    for (const key of ["requestId", "name", "email", "phone", "vehicle", "date", "time", "notes"]) body.set(key, String(form.get(key) ?? ""));
     const response = await fetch("/api/test-drive", {
       method: "POST",
-      body: form,
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
     });
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
