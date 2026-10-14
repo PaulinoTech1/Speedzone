@@ -20,6 +20,7 @@ export const diagnosticOperations = {
   ADMIN_PASSKEY_OPERATION: "Passkey operation: check RP ID, origin, challenge expiry and credential epoch.",
   ADMIN_RECOVERY_REQUEST: "Request recovery: check limiter, configured mailbox, Redis and email delivery.",
   ADMIN_RECOVERY_RESET: "Reset recovery: inspect operation ID, token expiry and epoch without logging secrets.",
+  ADMIN_PASSKEY_RESET_REQUEST: "Schedule passkey reset: check origin, limiter, recovery token, recovery code and pending reset without logging secrets.",
   ADMIN_SESSION_RESOLVE: "Resolve session purpose: check expiry and Redis availability.",
   ADMIN_DIAGNOSTICS_READ: "Read diagnostics: require current passkey session and Redis availability.",
   RESPONSIBLE_BUG_REPORT_ACCEPT: "Accept bug report: check origin, limits, encryption settings and Redis.",

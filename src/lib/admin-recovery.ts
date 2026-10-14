@@ -10,6 +10,7 @@ const legacyOverrideKey = "speedzone:admin-password-override";
 const legacyCredentialKey = "speedzone:admin-credential";
 const credentialStateKey = "speedzone:admin-credential-state:v1";
 const epochKey = "speedzone:admin-credential-epoch";
+const sessionGenerationKey = "speedzone:admin-session-generation";
 const tokenLength = 43;
 const operationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const receiptPrefix = "speedzone:admin-recovery-receipt:v2:";
@@ -98,22 +99,26 @@ const reconcileReceiptScript = `
 local raw = redis.call('GET', KEYS[1])
 if not raw then return -5 end
 local ok, saved = pcall(cjson.decode, raw)
-if not ok or saved.version ~= 2 or saved.operationId ~= ARGV[1] or saved.tokenHash ~= ARGV[2] then return -2 end
+if not ok or saved.version ~= 3 or saved.operationId ~= ARGV[1] or saved.tokenHash ~= ARGV[2] then return -2 end
 if saved.expiresAt <= tonumber(ARGV[3]) then return -5 end
-local epoch = redis.call('GET', KEYS[2])
-if not epoch then return -5 end
-if epoch ~= tostring(saved.committedEpoch) then return -4 end
+local current = redis.call('GET', KEYS[2])
+if not current then return -5 end
+if current ~= saved.passwordHash then return -4 end
 return 1
 `;
+// A password reset proves mailbox possession only. It replaces the password
+// hash and revokes every session (generation rotation) but deliberately leaves
+// the credential epoch alone, so enrolled passkeys stay current and password
+// login keeps answering "passkey sign-in required". Retiring passkeys needs
+// the separate recovery-code + 48h flow in admin-passkey-recovery.ts.
 const commitRecoveryScript = `
 local receipt = redis.call('GET', KEYS[5])
 if receipt then
   local ok, saved = pcall(cjson.decode, receipt)
-  if not ok or saved.version ~= 2 or type(saved.operationId) ~= 'string' or type(saved.tokenHash) ~= 'string' or type(saved.priorEpoch) ~= 'number' or type(saved.committedEpoch) ~= 'number' or type(saved.completedAt) ~= 'number' or type(saved.expiresAt) ~= 'number' then return -5 end
+  if not ok or saved.version ~= 3 or type(saved.operationId) ~= 'string' or type(saved.tokenHash) ~= 'string' or type(saved.passwordHash) ~= 'string' or type(saved.committedEpoch) ~= 'number' or type(saved.completedAt) ~= 'number' or type(saved.expiresAt) ~= 'number' then return -5 end
   if saved.operationId ~= ARGV[2] or saved.tokenHash ~= ARGV[3] then return -2 end
   if saved.expiresAt <= tonumber(ARGV[4]) then return -5 end
-  local currentEpoch = redis.call('GET', KEYS[2])
-  if not currentEpoch or currentEpoch ~= tostring(saved.committedEpoch) then return -4 end
+  if redis.call('GET', KEYS[3]) ~= saved.passwordHash then return -4 end
   return -3
 end
 local raw = redis.call('GET', KEYS[1])
@@ -121,16 +126,14 @@ if not raw then return 0 end
 local record = cjson.decode(raw)
 local epoch = redis.call('GET', KEYS[2]) or '0'
 if tostring(record.epoch) ~= epoch or not string.match(epoch, '^[1-9]%d*$') then return -1 end
-local priorEpoch = tonumber(epoch)
-local nextEpoch = priorEpoch + 1
 local completedAt = tonumber(ARGV[4])
 local expiresAt = completedAt + tonumber(ARGV[5])
 redis.call('SET', KEYS[3], ARGV[1])
 redis.call('SET', KEYS[4], 'initialized')
-redis.call('SET', KEYS[2], tostring(nextEpoch))
-redis.call('SET', KEYS[5], cjson.encode({ version = 2, operationId = ARGV[2], tokenHash = ARGV[3], priorEpoch = priorEpoch, committedEpoch = nextEpoch, completedAt = completedAt, expiresAt = expiresAt }), 'EX', ARGV[5])
+redis.call('SET', KEYS[6], ARGV[6])
+redis.call('SET', KEYS[5], cjson.encode({ version = 3, operationId = ARGV[2], tokenHash = ARGV[3], passwordHash = ARGV[1], committedEpoch = tonumber(epoch), completedAt = completedAt, expiresAt = expiresAt }), 'EX', ARGV[5])
 redis.call('DEL', KEYS[1])
-return nextEpoch
+return tonumber(epoch)
 `;
 
 export async function createRecoveryToken() {
@@ -144,6 +147,12 @@ export async function createRecoveryToken() {
     await redis.set(`${tokenPrefix}${hashToken(token)}`, record, { ex: recoveryTtlSeconds, nx: true });
     return token;
   } catch { return null; }
+}
+
+/** Redis key for a well-formed recovery token, or null. Used by the passkey-reset flow. */
+export function recoveryTokenKey(token: unknown) {
+  if (typeof token !== "string" || token.length !== tokenLength || !/^[A-Za-z0-9_-]+$/.test(token)) return null;
+  return `${tokenPrefix}${hashToken(token)}`;
 }
 
 export async function consumeRecoveryToken(token: unknown) {
@@ -161,7 +170,7 @@ export async function resetAdminPasswordWithToken(token: unknown, password: stri
   try {
     const hash = await hashPassword(password);
     const receiptKey = `${receiptPrefix}${hashToken(operationId)}`;
-    const result = await redis.eval(commitRecoveryScript, [`${tokenPrefix}${hashToken(token)}`, epochKey, credentialKey, credentialStateKey, receiptKey], [hash, operationId, hashToken(token), String(Date.now()), recoveryReceiptTtlSeconds]);
+    const result = await redis.eval(commitRecoveryScript, [`${tokenPrefix}${hashToken(token)}`, epochKey, credentialKey, credentialStateKey, receiptKey, sessionGenerationKey], [hash, operationId, hashToken(token), String(Date.now()), recoveryReceiptTtlSeconds, randomBytes(16).toString("hex")]);
     if (Number(result) === -2) return { status: "operation_conflict" as const };
     if (Number(result) === -4) return { status: "superseded" as const };
     if (Number(result) === -5) return { status: "storage_unavailable" as const };
@@ -173,7 +182,7 @@ export async function resetAdminPasswordWithToken(token: unknown, password: stri
       let matches = false;
       try { matches = await argon2.verify(parsed.current, password); } catch { return { status: "storage_unavailable" as const }; }
       if (!matches) return { status: "operation_conflict" as const };
-      const verified = await redis.eval(reconcileReceiptScript, [receiptKey, epochKey], [operationId, hashToken(token), String(Date.now())]);
+      const verified = await redis.eval(reconcileReceiptScript, [receiptKey, credentialKey], [operationId, hashToken(token), String(Date.now())]);
       if (Number(verified) === 1) return { status: "already_committed" as const, credentialEpoch: currentEpoch };
       if (Number(verified) === -4) return { status: "superseded" as const };
       if (Number(verified) === -2) return { status: "operation_conflict" as const };

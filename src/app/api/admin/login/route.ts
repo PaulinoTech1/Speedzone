@@ -5,6 +5,7 @@ import { adminCookie, adminCookieOptions, clearAdminCookie, createAdminSession, 
 import { checkAdminLoginRateLimit } from "@/lib/admin-login-rate-limit";
 import { verifyAdminPassword } from "@/lib/admin-recovery";
 import { hasCurrentPasskey } from "@/lib/admin-passkeys";
+import { executeDuePasskeyReset, notifyRecoveryMailbox, passwordSetupAllowed } from "@/lib/admin-passkey-recovery";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
 function getClientIdentifier(request: Request) {
@@ -44,8 +45,17 @@ async function diagnosedPOST(request: Request) {
   if (!verification.verified) {
     return NextResponse.json({ error: verification.reason === "unavailable" ? "Admin authentication is temporarily unavailable" : "Invalid password" }, { status: verification.reason === "unavailable" ? 503 : 401 });
   }
+  // A due recovery-code passkey reset executes only here, after the password
+  // was verified and the 48-hour cancellation window has elapsed.
+  if (await executeDuePasskeyReset() === "executed") {
+    await writeSecurityEvent({ ...context, event: "admin.passkey", outcome: "allowed", actor: "admin", reason: "recovery_reset_executed", metadata: { auth_factor: "password" } });
+    await notifyRecoveryMailbox("SpeedZone admin passkeys were reset", "The scheduled passkey reset completed after its 48-hour waiting period. All previous passkeys were removed and all sessions were signed out. A new passkey can now be enrolled. If you did not request this, contact your administrator immediately and rotate the admin password.");
+  }
   if (await hasCurrentPasskey()) {
     return NextResponse.json({ error: "Passkey sign-in is required" }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
+  if (!await passwordSetupAllowed()) {
+    return NextResponse.json({ error: "Passkey sign-in is required. If every passkey is lost, use an emailed recovery link with a recovery code." }, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
   const session = await createAdminSession(verification.credentialEpoch, "setup");
   if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });

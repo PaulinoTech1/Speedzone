@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { credentialGrantKey, issueCredentialGrant, rotateOtherSessionsLua, sessionGuardLua, type CredentialAction, type SessionContext } from "@/lib/shared/credential-grants";
 import { getCredentialEpoch, parseCredentialEpoch } from "@/lib/admin-recovery";
 import { getRedis } from "@/lib/redis";
+import { passkeyEnrolledKey, passkeyReenrollKey, passwordSetupAllowed } from "@/lib/admin-passkey-recovery";
 
 const rpName = "SpeedZone Motorsports";
 export type WebAuthnConfig = { rpID: string; origin: string };
@@ -71,10 +72,16 @@ for _, item in ipairs(credentials) do
   if tostring(item.credentialEpoch) == ARGV[1] then currentCount = currentCount + 1 end
 end
 if ARGV[4] == 'initial' and currentCount > 0 then return -2 end
+-- Password-only enrollment: fresh installs, or once after a completed
+-- recovery-code + 48h passkey reset. Never on top of retired/stale keys.
+local reenroll = redis.call('GET', KEYS[8])
+if ARGV[4] == 'initial' and not reenroll and (redis.call('GET', KEYS[7]) or #credentials > 0) then return -3 end
 table.insert(credentials, cjson.decode(ARGV[3]))
 redis.call('SET', KEYS[1], cjson.encode(credentials))
 redis.call('DEL', KEYS[3])
+redis.call('SET', KEYS[7], '1')
 if ARGV[4]=='initial' then
+  redis.call('DEL',KEYS[8])
   redis.call('DEL',KEYS[4]); redis.call('SET',KEYS[5],ARGV[7])
 else redis.call('DEL',KEYS[6]) end
 return 1
@@ -147,6 +154,7 @@ export async function registrationOptions(config: WebAuthnConfig, request?: Requ
   const grantKey = admin ? credentialGrantKey(grantPrefix, grant) : null;
   if (admin && !grantKey) return { error: "Verify an established passkey before adding a key" as const };
   if (!admin && await hasCurrentPasskey()) return { error: "Passkey enrollment is already complete" as const };
+  if (!admin && !await passwordSetupAllowed()) return { error: "Passkey recovery is required before enrolling a new passkey" as const };
   const client = redis(); const credentials = await getCredentials(); const epoch = await getCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey storage is not configured" as const };
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "admin@speedzonemotorsports", userDisplayName: "SpeedZone admin", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: credentials.filter((item) => item.credentialEpoch === epoch).map((item) => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
@@ -173,9 +181,10 @@ export async function verifyRegistration(response: unknown, name: string, config
     const stored: StoredCredential = { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"), counter: credential.counter, deviceType: credentialDeviceType, backedUp: credentialBackedUp, name: name || "Unnamed passkey", credentialEpoch: record.credentialEpoch };
     const nextGeneration = randomBytes(16).toString("hex");
     const result = await client.eval(registrationCommitScript,
-      [credentialsKey, epochKey, challengeKey("registration", challenge), context.sessionKey, context.generationKey, grantKey || ""],
+      [credentialsKey, epochKey, challengeKey("registration", challenge), context.sessionKey, context.generationKey, grantKey || "", passkeyEnrolledKey, passkeyReenrollKey],
       [String(record.credentialEpoch), record.challenge, JSON.stringify(stored), admin ? "managed" : "initial", Date.now(), JSON.stringify(context.policy), nextGeneration]);
     if (Number(result) === -2) return { error: "Passkey enrollment is already complete" as const };
+    if (Number(result) === -3) return { error: "Passkey recovery is required before enrolling a new passkey" as const };
     return Number(result) === 1 ? { verified: true, credentialEpoch: record.credentialEpoch, setupGeneration: admin ? undefined : nextGeneration } : { error: "Passkey setup expired" as const };
   } catch { return { error: "Passkey could not be verified" as const }; }
 }
