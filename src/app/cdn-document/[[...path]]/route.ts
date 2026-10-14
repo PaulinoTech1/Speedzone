@@ -3,6 +3,7 @@ import {
   cacheTagsFor,
   inlineContentHashes,
   INTERNAL_RENDER_HEADER,
+  INTERNAL_RENDER_MARKER,
   isPublicDocumentPath,
   NO_STORE_CACHE_CONTROL,
   PUBLIC_DOCUMENT_CACHE_CONTROL,
@@ -53,7 +54,9 @@ export async function GET(request: Request, { params }: Context) {
     const location = upstream.headers.get("location");
     return notCacheable(upstream.status, undefined, location ? { Location: location } : {});
   }
-  if ((upstream.status !== 200 && upstream.status !== 404) || !contentType.startsWith("text/html")) {
+  // Anything not rendered by this app's proxy (a deployment-protection or
+  // login page, an error page) is never cached.
+  if ((upstream.status !== 200 && upstream.status !== 404) || !contentType.startsWith("text/html") || upstream.headers.get(INTERNAL_RENDER_MARKER) !== "1") {
     return notCacheable(upstream.status === 200 ? 502 : upstream.status, "Unable to render page");
   }
 

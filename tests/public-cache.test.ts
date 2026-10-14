@@ -134,6 +134,8 @@ describe("proxy cache and CSP selection", () => {
     expect(response.headers.get("x-middleware-request-x-nonce")).toBeNull();
     expect(response.headers.get("x-middleware-request-content-security-policy")).toBeNull();
     expect(response.headers.get("Cache-Control")).toContain("no-store");
+    expect(response.headers.get("x-speedzone-rendered")).toBe("1");
+    expect(proxy(new NextRequest("https://www.speedzonems.com/api/inventory")).headers.get("x-speedzone-rendered")).toBeNull();
   });
 
   it("blocks direct requests to the internal document handler", () => {
@@ -188,7 +190,7 @@ describe("cached document handler", () => {
 
   it("returns the rendered page with matching hashes and public CDN caching", async () => {
     const html = "<html><body><script>self.__next_f.push([1,\"x\"])</script></body></html>";
-    const fetchMock = vi.fn(async () => new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }));
+    const fetchMock = vi.fn(async () => new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8", "x-speedzone-rendered": "1" } }));
     vi.stubGlobal("fetch", fetchMock);
     const response = await call(["inventory", "abc-123"], { host: "localhost:4183", cookie: "admin_session=secret; _vercel_jwt=jwt1", "x-nonce": "n" });
     expect(response.status).toBe(200);
@@ -210,8 +212,13 @@ describe("cached document handler", () => {
     expect((await call(["privacy"])).headers.get("Cache-Control")).toContain("no-store");
     vi.stubGlobal("fetch", vi.fn(async () => new Response("err", { status: 500, headers: { "content-type": "text/html" } })));
     expect((await call(["privacy"])).headers.get("Cache-Control")).toContain("no-store");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } })));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200, headers: { "content-type": "application/json", "x-speedzone-rendered": "1" } })));
     expect((await call(["privacy"])).headers.get("Cache-Control")).toContain("no-store");
+    // e.g. a Vercel deployment-protection login page: HTML, 200, but not rendered by this app
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>Log in</html>", { status: 200, headers: { "content-type": "text/html" } })));
+    const login = await call(["privacy"]);
+    expect(login.status).toBe(502);
+    expect(login.headers.get("Cache-Control")).toContain("no-store");
   });
 
   it("refuses non-public paths and untrusted hosts", async () => {

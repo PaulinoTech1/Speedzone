@@ -4,6 +4,7 @@ import {
   buildContentSecurityPolicy,
   CDN_DOCUMENT_PREFIX,
   INTERNAL_RENDER_HEADER,
+  INTERNAL_RENDER_MARKER,
   isPrivatePath,
   NO_STORE_CACHE_CONTROL,
   shouldServeCachedDocument,
@@ -129,6 +130,7 @@ export function proxy(request: NextRequest) {
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   const effectivePath = rewriteTarget?.pathname ?? pathname;
+  if (request.headers.has(INTERNAL_RENDER_HEADER)) response.headers.set(INTERNAL_RENDER_MARKER, "1");
   if (PORTAL_HOSTS.has(host) || isPrivatePath(effectivePath) || request.headers.has(INTERNAL_RENDER_HEADER)) {
     response.headers.set("Cache-Control", NO_STORE_CACHE_CONTROL);
   }

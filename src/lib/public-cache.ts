@@ -12,6 +12,8 @@ import { vehicleIdPattern } from "@/lib/vehicle-details";
  */
 
 export const INTERNAL_RENDER_HEADER = "x-speedzone-document-render";
+/** Set by the proxy on internal render responses; proves the HTML is ours (not e.g. a Vercel login page). */
+export const INTERNAL_RENDER_MARKER = "x-speedzone-rendered";
 export const CDN_DOCUMENT_PREFIX = "/cdn-document";
 
 /** Short CDN TTL with stale-while-revalidate. Browsers always revalidate. */
