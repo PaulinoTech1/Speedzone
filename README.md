@@ -1,8 +1,28 @@
-# SpeedZone Motorsports
+# Blueprint
 
 ## TL;DR
 
-A security-hardened dealership website (speedzonems.com): passkey-first admin, integrity-checked telemetry, metadata-only customer notifications. Goal: a cheap-to-run site a nontechnical owner can maintain, doubling as a reusable security blueprint for small businesses.
+This repository is a blueprint for the next small-business site. It is the procedure you onboard a customer onto, and the reference implementation that procedure was taken from.
+
+SpeedZone Motorsports (speedzonems.com) is that reference: a cheap-to-run dealership site a nontechnical owner can maintain, with a passkey-first admin, integrity-checked telemetry, and metadata-only customer notifications. It is not the product you copy. The next customer gets their own name, their own legal entity, and only the depth they bought.
+
+## Onboarding the next project
+
+Do not clone the dealership. Walk the same nine stages, in this order, every time: qualify, select, pitch, provision, brand, load, harden, prove, hand off. The tier changes the depth of a stage. It does not add a stage, and it does not skip one. Live is the last step, and only after prove, including one edit the owner made without help.
+
+Three depths:
+
+- **Open.** Six pages and an inquiry. The form checks origin and size, then the submission is encrypted at rest. The server sees plaintext long enough to validate it. That is not end-to-end encryption.
+- **Operate.** The catalog the office edits, one public page per item, a passkey on the office door, inquiry mail, and one trade module: a calculator, a lookup, or booking. Not two.
+- **Assure.** A second host for the security console, separate credentials and data, and an event hash you can recompute. The hash is a checksum of that event, not a chain and not a signature.
+
+The desk for an engagement holds decisions: who they are, which tier, which tasks are done, and the date you said out loud. It does not create the host, and it does not store keys, tokens, or passwords.
+
+Do not onboard anyone onto a tracking pixel, an import from another system, a feed of their catalog into an ad network, or public-page CDN caching. Those showed up around the reference site. They are not the blueprint.
+
+A password reset on the reference admin signs sessions out and does not remove passkeys. The recovery mailbox alone is not a way in. Retiring every passkey needs the emailed link, a one-time recovery code shown at enrollment, and a 48-hour wait that a passkey session can cancel.
+
+## Reference implementation
 
 SpeedZone Motorsports serves the public dealership site from this repository's root. The security console in `security-console/` is deployed as its own Vercel project (root directory `security-console`) on a host separate from the public site, with independent password and passkey authentication, Redis sessions, and its own host-only session cookie. The public site no longer mounts the console: the former `/Security_Console` paths and console subdomain return 404 and never redirect.
 
@@ -14,6 +34,8 @@ The root application uses Next.js 16, React 19, Node.js 22, TypeScript, Vercel B
 - **Test-drive submission verified working (2026-10-13).** An end-to-end production submission succeeded: it was stored, appeared in the admin inbox, and triggered the Resend notification email. The earlier 2026-09-16 failure note was stale. If submissions fail in future, the `test-drive.submission` security event reports `failure_stage` and `error_class`, and `/api/admin/config-health` reports `testDriveStorage` and `testDriveLimiter`.
 
 ## Project functionality
+
+The pages below belong to the reference dealership. A new customer does not inherit them. Open signs a six-page list. Operate adds the catalog and one module.
 
 The public site currently includes:
 
@@ -42,7 +64,7 @@ The root application also provides an admin surface at `/admin` with:
 
 The root application supports an initial `SPEEDZONE_ADMIN_PASSWORD` bootstrap path when no current admin credential exists. The password is hashed with Argon2id and the resulting credential state is stored in Upstash Redis.
 
-After passkey enrollment, admin authentication uses WebAuthn/passkeys with user verification required. The implementation tracks credential epochs, uses randomized and hashed server-side sessions, supports idle and absolute session expiration, and can invalidate sessions through session-generation changes. Login, passkey-option, recovery, and related paths are rate limited. Password recovery is bound to the current credential epoch so a credential change invalidates recovery material associated with an earlier epoch.
+After passkey enrollment, admin authentication uses WebAuthn/passkeys with user verification required. The implementation tracks credential epochs, uses randomized and hashed server-side sessions, supports idle and absolute session expiration, and can invalidate sessions through session-generation changes. Login, passkey-option, recovery, and related paths are rate limited. A password reset replaces the password hash and signs every session out. It does not remove passkeys, and it does not change the credential epoch. While a passkey exists, the mailbox alone cannot sign in. Retiring every passkey requires the emailed link plus a one-time recovery code issued at enrollment, then a 48-hour wait that a passkey session can cancel.
 
 A password bootstrap value is a setup mechanism; it should not be described as the complete steady-state authentication method after passkey enrollment.
 
@@ -101,7 +123,7 @@ See [`docs/security-logging.md`](docs/security-logging.md) for additional archit
 
 ## Security console
 
-The standalone console in `security-console/` has with its own Redis database, password, passkeys, sessions, cookie, rate limits, audit records, and read-only operational UI. It includes:
+The standalone console in `security-console/` has its own Redis database, password, passkeys, sessions, cookie, rate limits, audit records, and read-only operational UI. It includes:
 
 - Risk-focused overview metrics
 - Administrator access and credential history
