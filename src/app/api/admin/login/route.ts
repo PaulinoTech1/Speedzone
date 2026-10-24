@@ -53,16 +53,25 @@ async function diagnosedPOST(request: Request) {
     await writeSecurityEvent({ ...context, event: "admin.passkey", outcome: "allowed", actor: "admin", reason: "recovery_reset_executed", metadata: { auth_factor: "password" } });
     await notifyRecoveryMailbox("SpeedZone admin passkeys were reset", "The scheduled passkey reset completed after its 48-hour waiting period. All previous passkeys were removed and all sessions were signed out. A new passkey can now be enrolled. If you did not request this, contact your administrator immediately and rotate the admin password.");
   }
-  if (await hasCurrentPasskey()) {
-    return NextResponse.json({ error: "Passkey sign-in is required" }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  if (!await hasCurrentPasskey() && await passwordSetupAllowed()) {
+    // No current passkey and enrollment is allowed (a fresh install, or once
+    // after a completed passkey reset): issue the five-minute setup session
+    // so the first or renewed passkey can be enrolled from it.
+    const session = await createAdminSession(verification.credentialEpoch, "setup");
+    if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
+    await writeSecurityEvent({ ...context, event: "admin.session.created", outcome: "allowed", actor: "admin", reason: "setup_session_created", metadata: { auth_factor: "password", credential_epoch: verification.credentialEpoch } });
+    (await cookies()).set(adminCookie.name, session, adminCookieOptions("setup"));
+    return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   }
-  if (!await passwordSetupAllowed()) {
-    return NextResponse.json({ error: "Passkey sign-in is required. If every passkey is lost, use an emailed recovery link with a recovery code." }, { status: 403, headers: { "Cache-Control": "no-store" } });
-  }
-  const session = await createAdminSession(verification.credentialEpoch, "setup");
+  // A passkey is no longer required to use the inventory admin: a verified
+  // password opens a full session. Passkey sign-in and management stay
+  // available as an option, but nothing gates on them. This means a
+  // compromised admin password (including via a mailbox password reset) now
+  // yields admin access; see docs/admin-passkey-recovery.md.
+  const session = await createAdminSession(verification.credentialEpoch, "passkey");
   if (!session) return NextResponse.json({ error: "Admin authentication is not configured" }, { status: 503 });
-  await writeSecurityEvent({ ...context, event: "admin.session.created", outcome: "allowed", actor: "admin", reason: "setup_session_created", metadata: { auth_factor: "password", credential_epoch: verification.credentialEpoch } });
-  (await cookies()).set(adminCookie.name, session, adminCookieOptions("setup"));
+  await writeSecurityEvent({ ...context, event: "admin.session.created", outcome: "allowed", actor: "admin", reason: "password_session_created", metadata: { auth_factor: "password", credential_epoch: verification.credentialEpoch } });
+  (await cookies()).set(adminCookie.name, session, adminCookieOptions());
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
 

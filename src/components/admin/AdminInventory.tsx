@@ -131,6 +131,11 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
   const [loggedIn, setLoggedIn] = useState(false); const [password, setPassword] = useState(""); const [showPassword, setShowPassword] = useState(false); const [recoveryEmailInput, setRecoveryEmailInput] = useState(""); const [vehicles, setVehicles] = useState<Vehicle[]>([]); const [form, setForm] = useState(empty); const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null); const [editForms, setEditForms] = useState<Record<string, Record<string, string>>>({}); const [photos, setPhotos] = useState<File[]>([]); const [photoPreviews, setPhotoPreviews] = useState<string[]>([]); const [selectedPhotos, setSelectedPhotos] = useState<Record<string, string[]>>({}); const [message, setMessage] = useState(""); const [inventoryMessage, setInventoryMessage] = useState(""); const [preparingPhotos, setPreparingPhotos] = useState(false); const [submitting, setSubmitting] = useState(false); const [updatingVehicleId, setUpdatingVehicleId] = useState<string | null>(null); const [deletingPhotosVehicleId, setDeletingPhotosVehicleId] = useState<string | null>(null); const [recoveryToken, setRecoveryToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("recovery") || ""); const [recoveryPassword, setRecoveryPassword] = useState(""); const [recoveryMessage, setRecoveryMessage] = useState(""); const [recoverySent, setRecoverySent] = useState(false); const [recoverySubmitting, setRecoverySubmitting] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const revision = useRef("");
+  // Mirrors the session resolver owned by the effect below, so a password
+  // sign-in can re-resolve the live session state instead of assuming which
+  // session the server issued (full, or setup on a fresh install / after a
+  // completed passkey reset).
+  const resolveSessionRef = useRef<((initial?: boolean) => Promise<void>) | null>(null);
   useEffect(() => {
     let active = true;
     async function resolveSession(initial = false) {
@@ -146,6 +151,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
         else if (initial) { const inventory = await fetch("/api/inventory", { credentials: "include", cache: "no-store" }); if (inventory.ok && active) { const data = await inventory.json(); revision.current = data.revision || inventory.headers.get("etag") || ""; setVehicles(data.vehicles || []); } }
       } catch { if (active) { setLoggedIn(false); setVehicles([]); onAuthChange?.(false); } }
     }
+    resolveSessionRef.current = resolveSession;
     void resolveSession(true);
     const timer = window.setInterval(() => void resolveSession(), 60000);
     return () => { active = false; window.clearInterval(timer); };
@@ -218,7 +224,7 @@ export default function AdminInventory({ onAuthChange }: { onAuthChange?: (authe
     }
     return true;
   }
-  async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setPassword(""); setLoggedIn(false); setSetupRequired(true); onAuthChange?.(false, false); setMessage(""); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
+  async function login(event: FormEvent) { event.preventDefault(); const response = await fetch("/api/admin/login", { credentials: "include", method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }); if (response.ok) { setPassword(""); setMessage(""); await resolveSessionRef.current?.(true); } else { const result = await response.json().catch(() => ({})); setMessage(result.error || "Unable to sign in."); } }
   const [lostPasskeyCode, setLostPasskeyCode] = useState("");
   async function schedulePasskeyReset(event: FormEvent) {
     event.preventDefault(); if (!recoveryToken || !lostPasskeyCode) return;

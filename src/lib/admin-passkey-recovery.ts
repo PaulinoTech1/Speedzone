@@ -5,10 +5,10 @@ import { recoveryConfigured, recoveryEmail, recoveryTokenKey } from "@/lib/admin
 
 // Lost-passkey recovery for the inventory admin.
 //
-// Threat model: possession of the recovery mailbox alone must never yield
-// admin access. The emailed link can reset the password (see
-// admin-recovery.ts), but a password session is refused while any passkey is
-// current. Retiring every passkey requires, in order:
+// Threat model: a verified admin password signs in with a full session; a
+// passkey is optional, not required. The emailed link can reset the password
+// (see admin-recovery.ts), and that reset password now signs in. Retiring
+// every passkey still requires, in order:
 //   1. a fresh emailed recovery token (mailbox),
 //   2. an offline single-use recovery code issued at passkey enrollment,
 //   3. a 48-hour waiting period, announced to the recovery mailbox and

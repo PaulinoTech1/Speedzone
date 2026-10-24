@@ -72,18 +72,21 @@ async function mailboxReset(password=attacker){const token=(await createRecovery
 async function enrollWithCodes(){await signIn();const grant=await authorize('add');const registered=await passkey(request('/api/admin/passkey',{action:'register',response:await registration(grant),grant}));
   expect(registered.status).toBe(200);const {recoveryCodes}=await registered.json();expect(recoveryCodes).toHaveLength(10);return recoveryCodes as string[];}
 
-it('mailbox-only: a password reset keeps every passkey current and password login is refused',async()=>{
+it('mailbox-only: a password reset keeps every passkey current, but password login now signs in',async()=>{
   await withPassword();await signIn();const priorSession=state.cookie;
   await mailboxReset();
   expect(state.store[EPOCH]).toBe('1');expect(keys()).toHaveLength(1);expect(keys()[0]!.credentialEpoch).toBe(1);
   expect(await isValidAdminSession(priorSession)).toBe(false); // reset still signs out all sessions
-  const response=await passwordLogin(attacker);expect(response.status).toBe(403);expect(state.cookie).toBe('');
-  expect(await registrationOptions(config,request('/api/admin/passkey'))).toHaveProperty('error','Unauthorized');
-  expect((await inbox(request('/api/admin/test-drives'))).status).toBe(401);
+  // A passkey is no longer required: the reset password signs in with a full
+  // session. Adding a key from it still needs a fresh assertion from an
+  // established key, which the mailbox-only attacker does not have.
+  const response=await passwordLogin(attacker);expect(response.status).toBe(200);expect(state.cookie).toBeTruthy();
+  expect(await registrationOptions(config,request('/api/admin/passkey'))).toHaveProperty('error','Verify an established passkey before adding a key');
+  expect((await inbox(request('/api/admin/test-drives'))).status).toBe(200);
 });
-it('mailbox-only: stale (retired-epoch) passkeys still block password-only enrollment',async()=>{
+it('mailbox-only: stale (retired-epoch) passkeys no longer block password sign-in, and still cannot be enrolled from a setup session',async()=>{
   await withPassword(attacker);state.store[PASSKEYS]=JSON.stringify([{id:establishedId,publicKey:cose.toString('base64url'),counter:0,credentialEpoch:0}]);
-  expect((await passwordLogin(attacker)).status).toBe(403);
+  expect((await passwordLogin(attacker)).status).toBe(200);
   state.cookie=(await createAdminSession(1,'setup'))!; // even a forged setup session cannot enroll
   expect(await registrationOptions(config,request('/api/admin/passkey'))).toHaveProperty('error');
 });
@@ -105,7 +108,7 @@ it('link + code schedules a 48h reset that a passkey session can cancel; nothing
   const token=(await createRecoveryToken())!;
   const scheduled=await schedulePasskeyReset(request('/api/admin/recovery/passkey-reset',{token,recoveryCode:code}));
   expect(scheduled.status).toBe(202);const executeAt=Date.parse((await scheduled.json()).executeAt);expect(executeAt-Date.now()).toBeGreaterThan(47.9*3600_000);
-  await mailboxReset();expect((await passwordLogin(attacker)).status).toBe(403);expect(keys()).toHaveLength(2);
+  await mailboxReset();expect((await passwordLogin(attacker)).status).toBe(200);expect(keys()).toHaveLength(2);
   // Code is single-use.
   const again=await schedulePasskeyReset(request('/api/admin/recovery/passkey-reset',{token:(await createRecoveryToken())!,recoveryCode:code}));expect(again.status).toBe(409);
   state.cookie=(await createAdminSession(1,'passkey'))!;void owner;
@@ -128,8 +131,9 @@ it('after the waiting period, password + elapsed reset retires all keys and perm
   expect(state.store[PASSKEYS]).toBeUndefined();expect(state.store[PENDING]).toBeUndefined();expect(state.store[REENROLL]).toBeDefined();
   const registered=await passkey(request('/api/admin/passkey',{action:'register',response:await registration()}));expect(registered.status).toBe(200);
   expect(state.store[REENROLL]).toBeUndefined();expect(keys()).toHaveLength(1);
-  // The flag is consumed; a later password-only setup is refused again. Old codes were replaced.
-  expect((await passwordLogin(original)).status).toBe(403);
+  // The flag is consumed; a later password sign-in now opens a full session
+  // (the passkey is no longer required), it is not refused.
+  expect((await passwordLogin(original)).status).toBe(200);
   const old=await schedulePasskeyReset(request('/api/admin/recovery/passkey-reset',{token:(await createRecoveryToken())!,recoveryCode:second}));expect(old.status).toBe(400);
 });
 it('fresh installs still allow password bootstrap enrollment',async()=>{
