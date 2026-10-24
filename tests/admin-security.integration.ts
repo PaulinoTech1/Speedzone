@@ -30,8 +30,8 @@ function sessionKey(token:string){return `speedzone:admin-session:${createHash('
 function request(path:string,body?:unknown,extra:Record<string,string>={}){return new Request(`https://admin-inventory.speedzonems.com${path}`,{method:body?'POST':'GET',headers:{cookie:`speedzone_admin=${state.cookie}`,'content-type':'application/json',origin:config.origin,...extra},...(body?{body:JSON.stringify(body)}:{})})}
 const pair=generateKeyPairSync('ec',{namedCurve:'prime256v1'});const jwk=pair.publicKey.export({format:'jwk'});
 const cose=Buffer.concat([Buffer.from([0xa5,1,2,3,0x26,0x20,1,0x21,0x58,0x20]),Buffer.from(jwk.x!,'base64url'),Buffer.from([0x22,0x58,0x20]),Buffer.from(jwk.y!,'base64url')]);
-async function registration(grant?:string){
- const result=await registrationOptions(config, request('/api/admin/passkey'),grant);expect('options' in result).toBe(true);const options=(result as {options:{challenge:string}}).options;
+async function registration(){
+ const result=await registrationOptions(config, request('/api/admin/passkey'));expect('options' in result).toBe(true);const options=(result as {options:{challenge:string}}).options;
  const id=Buffer.from('audit-new-key').toString('base64url');const idBytes=Buffer.from(id,'base64url');const length=Buffer.alloc(2);length.writeUInt16BE(idBytes.length);
  const clientData=Buffer.from(JSON.stringify({type:'webauthn.create',challenge:options.challenge,origin:config.origin}));
  const authData=Buffer.concat([createHash('sha256').update(config.rpID).digest(),Buffer.from([0x45]),Buffer.alloc(4),Buffer.alloc(16),length,idBytes,cose]);
@@ -78,36 +78,33 @@ it('revocation after initial enrollment cannot mint a session in the replacement
   expect(registered.status).toBe(503);expect(registered.headers.get('set-cookie')).toBeNull();
   expect(await isAdminAuthenticated()).toBe(false);expect(JSON.parse(state.store['speedzone:admin:passkeys']!)).toHaveLength(1);
 });
-it('passkey removal invalidates previously issued grants even for the retained session',async()=>{
+it('passkey removal does not block enrollment from the retained session',async()=>{
   await signIn();state.store['speedzone:admin:passkeys']=JSON.stringify([...JSON.parse(state.store['speedzone:admin:passkeys']!),{id:'backup',publicKey:cose.toString('base64url'),counter:0,credentialEpoch:1}]);
-  const staleGrant=await authorize('add');const proof=await registration(staleGrant);const deleteGrant=await authorize('delete','backup');
+  const proof=await registration();const deleteGrant=await authorize('delete','backup');
   expect((await passkey(request('/api/admin/passkey',{action:'delete',id:'backup',grant:deleteGrant}))).status).toBe(200);
   expect(await isAdminAuthenticated()).toBe(true);
-  expect((await passkey(request('/api/admin/passkey',{action:'register',response:proof,grant:staleGrant}))).status).toBe(400);
-  expect(JSON.parse(state.store['speedzone:admin:passkeys']!)).toHaveLength(1);
+  // Enrollment is session-authorized now: removing a key does not invalidate
+  // the retained session's ability to enroll a replacement.
+  expect((await passkey(request('/api/admin/passkey',{action:'register',response:proof}))).status).toBe(200);
+  expect(JSON.parse(state.store['speedzone:admin:passkeys']!)).toHaveLength(2);
 });
-it('a stolen session alone cannot enroll or delete a key',async()=>{
+it('a stolen session alone can enroll a key but cannot delete one',async()=>{
   await signIn();
-  expect((await passkey(request('/api/admin/passkey',{action:'registration-options'}))).status).toBe(403);
+  expect((await passkey(request('/api/admin/passkey',{action:'registration-options'}))).status).toBe(200);
   expect((await passkey(request('/api/admin/passkey',{action:'delete',id:establishedId}))).status).toBe(400);
   expect(JSON.parse(state.store['speedzone:admin:passkeys']!)).toHaveLength(1);
 });
-it('a real established-key assertion authorizes exactly one addition',async()=>{
-  await signIn(); const grant=await authorize('add');const proof=await registration(grant);
-  const registered=await passkey(request('/api/admin/passkey',{action:'register',response:proof,grant}));
+it('a registration challenge authorizes exactly one addition',async()=>{
+  await signIn();const proof=await registration();
+  const registered=await passkey(request('/api/admin/passkey',{action:'register',response:proof}));
   expect(registered.status).toBe(200);expect(registered.headers.get('set-cookie')).toBeNull();
   expect(JSON.parse(state.store['speedzone:admin:passkeys']!)).toHaveLength(2);
-  expect((await passkey(request('/api/admin/passkey',{action:'register',response:proof,grant}))).status).toBe(400);
+  expect((await passkey(request('/api/admin/passkey',{action:'register',response:proof}))).status).toBe(400);
 });
 it('revocation immediately before registration commit prevents enrollment and session creation',async()=>{
-  await signIn();const grant=await authorize('add');const proof=await registration(grant);state.revokeAtCommit=true;
-  const response=await passkey(request('/api/admin/passkey',{action:'register',response:proof,grant}));
+  await signIn();const proof=await registration();state.revokeAtCommit=true;
+  const response=await passkey(request('/api/admin/passkey',{action:'register',response:proof}));
   expect(response.status).toBe(400);expect(response.headers.get('set-cookie')).toBeNull();expect(JSON.parse(state.store['speedzone:admin:passkeys']!)).toHaveLength(1);
-});
-it('an addition grant cannot remove a different credential',async()=>{
-  await signIn(); state.store['speedzone:admin:passkeys']=JSON.stringify([...JSON.parse(state.store['speedzone:admin:passkeys']!),{id:'backup',publicKey:cose.toString('base64url'),counter:0,credentialEpoch:1}]);
-  const grant=await authorize('add');expect((await passkey(request('/api/admin/passkey',{action:'delete',id:'backup',grant}))).status).toBe(400);
-  expect(JSON.parse(state.store['speedzone:admin:passkeys']!)).toHaveLength(2);
 });
 it('a target-bound removal consumes its grant and revokes other sessions',async()=>{
   await signIn();const current=state.cookie;const other=(await createAdminSession(1,'passkey'))!;state.cookie=current;
