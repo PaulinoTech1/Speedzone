@@ -1,5 +1,5 @@
 // Mailbox-compromise regressions: real Lua (via lupa) and real WebAuthn verification, synthetic local state only.
-import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -19,7 +19,7 @@ vi.mock('@vercel/blob',async original => ({...await original<typeof import('@ver
 vi.mock('@/lib/diagnostics',()=>({withDiagnostics:(_op:string,fn:()=>Promise<Response>)=>fn()}));
 vi.mock('@/lib/security-events',()=>({securityRequestContext:()=>({}),writeSecurityEvent:async()=>{},auditRoute:async(_r:Request,_e:string,f:()=>Promise<Response>)=>f()}));
 import { createAdminSession, isValidAdminSession } from '@/lib/admin-auth';
-import { credentialActionOptions, verifyCredentialAction, registrationOptions } from '@/lib/admin-passkeys';
+import { registrationOptions } from '@/lib/admin-passkeys';
 import { POST as passkey } from '@/app/api/admin/passkey/route';
 import { GET as inbox } from '@/app/api/admin/test-drives/route';
 import { inventoryStateKey } from '@/lib/inventory-state';
@@ -33,8 +33,8 @@ function sessionKey(token:string){return `speedzone:admin-session:${createHash('
 function request(path:string,body?:unknown,extra:Record<string,string>={}){return new Request(`https://admin-inventory.speedzonems.com${path}`,{method:body?'POST':'GET',headers:{cookie:`speedzone_admin=${state.cookie}`,'content-type':'application/json',origin:config.origin,...extra},...(body?{body:JSON.stringify(body)}:{})})}
 const pair=generateKeyPairSync('ec',{namedCurve:'prime256v1'});const jwk=pair.publicKey.export({format:'jwk'});
 const cose=Buffer.concat([Buffer.from([0xa5,1,2,3,0x26,0x20,1,0x21,0x58,0x20]),Buffer.from(jwk.x!,'base64url'),Buffer.from([0x22,0x58,0x20]),Buffer.from(jwk.y!,'base64url')]);
-async function registration(grant?:string){
- const result=await registrationOptions(config, request('/api/admin/passkey'),grant);expect('options' in result).toBe(true);const options=(result as {options:{challenge:string}}).options;
+async function registration(){
+ const result=await registrationOptions(config, request('/api/admin/passkey'));expect('options' in result).toBe(true);const options=(result as {options:{challenge:string}}).options;
  const id=Buffer.from('audit-new-key').toString('base64url');const idBytes=Buffer.from(id,'base64url');const length=Buffer.alloc(2);length.writeUInt16BE(idBytes.length);
  const clientData=Buffer.from(JSON.stringify({type:'webauthn.create',challenge:options.challenge,origin:config.origin}));
  const authData=Buffer.concat([createHash('sha256').update(config.rpID).digest(),Buffer.from([0x45]),Buffer.alloc(4),Buffer.alloc(16),length,idBytes,cose]);
@@ -49,18 +49,6 @@ async function signIn() {
   state.cookie = (await createAdminSession(1, 'passkey'))!;
   state.store['speedzone:admin:passkeys'] = JSON.stringify([{id:establishedId,publicKey:cose.toString('base64url'),counter:0,credentialEpoch:1}]);
 }
-async function authorize(action: 'add'|'delete', target='') {
-  const result = await credentialActionOptions(request('/api/admin/passkey'), config, action, target);
-  if (!('options' in result) || !result.options) throw new Error('Missing assertion options');
-  const clientData = Buffer.from(JSON.stringify({type:'webauthn.get',challenge:result.options.challenge,origin:config.origin}));
-  const counter = Buffer.alloc(4); counter.writeUInt32BE(JSON.parse(state.store['speedzone:admin:passkeys']!).find((key:{id:string})=>key.id===establishedId).counter+1);
-  const authenticatorData = Buffer.concat([createHash('sha256').update(config.rpID).digest(),Buffer.from([5]),counter]);
-  const signature = sign('sha256',Buffer.concat([authenticatorData,createHash('sha256').update(clientData).digest()]),pair.privateKey);
-  const response = {id:establishedId,rawId:establishedId,type:'public-key',clientExtensionResults:{},response:{clientDataJSON:clientData.toString('base64url'),authenticatorData:authenticatorData.toString('base64url'),signature:signature.toString('base64url')}};
-  const verified = await verifyCredentialAction(request('/api/admin/passkey'),response,config,action,target);
-  if (!('grant' in verified)) throw new Error('Fresh assertion failed');
-  return verified.grant;
-}
 
 const PASSKEYS='speedzone:admin:passkeys', EPOCH='speedzone:admin-credential-epoch', PENDING='speedzone:admin:passkey-reset', REENROLL='speedzone:admin:passkey-reenroll';
 const original='Original-admin-password-42', attacker='Attacker-chosen-password-42';
@@ -69,7 +57,7 @@ async function passwordLogin(password:string){state.cookie='';return login(reque
 const keys=()=>JSON.parse(state.store[PASSKEYS]??'[]') as {id:string;credentialEpoch:number}[];
 async function mailboxReset(password=attacker){const token=(await createRecoveryToken())!;expect(token).toBeTruthy();
   const response=await resetPassword(request('/api/admin/recovery/reset',{token,password,operationId:crypto.randomUUID()}));expect(response.status).toBe(200);}
-async function enrollWithCodes(){await signIn();const grant=await authorize('add');const registered=await passkey(request('/api/admin/passkey',{action:'register',response:await registration(grant),grant}));
+async function enrollWithCodes(){await signIn();const registered=await passkey(request('/api/admin/passkey',{action:'register',response:await registration()}));
   expect(registered.status).toBe(200);const {recoveryCodes}=await registered.json();expect(recoveryCodes).toHaveLength(10);return recoveryCodes as string[];}
 
 it('mailbox-only: a password reset keeps every passkey current, but password login now signs in',async()=>{
@@ -78,10 +66,12 @@ it('mailbox-only: a password reset keeps every passkey current, but password log
   expect(state.store[EPOCH]).toBe('1');expect(keys()).toHaveLength(1);expect(keys()[0]!.credentialEpoch).toBe(1);
   expect(await isValidAdminSession(priorSession)).toBe(false); // reset still signs out all sessions
   // A passkey is no longer required: the reset password signs in with a full
-  // session. Adding a key from it still needs a fresh assertion from an
-  // established key, which the mailbox-only attacker does not have.
+  // session, and that session can enroll a passkey directly. A mailbox-only
+  // attacker can therefore plant a persistent passkey that survives later
+  // password rotation; only the 48h recovery-code reset retires passkeys.
   const response=await passwordLogin(attacker);expect(response.status).toBe(200);expect(state.cookie).toBeTruthy();
-  expect(await registrationOptions(config,request('/api/admin/passkey'))).toHaveProperty('error','Verify an established passkey before adding a key');
+  const enrolled=await passkey(request('/api/admin/passkey',{action:'register',response:await registration()}));
+  expect(enrolled.status).toBe(200);expect(keys()).toHaveLength(2);
   expect((await inbox(request('/api/admin/test-drives'))).status).toBe(200);
 });
 it('mailbox-only: stale (retired-epoch) passkeys no longer block password sign-in, and still cannot be enrolled from a setup session',async()=>{
