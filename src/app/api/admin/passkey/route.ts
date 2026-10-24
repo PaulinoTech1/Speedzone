@@ -17,7 +17,9 @@ async function handlePOST(request: Request, body: Record<string, unknown>) {
   const webAuthnConfig = getWebAuthnConfig(request.headers);
   if (typeof action !== "string") return NextResponse.json({ error: "Unsupported passkey action" }, { status: 400 });
   if (action === "reauthentication-options" || action === "reauthenticate") {
-    if (body.operation !== "add" && body.operation !== "delete") return NextResponse.json({ error: "Invalid credential action" }, { status: 400 });
+    // Reauthentication grants authorize passkey removal only. Adding a key
+    // needs no grant: any signed-in admin session may enroll one.
+    if (body.operation !== "delete") return NextResponse.json({ error: "Invalid credential action" }, { status: 400 });
     const target = body.operation === "delete" && typeof body.id === "string" ? body.id : "";
     if (body.operation === "delete" && !target) return NextResponse.json({ error: "Passkey not found" }, { status: 400 });
     const result = action === "reauthentication-options"
@@ -26,11 +28,11 @@ async function handlePOST(request: Request, body: Record<string, unknown>) {
     return NextResponse.json(result, { status: "error" in result ? 403 : 200, headers: { "Cache-Control": "no-store" } });
   }
   if (action === "registration-options") {
-    const result = await registrationOptions(webAuthnConfig, request, body.grant);
+    const result = await registrationOptions(webAuthnConfig, request);
     return NextResponse.json(result, { status: result.error ? 403 : 200, headers: { "Cache-Control": "no-store" } });
   }
   if (action === "register") {
-    const result = await verifyRegistration(body.response, typeof body.name === "string" ? body.name.trim().slice(0, 80) : "", webAuthnConfig, request, body.grant);
+    const result = await verifyRegistration(body.response, typeof body.name === "string" ? body.name.trim().slice(0, 80) : "", webAuthnConfig, request);
     if (!result.verified) return NextResponse.json(result, { status: 400, headers: { "Cache-Control": "no-store" } });
     // Each enrollment issues a fresh set of offline recovery codes, shown once.
     const recoveryCodes = await issueRecoveryCodes();
