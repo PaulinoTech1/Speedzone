@@ -8,16 +8,19 @@ standalone Security Console has its own operator-armed recovery; see
 
 | Attacker holds | Outcome |
 | --- | --- |
-| Recovery mailbox only | Can reset the admin password **and sign in with it**: password-only sign-in now opens a full admin session, so mailbox compromise yields admin access. Passkeys are never removed by a password reset, and adding or removing a passkey still needs a fresh assertion from an established key. Any attempt to schedule a passkey reset without a valid recovery code burns the link. |
+| Recovery mailbox only | Can reset the admin password **and sign in with it**: password-only sign-in now opens a full admin session, so mailbox compromise yields admin access. Passkeys are never removed by a password reset, and a signed-in session can add a passkey directly, so mailbox compromise can also plant a persistent passkey that survives later password rotation. Removing a passkey still needs a fresh assertion from an established key. Any attempt to schedule a passkey reset without a valid recovery code burns the link. |
 | Mailbox + password | Full sign-in. Password-only sign-in is the normal path; a passkey is optional, not required. |
 | Mailbox + one recovery code | Can **schedule** a reset of all passkeys. The recovery mailbox is notified immediately; the reset cannot complete for 48 hours and any passkey session can cancel it from the admin page. |
 | Mailbox + recovery code + 48 h without the owner cancelling | Next password sign-in retires all passkeys, signs out every session, notifies the mailbox, and issues one five-minute setup session to enroll a new passkey. |
-| A stolen passkey session | Unchanged from F2: adding or removing a key needs a fresh assertion from an established key; the final key cannot be removed. |
+| A stolen passkey session | Adding a key needs only the session. Removing a key needs a fresh assertion from an established key; the final key cannot be removed. |
 
 Password-only sign-in means mailbox compromise can now yield admin access. The
 admin password and the recovery mailbox are the whole boundary: keep the admin
 password strong and unique, rotate the mailbox password, and enable the
-mailbox's own MFA. Recovery codes are the independent factor for retiring
+mailbox's own MFA. Because a signed-in session can enroll a passkey, a
+compromised password can also plant a persistent credential that password
+rotation alone will not evict; only the 48-hour recovery-code reset retires
+passkeys. Recovery codes are the independent factor for retiring
 passkeys: keep them offline (printed or in a password manager), never in the
 recovery mailbox.
 
@@ -58,7 +61,8 @@ initial registration commit (`src/lib/admin-passkey-recovery.ts`,
 - Codes are regenerated on each enrollment; reprint them after adding a key.
 
 Tests: `tests/admin-passkey-recovery.integration.ts` (real Lua and WebAuthn
-verification) prove a password reset never retires existing passkeys, and that
-adding or removing a passkey still needs a fresh assertion from an established
-key. Password-only sign-in is now the normal path, so mailbox-only access can
-sign in; the tests assert exactly that.
+verification) prove a password reset never retires existing passkeys, that
+adding a passkey now needs only a signed-in session, and that removing one
+still needs a fresh assertion from an established key. Password-only sign-in
+is now the normal path, so mailbox-only access can sign in and enroll a
+passkey; the tests assert exactly that.
