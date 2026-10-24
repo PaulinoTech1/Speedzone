@@ -64,7 +64,6 @@ if not epoch or epoch ~= ARGV[1] then return 0 end
 local raw = redis.call('GET', KEYS[3])
 local record = raw and cjson.decode(raw)
 if not record or record.challenge ~= ARGV[2] or record.sessionKey~=KEYS[4] or now-record.createdAt>=120000 or record.createdAt>now then return 0 end
-if ARGV[4]=='managed' and (record.grantKey~=KEYS[6] or not actionGrant(KEYS[6],KEYS[4],epoch,'add','',now)) then return 0 end
 local existing = redis.call('GET', KEYS[1])
 local credentials = existing and cjson.decode(existing) or {}
 local currentCount = 0
@@ -74,16 +73,16 @@ end
 if ARGV[4] == 'initial' and currentCount > 0 then return -2 end
 -- Password-only enrollment: fresh installs, or once after a completed
 -- recovery-code + 48h passkey reset. Never on top of retired/stale keys.
-local reenroll = redis.call('GET', KEYS[8])
-if ARGV[4] == 'initial' and not reenroll and (redis.call('GET', KEYS[7]) or #credentials > 0) then return -3 end
+local reenroll = redis.call('GET', KEYS[7])
+if ARGV[4] == 'initial' and not reenroll and (redis.call('GET', KEYS[6]) or #credentials > 0) then return -3 end
 table.insert(credentials, cjson.decode(ARGV[3]))
 redis.call('SET', KEYS[1], cjson.encode(credentials))
 redis.call('DEL', KEYS[3])
-redis.call('SET', KEYS[7], '1')
+redis.call('SET', KEYS[6], '1')
 if ARGV[4]=='initial' then
-  redis.call('DEL',KEYS[8])
+  redis.call('DEL',KEYS[7])
   redis.call('DEL',KEYS[4]); redis.call('SET',KEYS[5],ARGV[7])
-else redis.call('DEL',KEYS[6]) end
+end
 return 1
 `;
 const counterCommitScript = `
@@ -147,26 +146,22 @@ redis.call('SET',KEYS[1],ARGV[3]); redis.call('DEL',KEYS[5]); ${rotateOtherSessi
     [String(epoch), JSON.stringify(credentials), JSON.stringify(next), Date.now(), JSON.stringify(context.policy), id, randomBytes(16).toString("hex")]);
   return Number(result) === 1 ? { deleted: true } : { deleted: false, reason: Number(result) === -2 ? "The final active passkey cannot be removed" : "Passkey changed; retry" };
 }
-export async function registrationOptions(config: WebAuthnConfig, request?: Request, grant?: unknown) {
+export async function registrationOptions(config: WebAuthnConfig, request?: Request) {
   const admin = await adminSessionContext(request);
   const context = admin || await adminSessionContext(request, "setup");
   if (!context) return { error: "Unauthorized" as const };
-  const grantKey = admin ? credentialGrantKey(grantPrefix, grant) : null;
-  if (admin && !grantKey) return { error: "Verify an established passkey before adding a key" as const };
   if (!admin && await hasCurrentPasskey()) return { error: "Passkey enrollment is already complete" as const };
   if (!admin && !await passwordSetupAllowed()) return { error: "Passkey recovery is required before enrolling a new passkey" as const };
   const client = redis(); const credentials = await getCredentials(); const epoch = await getCredentialEpoch();
   if (!client || !credentials || epoch === null) return { error: "Passkey storage is not configured" as const };
   const options = await generateRegistrationOptions({ rpName, rpID: config.rpID, userName: "admin@speedzonemotorsports", userDisplayName: "SpeedZone admin", userID: new TextEncoder().encode(userID), attestationType: "none", excludeCredentials: credentials.filter((item) => item.credentialEpoch === epoch).map((item) => ({ id: item.id, transports: item.transports })), authenticatorSelection: { residentKey: "preferred", userVerification: "required" } });
-  await client.set(challengeKey("registration", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), sessionKey: context.sessionKey, ...(grantKey ? { grantKey } : {}) } satisfies ChallengeRecord, { ex: challengeTtl });
+  await client.set(challengeKey("registration", options.challenge), { challenge: options.challenge, credentialEpoch: epoch, createdAt: Date.now(), sessionKey: context.sessionKey } satisfies ChallengeRecord, { ex: challengeTtl });
   return { options };
 }
-export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig, request?: Request, grant?: unknown) {
+export async function verifyRegistration(response: unknown, name: string, config: WebAuthnConfig, request?: Request) {
   const admin = await adminSessionContext(request);
   const context = admin || await adminSessionContext(request, "setup");
   if (!context) return { error: "Unauthorized" as const };
-  const grantKey = admin ? credentialGrantKey(grantPrefix, grant) : null;
-  if (admin && !grantKey) return { error: "Verify an established passkey before adding a key" as const };
   if (!admin && await hasCurrentPasskey()) return { error: "Passkey enrollment is already complete" as const };
   const client = redis(); if (!client) return { error: "Passkey storage is not configured" as const };
   try {
@@ -181,7 +176,7 @@ export async function verifyRegistration(response: unknown, name: string, config
     const stored: StoredCredential = { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString("base64url"), counter: credential.counter, deviceType: credentialDeviceType, backedUp: credentialBackedUp, name: name || "Unnamed passkey", credentialEpoch: record.credentialEpoch };
     const nextGeneration = randomBytes(16).toString("hex");
     const result = await client.eval(registrationCommitScript,
-      [credentialsKey, epochKey, challengeKey("registration", challenge), context.sessionKey, context.generationKey, grantKey || "", passkeyEnrolledKey, passkeyReenrollKey],
+      [credentialsKey, epochKey, challengeKey("registration", challenge), context.sessionKey, context.generationKey, passkeyEnrolledKey, passkeyReenrollKey],
       [String(record.credentialEpoch), record.challenge, JSON.stringify(stored), admin ? "managed" : "initial", Date.now(), JSON.stringify(context.policy), nextGeneration]);
     if (Number(result) === -2) return { error: "Passkey enrollment is already complete" as const };
     if (Number(result) === -3) return { error: "Passkey recovery is required before enrolling a new passkey" as const };
