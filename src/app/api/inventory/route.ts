@@ -8,17 +8,19 @@ import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { diagnoseInventoryPhotoUrl, isInventoryPhotoBlobOriginUrl, maxInventoryPhotoCount } from "@/lib/inventory-photos";
 import { securityRequestContext, writeSecurityEvent } from "@/lib/security-events";
 
-async function diagnosedGET(request: Request) {
+async function diagnosedGET() {
   try {
     const { vehicles: inventory, revision } = await readInventorySnapshot();
-    const adminRequest = await isAdminAuthenticated(request);
     // Revision is in the body (not just the ETag header) because the header
     // is not reliably readable via response.headers in all browsers/proxies.
     return NextResponse.json({ vehicles: inventory, revision }, {
       headers: {
         "ETag": revision,
         "Access-Control-Expose-Headers": "ETag",
-        "Cache-Control": adminRequest ? "private, no-store" : "public, max-age=60",
+        // Never CDN-cached: the CDN does not vary on the admin cookie, and a
+        // shared copy would hand admins a stale revision. Public pages are
+        // cached at the CDN instead (see src/lib/public-cache.ts).
+        "Cache-Control": "private, no-store",
       },
     });
   } catch (error) {
@@ -146,7 +148,7 @@ async function diagnosedPATCH(request: Request) { return handlePATCH(request); }
 
 async function diagnosedDELETE(request: Request) { return handleDELETE(request); }
 
-export async function GET(request: Request) { return withDiagnostics("INVENTORY_CATALOG_READ", () => diagnosedGET(request)); }
+export async function GET() { return withDiagnostics("INVENTORY_CATALOG_READ", () => diagnosedGET()); }
 
 export async function POST(request: Request) { return withDiagnostics("INVENTORY_LISTING_CREATE", () => diagnosedPOST(request)); }
 

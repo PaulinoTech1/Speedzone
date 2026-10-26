@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
 import { readInventory, vehiclePath, type Vehicle } from "@/lib/inventory";
 
-// Rendered per request so new listings appear without a redeploy.
-export const dynamic = "force-dynamic";
+// Incrementally regenerated at most every 5 minutes, and immediately when
+// admin inventory changes (see src/lib/public-cache-invalidation.ts).
+export const revalidate = 300;
 
 const origin = "https://www.speedzonems.com";
 const staticPaths = ["", "/inventory", "/test-drive", "/sell-your-car", "/buying-costs", "/recall-check", "/road-trip", "/privacy", "/terms"];

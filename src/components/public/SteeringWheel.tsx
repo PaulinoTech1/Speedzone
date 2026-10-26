@@ -29,7 +29,8 @@ export function SteeringWheel() {
       role="img"
       aria-label="Steering wheel below the word behind"
     >
-      <div className="steering-wheel" style={{ transform: `rotate(${rotation}deg)` }}>
+      {/* No server-rendered style attribute: the strict CSP blocks inline style attributes. */}
+      <div className="steering-wheel" style={rotation === 0 ? undefined : { transform: `rotate(${rotation}deg)` }}>
         <span className="steering-wheel-spoke steering-wheel-spoke-left" />
         <span className="steering-wheel-spoke steering-wheel-spoke-right" />
         <span className="steering-wheel-spoke steering-wheel-spoke-bottom" />

@@ -1,3 +1,6 @@
+// Static text; prerendered and served from the CDN.
+export const dynamic = "force-static";
+
 export function GET() {
   return new Response(`# SpeedZone Motorsports
 
