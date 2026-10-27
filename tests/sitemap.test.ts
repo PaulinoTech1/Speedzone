@@ -13,11 +13,12 @@ it("lists available and pending vehicle pages and excludes sold ones", async () 
   expect(urls).toContain("https://www.speedzonems.com/inventory/b");
   expect(urls).not.toContain("https://www.speedzonems.com/inventory/c");
   expect(urls).toContain("https://www.speedzonems.com/inventory");
+  expect(urls).toContain("https://www.speedzonems.com/sitemap");
 });
 
 it("falls back to static pages when inventory is unavailable", async () => {
   mocks.read.mockRejectedValue(new Error("down"));
   const urls = (await sitemap()).map(entry => entry.url);
-  expect(urls).toHaveLength(9);
+  expect(urls).toHaveLength(10);
   expect(urls.some(url => url.includes("/inventory/"))).toBe(false);
 });
