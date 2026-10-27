@@ -8,7 +8,8 @@ type SiteChromeProps = {
     | "sell-your-car"
     | "buying-costs"
     | "recall-check"
-    | "test-drive";
+    | "test-drive"
+    | "sitemap";
 };
 
 const directionsUrl =
@@ -198,7 +199,7 @@ export function SiteFooter({ currentPage = "home" }: SiteChromeProps) {
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
             <a href="/report-a-problem">Report a problem</a>
-            <a href="/sitemap.xml">Sitemap</a>
+            <a href="/sitemap">Sitemap</a>
           </div>
         </div>
       </footer>

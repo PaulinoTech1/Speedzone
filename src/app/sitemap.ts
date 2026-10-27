@@ -5,7 +5,7 @@ import { readInventory, vehiclePath, type Vehicle } from "@/lib/inventory";
 export const dynamic = "force-dynamic";
 
 const origin = "https://www.speedzonems.com";
-const staticPaths = ["", "/inventory", "/test-drive", "/sell-your-car", "/buying-costs", "/recall-check", "/road-trip", "/privacy", "/terms"];
+const staticPaths = ["", "/inventory", "/test-drive", "/sell-your-car", "/buying-costs", "/recall-check", "/road-trip", "/privacy", "/terms", "/sitemap"];
 
 /** Sold listings keep their URL but are noindex, so they are left out. */
 export function vehicleSitemapEntries(vehicles: Vehicle[]): MetadataRoute.Sitemap {
