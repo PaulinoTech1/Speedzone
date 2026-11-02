@@ -3,6 +3,11 @@ import { headers } from "next/headers";
 
 import { HomePageContent, homeFaqItems } from "@/components/public/HomePageContent";
 import { SiteFooter, SiteHeader } from "@/components/public/SiteChrome";
+import { readInventory } from "@/lib/inventory";
+import {
+  toInventorySlides,
+  type InventorySlide,
+} from "@/lib/inventory-carousel";
 
 export const metadata: Metadata = {
   title: {
@@ -76,6 +81,16 @@ const faqStructuredData = {
 
 export default async function HomePage() {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
+  // The carousel reads live inventory on every request (this layout is
+  // dynamic), so a sold or removed vehicle disappears on the next load with
+  // no rebuild. If the read fails, the section hides and the rest of the
+  // home page still renders.
+  let inventorySlides: InventorySlide[];
+  try {
+    inventorySlides = toInventorySlides(await readInventory());
+  } catch {
+    inventorySlides = [];
+  }
 
   return (
     <>
@@ -94,7 +109,7 @@ export default async function HomePage() {
         }}
       />
       <SiteHeader />
-      <HomePageContent />
+      <HomePageContent inventorySlides={inventorySlides} />
       <SiteFooter />
     </>
   );

@@ -1,4 +1,6 @@
 import { CarCareTips } from "./CarCareTips";
+import { InventoryCarousel } from "./InventoryCarousel";
+import type { InventorySlide } from "@/lib/inventory-carousel";
 import Link from "next/link";
 
 const directionsUrl =
@@ -142,7 +144,11 @@ export const homeFaqItems = [
   },
 ] as const;
 
-export function HomePageContent() {
+export function HomePageContent({
+  inventorySlides = [],
+}: {
+  inventorySlides?: InventorySlide[];
+}) {
   return (
     <main id="main">
       <section className="hero" id="top" aria-labelledby="hero-title">
@@ -195,6 +201,28 @@ export function HomePageContent() {
         </div>
         <div className="finish-line" aria-hidden="true" />
       </section>
+
+      {inventorySlides.length > 0 ? (
+        <section
+          className="section inventory-carousel-section"
+          aria-labelledby="lot-now-title"
+        >
+          <div className="shell">
+            <p className="section-kicker">On the lot now</p>
+            <h2 id="lot-now-title">
+              Fresh arrivals,
+              <br />
+              <span>right now.</span>
+            </h2>
+            <InventoryCarousel vehicles={inventorySlides} />
+            <div className="action-row">
+              <Link className="button button-primary" href="/inventory">
+                See full inventory
+              </Link>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section
         className="section arrivals"
