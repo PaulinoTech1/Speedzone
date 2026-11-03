@@ -22,6 +22,30 @@ const securityHeaders = [
     : []),
 ];
 
+
+// Edge caching for public pages, scoped to the routes that never consume
+// the per-request CSP nonce issued in src/proxy.ts. /, /buying-costs and
+// /inventory/[id] read x-nonce and must render per request: caching their
+// HTML would serve one shared nonce to every visitor and void the control.
+// Vercel-CDN-Cache-Control governs the Vercel edge cache only; browser
+// cache behavior (Cache-Control) is unchanged.
+const cdnCacheHeaders = [
+  {
+    key: "Vercel-CDN-Cache-Control",
+    value: "public, s-maxage=60, stale-while-revalidate=300",
+  },
+];
+const edgeCachedPages = [
+  "/inventory",
+  "/privacy",
+  "/terms",
+  "/road-trip",
+  "/recall-check",
+  "/sell-your-car",
+  "/test-drive",
+  "/report-a-problem",
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
@@ -45,6 +69,7 @@ const nextConfig: NextConfig = {
         source: "/assets/:path*",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
+      ...edgeCachedPages.map((source) => ({ source, headers: cdnCacheHeaders })),
     ];
   },
 };
