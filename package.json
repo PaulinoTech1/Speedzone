@@ -45,7 +45,7 @@
     "@simplewebauthn/server": "^14.0.1",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.4",
-    "@vercel/blob": "^2.8.0",
+    "@vercel/blob": "^2.8.2",
     "argon2": "^0.44.0",
     "botid": "^1.5.11",
     "next": "16.4.3",
