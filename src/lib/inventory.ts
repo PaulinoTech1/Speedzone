@@ -4,6 +4,7 @@ import { maxInventoryPhotoCount } from "@/lib/inventory-photos";
 import { sanitizeVehicleDetails, validDetail, vehicleDetailKeys, type VehicleDetails } from "@/lib/vehicle-details";
 export * from "@/lib/vehicle-details";
 import { getRedis } from "@/lib/redis";
+import { invalidatePublicInventory } from "@/lib/public-cache-invalidation";
 import { canonicalInventoryPhotoUrl, inventoryCommitScript, inventoryPhotoStateKey, inventoryStateKey } from "@/lib/inventory-state";
 
 /**
@@ -117,6 +118,9 @@ export async function writeInventory(vehicles: Vehicle[], revision: string) {
   const result = Number(await redis.eval(inventoryCommitScript, [inventoryStateKey, ...photoKeys], [revision, document]));
   if (result === -1) throw new Error("A selected photo is no longer available. Upload it again.");
   if (result !== 1) throw new BlobPreconditionFailedError();
+  // Covers create, edit, delete, photo changes and DealerCenter imports, which
+  // all commit through this function.
+  invalidatePublicInventory();
   return { etag: nextRevision };
 }
 
